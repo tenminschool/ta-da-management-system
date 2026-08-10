@@ -222,7 +222,9 @@ export const TABS: TabSpec[] = [
       ["DestinationType", "Stakeholder", "Stakeholder", "Name", "", "Yes"],
       ["DestinationType", "University", "University", "Name", "", "Yes"],
       ["DestinationType", "Vendor", "Vendor", "Name", "", "Yes"],
-      ["DestinationType", "Other Office", "Other Office", "Office", "Dhaka", "Yes"],
+      // Label only — the stored value stays "Other Office" so claims already
+      // filed under it keep validating.
+      ["DestinationType", "Other Office", "10MS Office", "Office", "Dhaka", "Yes"],
       ["DestinationType", "Others", "Others", "Purpose", "", "Yes"],
 
       // Outside-city trips pick a route rather than a bare district. `Extra1`

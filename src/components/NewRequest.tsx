@@ -424,19 +424,23 @@ function StepTravelType({
 
       {!outside && (
         <Card
-          title="Where and when did you work?"
-          subtitle="Working hours are calculated automatically — TA, Per-Diem or both follow from them."
+          title="Working hours"
+          subtitle="Worked out from these two times — TA, Per-Diem or both follow from them."
         >
+          {/* A trip to one of our own offices is checked against the attendance
+              record, so the punches are what make the claim provable. Said here,
+              above the times, rather than only in the panel on the right. */}
+          {destinationNeeds === "office" && (
+            <div className="mb-4">
+              <Notice
+                tone="warn"
+                items={[
+                  "You must punch the card both in and out at the office. Without both punches this claim will be rejected.",
+                ]}
+              />
+            </div>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Worked at" required>
-              <select className="field" value={draft.workedAt} onChange={(e) => set({ workedAt: e.target.value })}>
-                <option value="">Select</option>
-                {policy.workedAtOptions.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </select>
-            </Field>
-            <div />
             <Field label="Start time" required>
               <input type="time" className="field" value={draft.startTime} onChange={(e) => set({ startTime: e.target.value })} />
             </Field>
