@@ -1209,6 +1209,11 @@ function StepDocuments({
   const [maxBytes, setMaxBytes] = useState(50 * 1024 * 1024);
   const [enabled, setEnabled] = useState(true);
   const [dragging, setDragging] = useState(false);
+  // Nothing to attach for a rickshaw fare or a personal-vehicle trip, so the
+  // picker starts hidden rather than merely optional — an empty required-look
+  // upload box was the thing people kept asking about. One click brings it
+  // back for anyone who genuinely wants to attach something anyway.
+  const [showUploader, setShowUploader] = useState(needsReceipt);
 
   useEffect(() => {
     api.uploadConfig()
@@ -1262,56 +1267,71 @@ function StepDocuments({
       <Card
         title="Documents"
         subtitle={
-          needsReceipt
+          needsReceipt || showUploader
             ? "Attach tickets, bills, receipts, invoices, hotel bills or approval mail. Files are stored in the shared Drive and renamed with your employee ID, name and date."
-            : "Not required for this claim — a rickshaw fare and a personal-vehicle trip have no receipt to attach. Add one only if you have something worth keeping on file."
+            : "Not required for this claim."
         }
       >
         <div className="space-y-4">
-          {!needsReceipt && (
-            <Notice
-              tone="info"
-              items={["Nothing here is required — you can submit this claim without attaching anything."]}
-            />
-          )}
-          <Field
-            label="Document types"
-            required={needsReceipt}
-            hint="Pick every type your files cover — you can select more than one."
-          >
-            <MultiSelect
-              options={documentTypes}
-              value={draft.documentTypes}
-              onChange={(documentTypes) => set({ documentTypes })}
-              placeholder="Select document types…"
-            />
-          </Field>
-
-          {!enabled && (
-            <Notice tone="warn" items={["File uploads are not configured on this deployment — DRIVE_FOLDER_ID is not set."]} />
+          {!needsReceipt && !showUploader && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
+              <p className="text-sm text-slate-600">
+                Nothing to attach — a rickshaw fare or a personal-vehicle trip has no receipt.
+              </p>
+              <button type="button" className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => setShowUploader(true)}>
+                Attach something anyway
+              </button>
+            </div>
           )}
 
-          <label
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => { e.preventDefault(); setDragging(false); accept(e.dataTransfer.files); }}
-            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition ${
-              dragging ? "border-brand-500 bg-brand-50" : "border-slate-300 bg-slate-50 hover:bg-slate-100"
-            }`}
-          >
-            <FileUp size={22} className="text-slate-400" />
-            <span className="text-sm font-semibold text-slate-700">Choose files, or drag them here</span>
-            <span className="text-xs text-slate-500">
-              Image, PDF, Word, Excel, CSV — any type · up to {maxMB} MB each · pick as many as you need
-            </span>
-            <input
-              type="file"
-              multiple
-              className="hidden"
-              disabled={!enabled}
-              onChange={(e) => { accept(e.target.files); e.target.value = ""; }}
-            />
-          </label>
+          {(needsReceipt || showUploader) && (
+            <>
+              {!needsReceipt && (
+                <Notice
+                  tone="info"
+                  items={["Still not required for this claim — attach one only if you have something worth keeping on file."]}
+                />
+              )}
+              <Field
+                label="Document types"
+                required={needsReceipt}
+                hint="Pick every type your files cover — you can select more than one."
+              >
+                <MultiSelect
+                  options={documentTypes}
+                  value={draft.documentTypes}
+                  onChange={(documentTypes) => set({ documentTypes })}
+                  placeholder="Select document types…"
+                />
+              </Field>
+
+              {!enabled && (
+                <Notice tone="warn" items={["File uploads are not configured on this deployment — DRIVE_FOLDER_ID is not set."]} />
+              )}
+
+              <label
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => { e.preventDefault(); setDragging(false); accept(e.dataTransfer.files); }}
+                className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-6 py-10 text-center transition ${
+                  dragging ? "border-brand-500 bg-brand-50" : "border-slate-300 bg-slate-50 hover:bg-slate-100"
+                }`}
+              >
+                <FileUp size={22} className="text-slate-400" />
+                <span className="text-sm font-semibold text-slate-700">Choose files, or drag them here</span>
+                <span className="text-xs text-slate-500">
+                  Image, PDF, Word, Excel, CSV — any type · up to {maxMB} MB each · pick as many as you need
+                </span>
+                <input
+                  type="file"
+                  multiple
+                  className="hidden"
+                  disabled={!enabled}
+                  onChange={(e) => { accept(e.target.files); e.target.value = ""; }}
+                />
+              </label>
+            </>
+          )}
 
           {progress.length > 0 && (
             <ul className="space-y-2 rounded-xl border border-slate-200 p-3">
