@@ -106,6 +106,7 @@ export const TABS: TabSpec[] = [
       "bank_routing_number", "bank_branch",
       "payment_ack", "payment_ack_at", "payment_ack_note",
       "approved_amount", "approved_amount_by", "approved_amount_at", "approved_amount_note",
+      "trip_direction",
     ],
   },
 

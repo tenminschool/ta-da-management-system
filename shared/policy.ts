@@ -709,7 +709,12 @@ export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
     const named = kind?.needs === "office"
       ? [kind.label, draft.purpose].filter(Boolean).join(" — ")
       : kind?.label || "";
-    return [leg(draft.fromDate, draft.city, draft.destination || named)];
+    const there = draft.destination || named;
+    const outward = leg(draft.fromDate, draft.city, there);
+    // Two-way is the same day back to the office — a second fare, priced
+    // separately, not the outward one doubled.
+    if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, there, draft.city)];
+    return [outward];
   }
 
   const route = policy.routes.find((r) => r.value === draft.route);
@@ -739,6 +744,7 @@ export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecial
     toDate: scope === "outside" ? "" : today,
     purpose: "",
     destinationType: "",
+    tripDirection: "one_way",
     route: "",
     exceptionClaimed: false,
     exceptionReason: "",

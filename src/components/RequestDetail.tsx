@@ -911,6 +911,7 @@ function toDraft(r: Detail["request"]): RequestDraft {
     toDate: r.toDate,
     purpose: r.purpose,
     destinationType: r.destinationType,
+    tripDirection: r.tripDirection,
     route: r.route,
     exceptionClaimed: r.exceptionClaimed,
     exceptionReason: r.exceptionReason,

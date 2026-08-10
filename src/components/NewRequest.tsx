@@ -55,7 +55,7 @@ export default function NewRequest({
   // extra hops added by hand are left alone at the end of the list.
   const implied = useMemo(() => impliedLegs(policy, draft), [
     policy, draft.transportMode, draft.scope, draft.fromDate, draft.toDate,
-    draft.city, draft.route, draft.destination, draft.destinationType,
+    draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
   useEffect(() => {
@@ -252,6 +252,7 @@ function StepTravelType({
               destination: "",
               purpose: "",
               transportMode: "",
+              tripDirection: "one_way",
             })
           }
           options={[
@@ -762,6 +763,19 @@ function StepTransport({
               </span>
             </p>
           )}
+        </Card>
+      )}
+
+      {inside && draft.transportMode && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
+        <Card title="One way, or there and back?">
+          <ChoiceGrid
+            value={draft.tripDirection}
+            onChange={(tripDirection) => set({ tripDirection: tripDirection as RequestDraft["tripDirection"] })}
+            options={[
+              { value: "one_way", label: "One way", description: "Office to the destination — a single fare." },
+              { value: "two_way", label: "Two way", description: "Office to the destination, and back to office — two fares." },
+            ]}
+          />
         </Card>
       )}
 
