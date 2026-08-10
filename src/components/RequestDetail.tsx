@@ -272,7 +272,12 @@ export default function RequestDetail({
                 label="Destination"
                 value={[r.destinationType, r.destination].filter(Boolean).join(" — ") || "—"}
               />
-              <Row label="Purpose" value={r.purpose} />
+              {/* The field is stored as "purpose" either way, but for a 10MS
+                  Office visit it actually holds which office — label it that. */}
+              <Row
+                label={policy.destinationTypes.find((d) => d.value === r.destinationType)?.needs === "office" ? "Office name" : "Purpose"}
+                value={r.purpose}
+              />
               <Row label="Dates" value={r.scope === "inside" ? r.fromDate : `${r.fromDate} → ${r.toDate} (${r.tripDays} days)`} />
               <Row label="Claim type" value={{ ta: "TA only", perdiem: "Per-Diem only", both: "TA + Per-Diem" }[r.claimType]} />
               {r.scope === "inside" && r.workingHours > 0 && (

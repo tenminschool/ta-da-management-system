@@ -387,7 +387,7 @@ function StepTravelType({
               )}
 
               {destinationNeeds === "office" && (
-                <Field label="Purpose" required>
+                <Field label="Office name" required>
                   <select className="field" value={draft.purpose} onChange={(e) => set({ purpose: e.target.value })}>
                     <option value="">Select an office</option>
                     {policy.otherOffices.map((o) => (
