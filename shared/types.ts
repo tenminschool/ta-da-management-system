@@ -114,6 +114,8 @@ export interface TeamMember {
   band: string;
   /** Drives transport eligibility for the whole party. */
   gender: string;
+  /** Where this person's share of the payment goes. */
+  bkashNumber: string;
 }
 
 export interface Leg {

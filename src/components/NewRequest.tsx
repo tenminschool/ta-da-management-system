@@ -511,6 +511,11 @@ function TeamPicker({
           designation: e.designation,
           band: e.band,
           gender: e.gender,
+          // Left blank rather than pulled from their record: the search
+          // endpoint answers on every keystroke, and returning someone's
+          // personal payout number just for typing their name is a wider leak
+          // than this picker should cause. The claimant enters it by hand.
+          bkashNumber: "",
         })));
       } catch (err) {
         if (!cancelled) setError((err as Error).message);
@@ -1293,8 +1298,12 @@ function StepDocuments({
       </Card>
 
       <Card
-        title="Your personal bKash number"
-        subtitle={`Finance pays the approved amount here.${payable > 0 ? ` Right now that is ${currency} ${payable}.` : ""}`}
+        title={draft.travelType === "team" ? "Where the payment goes" : "Your personal bKash number"}
+        subtitle={
+          draft.travelType === "team"
+            ? `Team travel — each traveller is paid separately. ${draft.teamMembers.length + 1} numbers are needed.`
+            : `Finance pays the approved amount here.${payable > 0 ? ` Right now that is ${currency} ${payable}.` : ""}`
+        }
       >
         {/* Bank payment stays hidden until an administrator turns it on in
             Configuration, and bKash is simply the only option until then. */}
@@ -1308,6 +1317,41 @@ function StepDocuments({
                 { value: "bank", label: "Bank account", description: "Paid into your bank account." },
               ]}
             />
+          </div>
+        )}
+
+        {draft.travelType === "team" && draft.payoutMethod !== "bank" && (
+          <div className="mb-5 space-y-3 rounded-xl bg-slate-50 p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team payout numbers</p>
+            <Field label="Your bKash number" required={payable > 0}>
+              <input
+                className="field"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                maxLength={14}
+                placeholder="01712345678"
+                value={draft.bkashNumber}
+                onChange={(e) => set({ bkashNumber: e.target.value })}
+              />
+            </Field>
+            {draft.teamMembers.map((m, i) => (
+              <Field key={m.employeeId || i} label={`${m.name || "Team member " + (i + 1)}'s bKash number`} required={payable > 0}>
+                <input
+                  className="field"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={14}
+                  placeholder="01712345678"
+                  value={m.bkashNumber}
+                  onChange={(e) => {
+                    const teamMembers = draft.teamMembers.map((x, idx) => (idx === i ? { ...x, bkashNumber: e.target.value } : x));
+                    set({ teamMembers });
+                  }}
+                />
+              </Field>
+            ))}
           </div>
         )}
 
@@ -1330,6 +1374,7 @@ function StepDocuments({
             </Field>
           </div>
         ) : (
+          draft.travelType !== "team" && (
           <Field
             label="Your bKash number"
             required={payable > 0}
@@ -1346,6 +1391,7 @@ function StepDocuments({
               onChange={(e) => set({ bkashNumber: e.target.value })}
             />
           </Field>
+          )
         )}
       </Card>
 

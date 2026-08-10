@@ -61,6 +61,12 @@ const COLUMNS: [string, (r: RequestRecord) => unknown][] = [
   // What the payment actually needs.
   ["Pay to", (r) => (r.payoutMethod === "bank" ? "Bank" : "bKash")],
   ["bKash number", (r) => (r.payoutMethod === "bank" ? "" : r.bkashNumber)],
+  // Team travel is paid out one bKash number per traveller, not one for the
+  // whole claim — Finance needs all of them to actually release the money.
+  ["Team bKash numbers", (r) =>
+    r.payoutMethod === "bank" || r.travelType !== "team"
+      ? ""
+      : r.teamMembers.map((m) => `${m.name}: ${m.bkashNumber || "missing"}`).join("; ")],
   ["Bank name", (r) => r.bankName],
   ["Account name", (r) => r.bankAccountName],
   ["Account number", (r) => r.bankAccountNumber],

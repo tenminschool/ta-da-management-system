@@ -232,6 +232,12 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
         push("Bike", false, "Bike is not available for team travel.");
         continue;
       }
+      // A rickshaw seats two. Three travellers cannot share one, whatever the
+      // band list says.
+      if (mode === "Rickshaw" && ctx.teamSize > 2) {
+        push("Rickshaw", false, `Rickshaw seats two — there are ${ctx.teamSize} of you.`);
+        continue;
+      }
       if (inBand) push(mode, true);
     }
 
@@ -329,10 +335,13 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     }
     perDiemEligible = tripDays > 0;
     perDiemDays = tripDays;
-    perDiemAmount = money(span.weekday * (band?.outsideTAWeekday ?? 0) + span.weekend * (band?.outsideTAWeekend ?? 0));
+    const perHead = money(span.weekday * (band?.outsideTAWeekday ?? 0) + span.weekend * (band?.outsideTAWeekend ?? 0));
+    perDiemAmount = money(perHead * teamSize);
     if (perDiemEligible) {
       notes.push(
-        `Outside-city Per-Diem for Band ${user.band}: ${span.weekday} weekday × ${band?.outsideTAWeekday ?? 0} + ${span.weekend} weekend × ${band?.outsideTAWeekend ?? 0} = ${perDiemAmount}. This already covers local transport and 3 meals.`,
+        `Outside-city Per-Diem for Band ${user.band}: ${span.weekday} weekday × ${band?.outsideTAWeekday ?? 0} + ${span.weekend} weekend × ${band?.outsideTAWeekend ?? 0} = ${perHead} each` +
+        (teamSize > 1 ? `, × ${teamSize} travellers = ${perDiemAmount}` : "") +
+        ". This already covers local transport and 3 meals.",
       );
     }
   } else {
@@ -340,15 +349,24 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     if (hours >= minHours) {
       perDiemEligible = true;
       perDiemDays = 1;
-      perDiemAmount = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
-      notes.push(`Worked ${hours} hours (≥ ${minHours}) — Per-Diem ${perDiemAmount} approved automatically. Lunch is included, so lunch allowance is not payable.`);
+      const perHead = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
+      perDiemAmount = money(perHead * teamSize);
+      notes.push(
+        `Worked ${hours} hours (≥ ${minHours}) — Per-Diem ${perHead} each` +
+        (teamSize > 1 ? ` × ${teamSize} travellers = ${perDiemAmount}` : "") +
+        " approved automatically. Lunch is included, so lunch allowance is not payable.",
+      );
     } else if (draft.workedDuringLunch) {
       if (officeMeal) {
         notes.push("Office meal was provided — lunch allowance is not payable (no duplicate meal claim).");
       } else {
         lunchEligible = true;
-        lunchAllowance = cfgNum(policy, "LUNCH_ALLOWANCE", 150);
-        notes.push(`Worked ${hours} hours (< ${minHours}) through the lunch window — lunch allowance ${lunchAllowance} applies.`);
+        const perHead = cfgNum(policy, "LUNCH_ALLOWANCE", 150);
+        lunchAllowance = money(perHead * teamSize);
+        notes.push(
+          `Worked ${hours} hours (< ${minHours}) through the lunch window — lunch allowance ${perHead} each` +
+          (teamSize > 1 ? ` × ${teamSize} travellers = ${lunchAllowance}` : "") + ".",
+        );
       }
     } else if (hours > 0) {
       notes.push(`Worked ${hours} hours (< ${minHours}) and not through lunch — no Per-Diem or lunch allowance.`);
@@ -562,11 +580,18 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
         if (!String(value || "").trim()) errors.push(`${label} is required for a bank payment.`);
       }
     } else {
-      const bkash = String(draft.bkashNumber || "").replace(/[\s-]/g, "");
-      if (!bkash) {
-        errors.push("Enter the bKash number the payment should go to.");
-      } else if (!/^01[3-9]\d{8}$/.test(bkash)) {
-        errors.push("That bKash number does not look right — it should be 11 digits starting 01, e.g. 01712345678.");
+      const bkashOK = (label: string, v: string) => {
+        const bkash = String(v || "").replace(/[\s-]/g, "");
+        if (!bkash) errors.push(`Enter the bKash number ${label} should be paid to.`);
+        else if (!/^01[3-9]\d{8}$/.test(bkash)) {
+          errors.push(`${label}'s bKash number does not look right — it should be 11 digits starting 01, e.g. 01712345678.`);
+        }
+      };
+      // Team travel is paid out separately, one number per traveller — the
+      // claimant's own share plus everyone else's.
+      bkashOK("you", draft.bkashNumber);
+      if (draft.travelType === "team") {
+        draft.teamMembers.forEach((m) => bkashOK(m.name || "your teammate", m.bkashNumber));
       }
     }
   }

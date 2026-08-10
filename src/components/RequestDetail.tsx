@@ -476,7 +476,23 @@ export default function RequestDetail({
                 <span className="font-semibold text-slate-700">Final payable</span>
                 <span className="font-bold text-emerald-600"><Money value={r.finalPayable} currency={currency} /></span>
               </div>
-              {r.bkashNumber && (
+              {r.payoutMethod !== "bank" && r.travelType === "team" ? (
+                <div className="border-t border-slate-200 pt-2">
+                  <span className="text-slate-600">Pay to (bKash) — paid separately per traveller</span>
+                  <div className="mt-1 space-y-1">
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-500">{r.employeeName} (you)</span>
+                      <span className="font-mono text-sm font-semibold text-slate-800">{r.bkashNumber || "—"}</span>
+                    </div>
+                    {r.teamMembers.map((m) => (
+                      <div key={m.employeeId} className="flex justify-between gap-3">
+                        <span className="text-xs text-slate-500">{m.name}</span>
+                        <span className="font-mono text-sm font-semibold text-slate-800">{m.bkashNumber || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : r.bkashNumber && (
                 <div className="flex justify-between gap-3 border-t border-slate-200 pt-2">
                   <span className="text-slate-600">Pay to (bKash)</span>
                   <span className="font-mono font-semibold text-slate-800">{r.bkashNumber}</span>
