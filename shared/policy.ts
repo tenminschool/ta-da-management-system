@@ -438,12 +438,22 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
 
   // ── Advance ───────────────────────────────────────────────────────────────
   const advanceMinDays = cfgNum(policy, "ADVANCE_MIN_TRIP_DAYS", 3);
+  // Same notice period as Company Arrangement — applying the morning of
+  // travel gives nobody time to actually pay an advance out.
+  const noticeDays = cfgNum(policy, "COMPANY_ARRANGE_NOTICE_DAYS", 2);
+  const noticeGiven = draft.fromDate ? businessDaysUntil(draft.fromDate) : 0;
+  const advanceNoticeOK = noticeGiven >= noticeDays;
+  const companyArrangementOK = advanceNoticeOK;
   // Three days qualifies — the threshold is the shortest trip that earns one,
   // not the one it has to beat.
-  const advanceAvailable = draft.scope === "outside" && tripDays >= advanceMinDays;
+  const advanceAvailable = draft.scope === "outside" && tripDays >= advanceMinDays && advanceNoticeOK;
   let advanceRequested = money(Number(draft.advanceRequested) || 0);
   if (advanceRequested > 0 && !advanceAvailable) {
-    errors.push(`An advance is only available for outside-city trips of ${advanceMinDays} days or more.`);
+    errors.push(
+      !advanceNoticeOK
+        ? `An advance needs at least ${noticeDays} business days' notice before travel — this trip starts too soon. Contact Administration if it cannot wait.`
+        : `An advance is only available for outside-city trips of ${advanceMinDays} days or more.`,
+    );
     advanceRequested = 0;
   }
   // Declining is a real answer, and worth confirming what it means.
@@ -542,14 +552,12 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     else if (!draft.city) errors.push(`Which city did you travel to from ${taken.from}?`);
     else if (taken.to && draft.city !== taken.to) errors.push(`${taken.label} must end in ${taken.to}.`);
     if (draft.arrangement === "company") {
-      const notice = cfgNum(policy, "COMPANY_ARRANGE_NOTICE_DAYS", 2);
-      const available = businessDaysUntil(draft.fromDate);
-      if (available < notice) {
+      if (!companyArrangementOK) {
         errors.push(
-          `Company-arranged travel requires at least ${notice} business days' notice. Please choose Self Arrangement or contact Administration.`,
+          `Company-arranged travel requires at least ${noticeDays} business days' notice. Please choose Self Arrangement or contact Administration.`,
         );
       } else {
-        notes.push(`Company arrangement requested with ${available} business days' notice — Administration will be notified automatically.`);
+        notes.push(`Company arrangement requested with ${noticeGiven} business days' notice — Administration will be notified automatically.`);
       }
     }
   }
@@ -605,7 +613,13 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   if (links.length && !draft.documentTypes.length) {
     errors.push("Select which document type(s) your links cover.");
   }
-  if (cfgStr(policy, "REQUIRE_DOCUMENT_LINK", "Yes").toLowerCase() === "yes" && totalClaim > 0 && !links.length) {
+  // A rickshaw fare or a personal-vehicle claim has nothing to attach — there
+  // is no receipt for either. Only ask for one when something actually issues
+  // one: the chosen transport mode, or a cost that always comes with a bill.
+  const modeSpec = policy.modes.find((m) => m.mode === draft.transportMode);
+  const needsReceipt = !!modeSpec?.requiresReceipt
+    || accommodationAmount > 0 || rentACarAmount > 0 || flightAmount > 0 || otherAmount > 0;
+  if (cfgStr(policy, "REQUIRE_DOCUMENT_LINK", "Yes").toLowerCase() === "yes" && needsReceipt && !links.length) {
     errors.push("Share at least one document link (Drive, bill, ticket or receipt) supporting this claim.");
   }
   if (links.some((l) => /drive\.google\.com|docs\.google\.com/i.test(l))) {
@@ -660,6 +674,9 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     advanceRequested,
     finalPayable,
     advanceAvailable,
+    noticeOK: advanceNoticeOK,
+    noticeGiven,
+    noticeDaysRequired: noticeDays,
     requiresDeptHeadApproval,
     notes,
     errors,

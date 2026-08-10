@@ -118,6 +118,7 @@ export default function NewRequest({
               insideCities={insideCities.map((c) => c.city)}
               user={user}
               policy={policy}
+              computation={computation}
             />
           )}
           {step === 1 && (
@@ -206,13 +207,14 @@ function Stepper({ step, onStep }: { step: number; onStep: (n: number) => void }
 // ── Step 1 ──────────────────────────────────────────────────────────────────
 
 function StepTravelType({
-  draft, set, insideCities, user, policy,
+  draft, set, insideCities, user, policy, computation,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
   insideCities: string[];
   user: SessionUser;
   policy: Policy;
+  computation: ReturnType<typeof computeRequest>;
 }) {
   // Some destinations only exist in some cities — Other Office is Dhaka-only.
   const destinationOptions = policy.destinationTypes.filter(
@@ -223,6 +225,13 @@ function StepTravelType({
   const destination = destinationOptions.find((d) => d.value === draft.destinationType);
   const destinationNeeds = destination?.needs;
   const destinationLabel = destination?.label || "";
+
+  // Company Arrangement chosen against one date can go stale if the date is
+  // pushed closer — dropped back to Self rather than left selected behind a
+  // disabled option nobody notices.
+  useEffect(() => {
+    if (draft.arrangement === "company" && !computation.noticeOK) set({ arrangement: "self" });
+  }, [computation.noticeOK]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -315,9 +324,24 @@ function StepTravelType({
                 onChange={(e) => set({ arrangement: e.target.value as RequestDraft["arrangement"] })}
               >
                 <option value="self">Self Arrangement</option>
-                <option value="company">Company Arrangement</option>
+                <option value="company" disabled={!computation.noticeOK}>
+                  Company Arrangement{!computation.noticeOK ? " — needs more notice" : ""}
+                </option>
               </select>
             </Field>
+          )}
+
+          {draft.scope === "outside" && !computation.noticeOK && (
+            <div className="sm:col-span-2">
+              <Notice
+                tone="warn"
+                items={[
+                  `Company Arrangement and a travel advance both need at least ${computation.noticeDaysRequired} business ` +
+                  `days' notice before travel${draft.fromDate ? ` — this trip is only ${computation.noticeGiven} business day(s) away` : ""}. ` +
+                  "Choose Self Arrangement, or contact Administration if this cannot wait.",
+                ]}
+              />
+            </div>
           )}
 
           {/* Inside-city trips name where they went right here, next to the
@@ -1056,7 +1080,9 @@ function StepAllowances({
         subtitle={
           computation.advanceAvailable
             ? `This trip is ${computation.tripDays} days, so you are eligible for a travel advance.`
-            : `An advance is only offered for outside-city trips of ${advanceMinDays} days or more.`
+            : !computation.noticeOK
+              ? `An advance needs at least ${computation.noticeDaysRequired} business days' notice before travel.`
+              : `An advance is only offered for outside-city trips of ${advanceMinDays} days or more.`
         }
       >
         {computation.advanceAvailable ? (
@@ -1096,6 +1122,15 @@ function StepAllowances({
               </div>
             )}
           </>
+        ) : !computation.noticeOK ? (
+          <Notice
+            tone="warn"
+            items={[
+              `Applied ${computation.noticeGiven} business day(s) before travel — an advance needs ` +
+              `${computation.noticeDaysRequired} or more. There is not enough time left to pay one out before this trip. ` +
+              "Contact Administration if it cannot wait.",
+            ]}
+          />
         ) : (
           <p className="text-sm text-slate-500">
             Advances start at {advanceMinDays}-day trips. This one is {computation.tripDays} day(s).

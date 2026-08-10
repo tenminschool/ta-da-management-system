@@ -24,7 +24,11 @@ async function readLive(title: string): Promise<Rec[]> {
   const sheets = sheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: spreadsheetId(),
-    range: `${quote(title)}!A1:BZ`,
+    // Wide enough for any tab this schema will realistically grow to — a
+    // narrower fixed range here silently truncates a wide tab's columns,
+    // which made every run see the last several headers as "new" and rewrite
+    // the tab from a partial read, on Requests once it passed 78 columns.
+    range: `${quote(title)}!A1:ZZ`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const values = (res.data.values || []) as unknown[][];
@@ -135,7 +139,7 @@ async function main() {
 
   for (const r of realign) {
     const t = TABS.find((x) => x.title === r.title)!;
-    await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `${quote(r.title)}!A2:BZ` });
+    await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `${quote(r.title)}!A2:ZZ` });
     await sheets.spreadsheets.values.update({
       spreadsheetId: id,
       range: `${quote(r.title)}!A2:${colLetter(t.headers.length - 1)}${r.rows.length + 1}`,
@@ -179,7 +183,7 @@ async function main() {
       return headers.map((h) => nn(merged[h]));
     });
 
-    await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `'Requests'!A2:BZ` });
+    await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `'Requests'!A2:ZZ` });
     if (rows.length) {
       await sheets.spreadsheets.values.update({
         spreadsheetId: id,
@@ -238,7 +242,7 @@ async function main() {
       return headers.map((h) => nn(rec[h]));
     });
 
-    await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `'Approvals'!A2:BZ` });
+    await sheets.spreadsheets.values.clear({ spreadsheetId: id, range: `'Approvals'!A2:ZZ` });
     if (rows.length) {
       await sheets.spreadsheets.values.update({
         spreadsheetId: id,

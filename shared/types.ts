@@ -248,6 +248,11 @@ export interface Computation {
   advanceRequested: number;
   finalPayable: number;
   advanceAvailable: boolean;
+  /** Whether enough notice has been given for Company Arrangement / an advance. */
+  noticeOK: boolean;
+  /** Business days' notice actually given, and the threshold it is judged against. */
+  noticeGiven: number;
+  noticeDaysRequired: number;
   requiresDeptHeadApproval: boolean;
   notes: string[];
   errors: string[];

@@ -206,7 +206,9 @@ export const TABS: TabSpec[] = [
       ["TransportMode", "Car", "Car", "Inside", "No", "No"],
       ["TransportMode", "CompanyVehicle", "Company Vehicle", "Both", "No", "No"],
       ["TransportMode", "PersonalVehicle", "Personal Vehicle (Own Bike / Car)", "Both", "No", "Yes"],
-      ["TransportMode", "RideSharing", "Ride Sharing (Uber / Pathao)", "Both", "Yes", "Yes"],
+      // Inside city only — outside-city travel does not offer app-based
+      // ride-sharing as an option.
+      ["TransportMode", "RideSharing", "Ride Sharing (Uber / Pathao)", "Inside", "Yes", "Yes"],
       ["TransportMode", "Bus", "Bus", "Outside", "Yes", "Yes"],
       ["TransportMode", "Train", "Train", "Outside", "Yes", "Yes"],
       ["TransportMode", "Launch", "Launch", "Outside", "Yes", "Yes"],
