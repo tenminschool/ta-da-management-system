@@ -253,6 +253,8 @@ export interface Computation {
   /** Business days' notice actually given, and the threshold it is judged against. */
   noticeGiven: number;
   noticeDaysRequired: number;
+  /** Whether the chosen mode or an entered cost actually issues a receipt. */
+  needsReceipt: boolean;
   requiresDeptHeadApproval: boolean;
   notes: string[];
   errors: string[];

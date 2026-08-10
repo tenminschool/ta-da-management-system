@@ -677,6 +677,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     noticeOK: advanceNoticeOK,
     noticeGiven,
     noticeDaysRequired: noticeDays,
+    needsReceipt,
     requiresDeptHeadApproval,
     notes,
     errors,

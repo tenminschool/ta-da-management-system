@@ -138,6 +138,7 @@ export default function NewRequest({
               payable={computation.finalPayable}
               currency={currency}
               bankAllowed={bankPayoutAllowed(policy)}
+              needsReceipt={computation.needsReceipt}
             />
           )}
 
@@ -689,6 +690,9 @@ function StepTransport({
   const inside = draft.scope === "inside";
   const juniorMale = inside && !String(user.gender).toLowerCase().startsWith("f") &&
     modes.some((m) => m.mode === "Car" && !m.enabled && m.reason.includes("pre-approval"));
+  // A rickshaw fare has no receipt to reimburse against — say so rather than
+  // repeating a line that only applies to the modes that do issue one.
+  const modeNeedsReceipt = !!modes.find((m) => m.mode === draft.transportMode)?.requiresReceipt;
 
   return (
     <>
@@ -770,7 +774,9 @@ function StepTransport({
           title={inside ? "Trips taken" : "Travel tickets"}
           subtitle={
             inside
-              ? "Filled in from your travel date and destination — just enter what each trip cost. Reimbursed against actual receipts."
+              ? modeNeedsReceipt
+                ? "Filled in from your travel date and destination — just enter what each trip cost. Reimbursed against actual receipts."
+                : "Filled in from your travel date and destination — just enter what each trip cost. No receipt needed for this mode."
               : "Filled in from your route and dates — just enter what each ticket cost. Attach the receipts in the Documents step."
           }
         />
@@ -1170,7 +1176,7 @@ interface Upload {
 }
 
 function StepDocuments({
-  draft, set, documentTypes, payable, currency, bankAllowed,
+  draft, set, documentTypes, payable, currency, bankAllowed, needsReceipt,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -1178,6 +1184,8 @@ function StepDocuments({
   payable: number;
   currency: string;
   bankAllowed: boolean;
+  /** False for a rickshaw fare or a personal-vehicle claim — neither issues one. */
+  needsReceipt: boolean;
 }) {
   // Names are only known for files uploaded in this session; a claim being
   // edited comes back with links alone, so those fall back to the URL.
@@ -1239,12 +1247,22 @@ function StepDocuments({
     <>
       <Card
         title="Documents"
-        subtitle="Attach tickets, bills, receipts, invoices, hotel bills or approval mail. Files are stored in the shared Drive and renamed with your employee ID, name and date."
+        subtitle={
+          needsReceipt
+            ? "Attach tickets, bills, receipts, invoices, hotel bills or approval mail. Files are stored in the shared Drive and renamed with your employee ID, name and date."
+            : "Not required for this claim — a rickshaw fare and a personal-vehicle trip have no receipt to attach. Add one only if you have something worth keeping on file."
+        }
       >
         <div className="space-y-4">
+          {!needsReceipt && (
+            <Notice
+              tone="info"
+              items={["Nothing here is required — you can submit this claim without attaching anything."]}
+            />
+          )}
           <Field
             label="Document types"
-            required
+            required={needsReceipt}
             hint="Pick every type your files cover — you can select more than one."
           >
             <MultiSelect
