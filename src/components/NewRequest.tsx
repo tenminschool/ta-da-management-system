@@ -87,7 +87,7 @@ export default function NewRequest({
   // extra hops added by hand are left alone at the end of the list.
   const implied = useMemo(() => impliedLegs(policy, draft), [
     policy, draft.transportMode, draft.scope, draft.fromDate, draft.toDate,
-    draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection,
+    draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection, draft.purpose,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
   useEffect(() => {
