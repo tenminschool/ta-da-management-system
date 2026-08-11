@@ -3,7 +3,7 @@ import { Coins, FileText, Printer, Scissors, Wallet } from "lucide-react";
 import { api, type RequestListItem } from "../api.js";
 import type { Policy, SessionUser } from "../../shared/types.js";
 import { cfgStr } from "../../shared/policy.js";
-import { Card, Empty, Money, Notice, Spinner } from "./ui.js";
+import { Card, Empty, Money, Notice, SearchInput, Spinner } from "./ui.js";
 
 /**
  * What the money did, for Administration, HR and Finance.
@@ -37,7 +37,16 @@ export default function Reports({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [department, setDepartment] = useState("");
+  const [member, setMember] = useState(""); // employeeId
+  const [memberQuery, setMemberQuery] = useState("");
   const currency = cfgStr(policy, "CURRENCY", "BDT");
+
+  // A department someone no longer belongs to (or clearing the department
+  // entirely) should not leave a stale, invisible member filter in effect.
+  useEffect(() => {
+    setMember("");
+    setMemberQuery("");
+  }, [department]);
 
   useEffect(() => {
     api.requests("everything")
@@ -51,7 +60,10 @@ export default function Reports({
     [rows],
   );
 
-  const claims = useMemo(() => {
+  // Everything the date range and department narrow it to — kept separate
+  // from the member filter so the member picker and the top-5 ranking can
+  // still see the whole department, not just whoever is currently selected.
+  const departmentClaims = useMemo(() => {
     const on = BASIS[basis].of;
     return rows.filter((r) => {
       if (department && r.department !== department) return false;
@@ -64,6 +76,28 @@ export default function Reports({
       return true;
     });
   }, [rows, basis, from, to, department]);
+
+  const claims = useMemo(
+    () => (member ? departmentClaims.filter((r) => r.employeeId === member) : departmentClaims),
+    [departmentClaims, member],
+  );
+
+  // Who to offer in the member search — only people who actually appear in
+  // this department for the period selected, not the whole company roster.
+  const departmentMembers = useMemo(() => {
+    if (!department) return [];
+    const byId = new Map<string, string>();
+    departmentClaims.forEach((r) => { if (!byId.has(r.employeeId)) byId.set(r.employeeId, r.employeeName); });
+    return [...byId.entries()]
+      .map(([employeeId, name]) => ({ employeeId, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [departmentClaims, department]);
+  const memberMatches = useMemo(() => {
+    const q = memberQuery.trim().toLowerCase();
+    if (!q) return [];
+    return departmentMembers.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [departmentMembers, memberQuery]);
+  const selectedMember = departmentMembers.find((m) => m.employeeId === member);
 
   const totals = useMemo(() => {
     const claimed = claims.reduce((s, r) => s + r.totalClaim, 0);
@@ -87,16 +121,34 @@ export default function Reports({
       by.set(key, t);
     }
     return [...by.entries()]
-      .map(([name, t]) => ({ name, ...t }))
+      .map(([name, t]) => ({ employeeId: undefined as string | undefined, name, ...t }))
       .sort((a, b) => b.claimed - a.claimed)
       .slice(0, 5);
   }, [claims]);
+
+  // Ranked from the whole department, not whichever member is currently
+  // selected — picking someone from the list below should not change the
+  // list itself out from under you.
+  const topMembers = useMemo(() => {
+    const by = new Map<string, { employeeId: string; claimed: number; count: number }>();
+    for (const r of departmentClaims) {
+      const t = by.get(r.employeeId) || { employeeId: r.employeeId, claimed: 0, count: 0 };
+      t.claimed += r.totalClaim;
+      t.count += 1;
+      by.set(r.employeeId, t);
+    }
+    return [...by.entries()]
+      .map(([employeeId, t]) => ({ name: departmentClaims.find((r) => r.employeeId === employeeId)?.employeeName || employeeId, ...t }))
+      .sort((a, b) => b.claimed - a.claimed)
+      .slice(0, 5);
+  }, [departmentClaims]);
 
   if (loading) return <Spinner />;
   if (error) return <Notice tone="error" items={[error]} />;
 
   const period = from || to ? `${from || "the beginning"} to ${to || "today"}` : "all time";
-  const biggest = topTeams[0]?.claimed || 0;
+  const ranking = department ? topMembers : topTeams;
+  const biggest = ranking[0]?.claimed || 0;
 
   const cards = [
     { label: "Total requests", value: String(totals.count), icon: FileText, tone: "text-slate-600 bg-slate-100" },
@@ -149,6 +201,50 @@ export default function Reports({
               ))}
             </select>
           </label>
+
+          {/* Only worth offering once a department narrows the roster down —
+              searching the whole company here would just duplicate the
+              employee search everyone already uses to raise a claim. */}
+          {department && (
+            <label className="relative block">
+              <span className="label">Member</span>
+              {selectedMember ? (
+                <div className="field flex items-center justify-between gap-2">
+                  <span className="truncate text-slate-800">{selectedMember.name}</span>
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs font-semibold text-brand-600 hover:underline"
+                    onClick={() => setMember("")}
+                  >
+                    Clear
+                  </button>
+                </div>
+              ) : (
+                <SearchInput
+                  value={memberQuery}
+                  onChange={setMemberQuery}
+                  placeholder="Search this department by name…"
+                />
+              )}
+              {!selectedMember && memberQuery.trim() && (
+                <ul className="absolute z-10 mt-1 max-h-56 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-lg">
+                  {memberMatches.length ? memberMatches.map((m) => (
+                    <li key={m.employeeId}>
+                      <button
+                        type="button"
+                        onClick={() => { setMember(m.employeeId); setMemberQuery(""); }}
+                        className="block w-full px-4 py-2.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50"
+                      >
+                        {m.name}
+                      </button>
+                    </li>
+                  )) : (
+                    <li className="px-4 py-2.5 text-sm text-slate-500">Nobody in {department} matches “{memberQuery.trim()}”.</li>
+                  )}
+                </ul>
+              )}
+            </label>
+          )}
         </div>
         {(from || to || department || basis !== "submitted") && (
           <button
@@ -174,37 +270,49 @@ export default function Reports({
         ))}
       </div>
 
-      <Card
-        title="Top 5 teams by claim value"
-        subtitle={department ? `Filtered to ${department}, so only one team can appear.` : "Who is claiming the most over this period."}
-      >
-        {!topTeams.length ? (
-          <Empty title="Nothing in this period" hint="Widen the dates or clear the department filter." />
-        ) : (
-          <ol className="space-y-3">
-            {topTeams.map((t, i) => (
-              <li key={t.name}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 truncate text-sm font-medium text-slate-800">
-                    <span className="mr-2 inline-block w-4 text-xs font-bold tabular-nums text-slate-400">{i + 1}</span>
-                    {t.name}
-                  </span>
-                  <span className="shrink-0 text-sm font-semibold text-slate-900">
-                    <Money value={t.claimed} currency={currency} />
-                    <span className="ml-2 text-xs font-normal text-slate-400">{t.count} claim(s)</span>
-                  </span>
-                </div>
-                <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className="h-full rounded-full bg-chart-1"
-                    style={{ width: `${biggest ? Math.max(2, (t.claimed / biggest) * 100) : 0}%` }}
-                  />
-                </div>
-              </li>
-            ))}
-          </ol>
-        )}
-      </Card>
+      {/* Once someone has drilled down to one member, the claims table below
+          already is their claims — a ranking with them as the only row on
+          it would say nothing new. */}
+      {!member && (
+        <Card
+          title={department ? "Top 5 members by claim value" : "Top 5 teams by claim value"}
+          subtitle={department ? `Who in ${department} is claiming the most over this period.` : "Who is claiming the most over this period."}
+        >
+          {!ranking.length ? (
+            <Empty title="Nothing in this period" hint="Widen the dates or clear the department filter." />
+          ) : (
+            <ol className="space-y-3">
+              {ranking.map((t, i) => (
+                <li key={t.employeeId || t.name}>
+                  <button
+                    type="button"
+                    disabled={!department}
+                    onClick={() => t.employeeId && setMember(t.employeeId)}
+                    className={`block w-full text-left ${department ? "cursor-pointer rounded-lg -mx-1 px-1 py-0.5 hover:bg-slate-50" : ""}`}
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate text-sm font-medium text-slate-800">
+                        <span className="mr-2 inline-block w-4 text-xs font-bold tabular-nums text-slate-400">{i + 1}</span>
+                        {t.name}
+                      </span>
+                      <span className="shrink-0 text-sm font-semibold text-slate-900">
+                        <Money value={t.claimed} currency={currency} />
+                        <span className="ml-2 text-xs font-normal text-slate-400">{t.count} claim(s)</span>
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-chart-1"
+                        style={{ width: `${biggest ? Math.max(2, (t.claimed / biggest) * 100) : 0}%` }}
+                      />
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Card>
+      )}
 
       <Card title="Claims in this report" subtitle={`${claims.length} claim(s), newest first.`}>
         {!claims.length ? (
