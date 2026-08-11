@@ -69,14 +69,6 @@ export default function NewRequest({
     () => computeRequest(policy, draft, effectiveUser),
     [policy, draft, effectiveUser],
   );
-  // A rickshaw fare or a personal-vehicle trip has no receipt to attach, so
-  // the Documents step itself is dropped from the wizard rather than shown
-  // empty or collapsed.
-  const steps = computation.needsReceipt ? STEPS : STEPS.slice(0, 3);
-  useEffect(() => {
-    setStep((s) => Math.min(s, steps.length - 1));
-  }, [steps.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const modes = useMemo(
     () => eligibleModes(policy, {
       band: user.band,
@@ -133,7 +125,7 @@ export default function NewRequest({
       onDone(res.request.requestId);
     } catch (err) {
       setError((err as Error).message);
-      setStep(steps.length - 1);
+      setStep(STEPS.length - 1);
     } finally {
       setBusy(false);
     }
@@ -155,7 +147,7 @@ export default function NewRequest({
         </div>
       </div>
 
-      <Stepper step={step} onStep={setStep} steps={steps} />
+      <Stepper step={step} onStep={setStep} />
 
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-5">
@@ -179,7 +171,7 @@ export default function NewRequest({
           {step === 2 && (
             <StepAllowances draft={draft} set={set} policy={policy} user={user} computation={computation} currency={currency} />
           )}
-          {step === 3 && computation.needsReceipt && (
+          {step === 3 && (
             <StepDocuments
               draft={draft}
               set={set}
@@ -205,7 +197,7 @@ export default function NewRequest({
               <button className="btn-ghost flex-1 whitespace-nowrap sm:flex-none" onClick={() => save(false)} disabled={busy}>
                 Save draft
               </button>
-              {step < steps.length - 1 ? (
+              {step < STEPS.length - 1 ? (
                 <button className="btn-primary flex-1 sm:flex-none" onClick={() => setStep((s) => s + 1)}>
                   Next <ArrowRight size={16} />
                 </button>
@@ -230,10 +222,10 @@ export default function NewRequest({
 
 // ── Stepper ─────────────────────────────────────────────────────────────────
 
-function Stepper({ step, onStep, steps }: { step: number; onStep: (n: number) => void; steps: string[] }) {
+function Stepper({ step, onStep }: { step: number; onStep: (n: number) => void }) {
   return (
     <ol className="card flex gap-0.5 overflow-x-auto p-1.5 sm:gap-1 sm:p-2">
-      {steps.map((label, i) => (
+      {STEPS.map((label, i) => (
         <li key={label} className="min-w-0 flex-1">
           <button
             onClick={() => onStep(i)}
