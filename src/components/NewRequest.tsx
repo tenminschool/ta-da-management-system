@@ -4,11 +4,11 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import {
-  bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, fuelRateFor,
-  impliedLegs, type ModeOption,
+  bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
+  impliedLegs, personalVehicleRateFor, type ModeOption,
 } from "../../shared/policy.js";
-import type { Leg, Policy, RequestDraft, SessionUser, TeamMember } from "../../shared/types.js";
-import { Card, ChoiceGrid, Field, Money, MultiSelect, Notice, SearchInput, Toggle } from "./ui.js";
+import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, VehicleRegistration } from "../../shared/types.js";
+import { Card, ChoiceGrid, Field, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
 
 const STEPS = ["Travel Type", "Transportation", "Allowances", "Documents"];
 
@@ -39,11 +39,36 @@ export default function NewRequest({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // undefined = still loading, null = never registered one.
+  const [myVehicle, setMyVehicle] = useState<VehicleRegistration | null | undefined>(undefined);
+  useEffect(() => {
+    api.myVehicle().then((r) => setMyVehicle(r.vehicle)).catch(() => setMyVehicle(null));
+  }, []);
+
   const currency = cfgStr(policy, "CURRENCY", "BDT");
   const set = (patch: Partial<RequestDraft>) => setDraft((d) => ({ ...d, ...patch }));
 
   const teamSize = draft.travelType === "team" ? draft.teamMembers.length + 1 : 1;
-  const computation = useMemo(() => computeRequest(policy, draft, user), [policy, draft, user]);
+  // The rate a personal-vehicle claim prices against comes from this specific
+  // employee's own approved registration — never a pending or rejected one —
+  // so it rides along on a copy of `user` rather than changing what
+  // computeRequest's signature expects.
+  const effectiveUser = useMemo(
+    () => ({
+      ...user,
+      registeredVehicle: myVehicle?.status === "approved"
+        ? {
+          vehicleType: myVehicle.vehicleType, model: myVehicle.model,
+          fuelType: myVehicle.fuelType, mileageKmPerLitre: myVehicle.mileageKmPerLitre,
+        }
+        : undefined,
+    }),
+    [user, myVehicle],
+  );
+  const computation = useMemo(
+    () => computeRequest(policy, draft, effectiveUser),
+    [policy, draft, effectiveUser],
+  );
   const modes = useMemo(
     () => eligibleModes(policy, {
       band: user.band,
@@ -79,6 +104,14 @@ export default function NewRequest({
       set({ transportMode: "" });
     }
   }, [modes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The vehicle is no longer chosen by hand — it is whichever one is approved.
+  useEffect(() => {
+    if (draft.transportMode === "PersonalVehicle" && myVehicle?.status === "approved"
+        && draft.vehicleType !== myVehicle.vehicleType) {
+      set({ vehicleType: myVehicle.vehicleType });
+    }
+  }, [draft.transportMode, myVehicle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const insideCities = policy.cities.filter((c) => c.zone === "Inside");
 
@@ -132,6 +165,7 @@ export default function NewRequest({
             <StepTransport
               draft={draft} set={set} policy={policy} modes={modes} user={user}
               currency={currency} impliedCount={implied.length}
+              myVehicle={myVehicle} onVehicleChange={setMyVehicle}
             />
           )}
           {step === 2 && (
@@ -685,7 +719,7 @@ function TeamPicker({
 // ── Step 3 ──────────────────────────────────────────────────────────────────
 
 function StepTransport({
-  draft, set, policy, modes, user, currency, impliedCount,
+  draft, set, policy, modes, user, currency, impliedCount, myVehicle, onVehicleChange,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -694,6 +728,8 @@ function StepTransport({
   user: SessionUser;
   currency: string;
   impliedCount: number;
+  myVehicle: VehicleRegistration | null | undefined;
+  onVehicleChange: (v: VehicleRegistration) => void;
 }) {
   const inside = draft.scope === "inside";
   const juniorMale = inside && !String(user.gender).toLowerCase().startsWith("f") &&
@@ -737,40 +773,10 @@ function StepTransport({
       )}
 
       {draft.transportMode === "PersonalVehicle" && (
-        <Card title="Personal vehicle" subtitle="Reimbursement = total KM × the fuel rate configured by Administration.">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Vehicle type" required>
-              <select className="field" value={draft.vehicleType} onChange={(e) => set({ vehicleType: e.target.value })}>
-                <option value="">Select</option>
-                <option value="Bike">Own Bike</option>
-                <option value="Car">Own Car</option>
-              </select>
-            </Field>
-            <Field label="Total KM" required>
-              <input
-                type="number"
-                min={0}
-                className="field"
-                value={draft.totalKM || ""}
-                onChange={(e) => set({ totalKM: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Travel from" required>
-              <input className="field" value={draft.travelFrom} onChange={(e) => set({ travelFrom: e.target.value })} />
-            </Field>
-            <Field label="Travel to" required>
-              <input className="field" value={draft.travelTo} onChange={(e) => set({ travelTo: e.target.value })} />
-            </Field>
-          </div>
-          {draft.vehicleType && (
-            <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              {draft.totalKM || 0} km × {fuelRateFor(policy, draft.vehicleType)} {currency}/km ={" "}
-              <span className="font-semibold text-slate-900">
-                <Money value={(draft.totalKM || 0) * fuelRateFor(policy, draft.vehicleType)} currency={currency} />
-              </span>
-            </p>
-          )}
-        </Card>
+        <PersonalVehicleCard
+          draft={draft} set={set} policy={policy} currency={currency}
+          myVehicle={myVehicle} onVehicleChange={onVehicleChange}
+        />
       )}
 
       {inside && draft.transportMode && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
@@ -836,6 +842,183 @@ function StepTransport({
       </Card>
       )}
     </>
+  );
+}
+
+// ── Personal vehicle: register once, HR/Admin approve, then claim against it ──
+
+function PersonalVehicleCard({
+  draft, set, policy, currency, myVehicle, onVehicleChange,
+}: {
+  draft: RequestDraft;
+  set: (p: Partial<RequestDraft>) => void;
+  policy: Policy;
+  currency: string;
+  myVehicle: VehicleRegistration | null | undefined;
+  onVehicleChange: (v: VehicleRegistration) => void;
+}) {
+  // Only used to let someone re-open the form on an already-approved vehicle;
+  // every other state (none registered yet, pending, rejected) shows the form
+  // on its own account, driven by myVehicle itself.
+  const [editing, setEditing] = useState(false);
+  const submitted = (v: VehicleRegistration) => { setEditing(false); onVehicleChange(v); };
+
+  if (myVehicle === undefined) {
+    return (
+      <Card title="Personal vehicle">
+        <Spinner label="Checking your vehicle registration…" />
+      </Card>
+    );
+  }
+
+  if (editing || !myVehicle || myVehicle.status === "rejected") {
+    return (
+      <Card
+        title={myVehicle ? "Update your vehicle" : "Register your vehicle"}
+        subtitle="Reimbursement is worked out from your own vehicle's mileage, once HR or Admin approves it. One registration covers every personal-vehicle claim after that."
+      >
+        {myVehicle?.status === "rejected" && (
+          <div className="mb-4">
+            <Notice
+              tone="error"
+              items={[`Not approved${myVehicle.reviewNote ? ` — ${myVehicle.reviewNote}` : ""}. Update the details and submit again.`]}
+            />
+          </div>
+        )}
+        <VehicleRegisterForm policy={policy} initial={myVehicle} onSubmitted={submitted} />
+      </Card>
+    );
+  }
+
+  if (myVehicle.status === "pending") {
+    return (
+      <Card title="Personal vehicle" subtitle="Waiting on HR or Admin to approve this before it can be claimed against.">
+        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">{myVehicle.vehicleType} — {myVehicle.model}</p>
+          <p className="mt-0.5">{myVehicle.fuelType} · {myVehicle.mileageKmPerLitre} km per litre</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Submitted {myVehicle.submittedAt ? new Date(myVehicle.submittedAt).toLocaleDateString() : "—"}
+          </p>
+        </div>
+      </Card>
+    );
+  }
+
+  // Approved.
+  const fuel = policy.fuelTypes.find((f) => f.value === myVehicle.fuelType);
+  const rate = fuel && myVehicle.mileageKmPerLitre > 0 ? fuel.pricePerLitre / myVehicle.mileageKmPerLitre : 0;
+  const km = Number(draft.totalKM) || 0;
+  const litres = myVehicle.mileageKmPerLitre > 0 ? km / myVehicle.mileageKmPerLitre : 0;
+
+  return (
+    <Card
+      title="Personal vehicle"
+      subtitle={`${myVehicle.vehicleType} — ${myVehicle.model} · ${myVehicle.fuelType}, ${myVehicle.mileageKmPerLitre} km/l. Approved by HR/Admin.`}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Total KM" required>
+          <input
+            type="number"
+            min={0}
+            className="field"
+            value={draft.totalKM || ""}
+            onChange={(e) => set({ totalKM: Number(e.target.value) })}
+          />
+        </Field>
+        <div />
+        <Field label="Travel from" required>
+          <input className="field" value={draft.travelFrom} onChange={(e) => set({ travelFrom: e.target.value })} />
+        </Field>
+        <Field label="Travel to" required>
+          <input className="field" value={draft.travelTo} onChange={(e) => set({ travelTo: e.target.value })} />
+        </Field>
+      </div>
+      {km > 0 && fuel && (
+        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          {km} km ÷ {myVehicle.mileageKmPerLitre} km/l = {litres.toFixed(2)} l of {myVehicle.fuelType} at {fuel.pricePerLitre} {currency}/l ={" "}
+          <span className="font-semibold text-slate-900">
+            <Money value={km * rate} currency={currency} />
+          </span>
+        </p>
+      )}
+      <button type="button" className="mt-4 text-xs font-semibold text-brand-600 hover:underline" onClick={() => setEditing(true)}>
+        Update vehicle details
+      </button>
+    </Card>
+  );
+}
+
+function VehicleRegisterForm({
+  policy, initial, onSubmitted,
+}: {
+  policy: Policy;
+  initial?: VehicleRegistration | null;
+  onSubmitted: (v: VehicleRegistration) => void;
+}) {
+  const [vehicleType, setVehicleType] = useState<"Bike" | "Car">(initial?.vehicleType || "Bike");
+  const [model, setModel] = useState(initial?.model || "");
+  const [fuelType, setFuelType] = useState(initial?.fuelType || policy.fuelTypes[0]?.value || "");
+  const [mileage, setMileage] = useState(initial?.mileageKmPerLitre || 0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      const { vehicle } = await api.registerVehicle({
+        vehicleType, model: model.trim(), fuelType, mileageKmPerLitre: mileage,
+      });
+      onSubmitted(vehicle);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <ChoiceGrid
+        value={vehicleType}
+        onChange={(v) => setVehicleType(v as "Bike" | "Car")}
+        options={[
+          { value: "Bike", label: "Bike", description: "Own motorbike or scooter." },
+          { value: "Car", label: "Car", description: "Own car." },
+        ]}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Model" required hint="e.g. Honda CB Shine 125">
+          <input className="field" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model name" />
+        </Field>
+        <Field label="Fuel type" required>
+          <select className="field" value={fuelType} onChange={(e) => setFuelType(e.target.value)}>
+            <option value="">Select</option>
+            {policy.fuelTypes.map((f) => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Kilometres per litre" required hint="How far this vehicle goes on one litre.">
+          <input
+            type="number"
+            min={0}
+            className="field"
+            value={mileage || ""}
+            onChange={(e) => setMileage(Number(e.target.value))}
+          />
+        </Field>
+      </div>
+      {error && <Notice tone="error" items={[error]} />}
+      <button
+        type="button"
+        className="btn-primary"
+        disabled={busy || !model.trim() || !fuelType || !(mileage > 0)}
+        onClick={submit}
+      >
+        {busy ? <Loader2 size={16} className="animate-spin" /> : null} Submit for approval
+      </button>
+    </div>
   );
 }
 

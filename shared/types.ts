@@ -101,6 +101,28 @@ export interface SessionUser {
    * pointing a report at a new manager takes effect immediately.
    */
   managesOthers?: boolean;
+  /**
+   * This person's own vehicle, once HR or Admin has approved it — never set
+   * from a pending or rejected registration. Read fresh from the Vehicles tab
+   * at every claim computation, the same way claimUnlockUntil is, so an
+   * approval takes effect without signing in again.
+   */
+  registeredVehicle?: { vehicleType: "Bike" | "Car"; model: string; fuelType: string; mileageKmPerLitre: number };
+}
+
+/** One employee's vehicle, submitted for HR/Admin approval before it can be claimed against. */
+export interface VehicleRegistration {
+  employeeId: string;
+  employeeName: string;
+  vehicleType: "Bike" | "Car";
+  model: string;
+  fuelType: string;
+  mileageKmPerLitre: number;
+  status: "pending" | "approved" | "rejected";
+  submittedAt: string;
+  reviewedBy: string;
+  reviewedAt: string;
+  reviewNote: string;
 }
 
 /** How an approved claim is paid out. */
@@ -229,6 +251,8 @@ export interface Policy {
   dualWorkstationOptions: string[];
   paymentMethods: string[];
   documentTypes: string[];
+  /** What Administration currently pays per litre, by fuel type. */
+  fuelTypes: { value: string; label: string; pricePerLitre: number }[];
   approvalFlow: { step: number; stage: string; label: string; roleRequired: string }[];
 }
 

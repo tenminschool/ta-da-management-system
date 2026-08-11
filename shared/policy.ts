@@ -127,10 +127,18 @@ export function coversLunchWindow(policy: Policy, start: string, end: string): b
   return s < le && e > ls;
 }
 
-export function fuelRateFor(policy: Policy, vehicleType: string): number {
-  return vehicleType === "Car"
-    ? cfgNum(policy, "FUEL_RATE_CAR", 10)
-    : cfgNum(policy, "FUEL_RATE_BIKE", 3);
+/**
+ * BDT per km for a personal-vehicle claim — the employee's own approved
+ * mileage against Administration's current fuel price, not a flat band rate.
+ * Null when nothing is approved yet, so a claim can never price against
+ * someone else's vehicle or a guess.
+ */
+export function personalVehicleRateFor(policy: Policy, user: SessionUser): number | null {
+  const v = user.registeredVehicle;
+  if (!v || !(v.mileageKmPerLitre > 0)) return null;
+  const fuel = policy.fuelTypes.find((f) => f.value === v.fuelType);
+  if (!fuel || !(fuel.pricePerLitre > 0)) return null;
+  return money(fuel.pricePerLitre / v.mileageKmPerLitre);
 }
 
 /** Whether administrators have opened bank payment as an alternative to bKash. */
@@ -300,11 +308,21 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
         taAmount = 0;
         notes.push("Company vehicle used — no transport reimbursement is payable.");
       } else if (draft.transportMode === "PersonalVehicle") {
-        fuelRate = fuelRateFor(policy, draft.vehicleType);
-        taAmount = money((Number(draft.totalKM) || 0) * fuelRate);
-        notes.push(
-          `Personal ${draft.vehicleType || "vehicle"}: ${draft.totalKM || 0} km × ${fuelRate} ${cfgStr(policy, "CURRENCY", "BDT")}/km = ${money(taAmount)}.`,
-        );
+        // Null means nothing approved yet; the validation below is what turns
+        // that into a blocking error, so it is only priced at zero here.
+        const rate = personalVehicleRateFor(policy, user);
+        if (rate !== null) {
+          fuelRate = rate;
+          const km = Number(draft.totalKM) || 0;
+          taAmount = money(km * fuelRate);
+          const v = user.registeredVehicle!;
+          const fuelPrice = policy.fuelTypes.find((f) => f.value === v.fuelType)?.pricePerLitre ?? 0;
+          const litres = v.mileageKmPerLitre > 0 ? km / v.mileageKmPerLitre : 0;
+          notes.push(
+            `${v.vehicleType} (${v.model}): ${km} km ÷ ${v.mileageKmPerLitre} km/l = ${litres.toFixed(2)} l of ${v.fuelType} ` +
+            `at ${fuelPrice} ${cfgStr(policy, "CURRENCY", "BDT")}/l — ${km} km × ${fuelRate.toFixed(2)} ${cfgStr(policy, "CURRENCY", "BDT")}/km = ${money(taAmount)}.`,
+          );
+        }
       } else {
         taAmount = money(legTotal);
         if (draft.transportMode) notes.push("Inside-city transport is reimbursed against actual receipts.");
@@ -534,9 +552,14 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     }
     if (!draft.transportMode) errors.push("Select a mode of transport.");
     if (draft.transportMode === "PersonalVehicle") {
-      if (!draft.vehicleType) errors.push("Select the personal vehicle type.");
-      if (!(Number(draft.totalKM) > 0)) errors.push("Total KM is required for a personal vehicle claim.");
-      if (!draft.travelFrom || !draft.travelTo) errors.push("Travel from and to are required for a personal vehicle claim.");
+      // The vehicle itself is no longer chosen here — it is whichever one HR
+      // or Admin has approved, so without one there is no rate to claim against.
+      if (!user.registeredVehicle) {
+        errors.push("Register your vehicle and get it approved by HR or Admin before claiming a personal-vehicle trip.");
+      } else {
+        if (!(Number(draft.totalKM) > 0)) errors.push("Total KM is required for a personal vehicle claim.");
+        if (!draft.travelFrom || !draft.travelTo) errors.push("Travel from and to are required for a personal vehicle claim.");
+      }
     }
     if (draft.transportMode === "RideSharing" && legTotal <= 0) {
       errors.push("Add at least one ride-sharing trip with its amount and receipt.");

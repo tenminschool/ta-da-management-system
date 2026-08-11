@@ -127,6 +127,19 @@ export const TABS: TabSpec[] = [
     ],
   },
 
+  // ── One row per employee's vehicle, HR/Admin approval before it can be
+  //    claimed against ────────────────────────────────────────────────────
+  {
+    title: "Vehicles",
+    color: BLUE,
+    widths: [110, 170, 90, 180, 90, 130, 100, 160, 170, 160, 260],
+    headers: [
+      "employee_id", "employee_name", "vehicle_type", "model", "fuel_type",
+      "mileage_km_per_litre", "status", "submitted_at",
+      "reviewed_by", "reviewed_at", "review_note",
+    ],
+  },
+
 
   // ── Admin-configurable policy ─────────────────────────────────────────────
   {
@@ -243,6 +256,12 @@ export const TABS: TabSpec[] = [
       ["OtherOffice", "Panthapath LC", "Panthapath LC", "", "", "Yes"],
       ["OtherOffice", "Moghbazar LC", "Moghbazar LC", "", "", "Yes"],
       ["OtherOffice", "Mirpur Telesales Office", "Mirpur Telesales Office", "", "", "Yes"],
+
+      // What a registered vehicle is reimbursed against. `Extra1` is the price
+      // per litre in BDT — Administration's own knob, edited right here same
+      // as everything else, no separate settings screen.
+      ["FuelType", "Petrol", "Petrol", "130", "", "Yes"],
+      ["FuelType", "Octane", "Octane", "140", "", "Yes"],
 
       ["WorkedAt", "Office", "Office", "", "", "Yes"],
       ["WorkedAt", "Partner Office", "Partner Office", "", "", "Yes"],

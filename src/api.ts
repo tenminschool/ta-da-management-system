@@ -1,7 +1,7 @@
 /** Typed fetch wrapper. Holds the session token and unwraps API errors. */
 
 import type {
-  ApprovalRow, Computation, Policy, RequestDraft, RequestRecord, SessionUser,
+  ApprovalRow, Computation, Policy, RequestDraft, RequestRecord, SessionUser, VehicleRegistration,
 } from "../shared/types.js";
 import type { ModeOption } from "../shared/policy.js";
 
@@ -205,6 +205,14 @@ export const api = {
 
   claimUnlock: (employeeId: string, until: string) =>
     post<{ ok: boolean; employeeId: string; until: string }>("/admin/claim-unlock", { employeeId, until }),
+
+  myVehicle: () => call<{ vehicle: VehicleRegistration | null }>("/vehicles/mine"),
+  registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number }) =>
+    post<{ vehicle: VehicleRegistration }>("/vehicles", payload),
+  vehicles: (scope: "pending" | "all" = "pending") =>
+    call<{ vehicles: VehicleRegistration[] }>(`/vehicles?scope=${scope}`),
+  decideVehicle: (employeeId: string, action: "approve" | "reject", remarks: string) =>
+    post<{ vehicle: VehicleRegistration }>(`/vehicles/${encodeURIComponent(employeeId)}/decide`, { action, remarks }),
 
   advances: (scope: "mine" | "desk") =>
     call<{ requests: (RequestRecord & { myStep: AdvanceStep | null })[] }>(`/advances?scope=${scope}`),

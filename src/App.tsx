@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Banknote, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
+  Banknote, Car, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
   LogOut, Menu, Plus, Settings, ShieldCheck, User, Wallet, X,
 } from "lucide-react";
 import { useTenMSAuth } from "@tenminuteschool/auth-admin-react";
@@ -15,6 +15,7 @@ import RequestDetail from "./components/RequestDetail.js";
 import Advances from "./components/Advances.js";
 import AdminConfig from "./components/AdminConfig.js";
 import Reports from "./components/Reports.js";
+import VehicleRegistrations from "./components/VehicleRegistrations.js";
 import { Spinner } from "./components/ui.js";
 
 /**
@@ -157,6 +158,7 @@ export default function App() {
     { key: "desk-all", label: "All Claims", short: "All", icon: ListChecks, show: true },
     { key: "desk-pending", label: "Pending Approvals", short: "Pending", icon: Inbox, show: true, badge: inbox },
     { key: "desk-advances", label: "Advance Approvals", short: "Advance", icon: HandCoins, show: reviewsAdvances },
+    { key: "desk-vehicles", label: "Vehicle Registrations", short: "Vehicles", icon: Car, show: isAdmin },
     { key: "desk-payments", label: "Payments", short: "Pay", icon: Banknote, show: isFinance || isAdmin },
     { key: "admin", label: "Configuration", short: "Config", icon: Settings, show: isAdmin },
   ] as (NavItem & { show: boolean })[]).filter((n) => n.show).map(({ show: _show, ...n }) => n);
@@ -410,6 +412,8 @@ export default function App() {
           {view.name === "desk-advances" && (
             <Advances scope="desk" policy={policy} onOpen={(requestId) => setView({ name: "detail", requestId })} />
           )}
+
+          {view.name === "desk-vehicles" && <VehicleRegistrations policy={policy} />}
 
           {view.name === "desk-payments" && (
             <RequestList

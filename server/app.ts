@@ -20,13 +20,13 @@ import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
 import {
-  allEmployees, deptHeadIdFor, fromRequest, invalidateEmployees, invalidatePolicy, loadPolicy,
+  allEmployees, deptHeadIdFor, fromRequest, fromVehicle, invalidateEmployees, invalidatePolicy, loadPolicy,
   managesOthers, nextRequestId, nowISO, parseLinks, rememberAuthId, STAGE_COLUMN, toApprovalRow,
-  toRequest, upsertApproval,
+  toRequest, toVehicle, upsertApproval,
 } from "./store.js";
-import { addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, fuelRateFor, money } from "../shared/policy.js";
+import { addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor } from "../shared/policy.js";
 import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
-import type { RequestDraft, RequestRecord, Status } from "../shared/types.js";
+import type { RequestDraft, RequestRecord, SessionUser, Status, VehicleRegistration } from "../shared/types.js";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -535,12 +535,16 @@ function buildRecord(
     workedAt: draft.workedAt,
     arrangement: draft.arrangement,
     transportMode: draft.transportMode,
-    vehicleType: draft.vehicleType,
+    // For a personal-vehicle claim this is the approved registration's type,
+    // not whatever the client sent — the client only ever displays it now.
+    vehicleType: draft.transportMode === "PersonalVehicle"
+      ? (session.registeredVehicle?.vehicleType || draft.vehicleType)
+      : draft.vehicleType,
     carSpecialApproval: draft.carSpecialApproval,
     travelFrom: draft.travelFrom,
     travelTo: draft.travelTo,
     totalKM: draft.totalKM,
-    fuelRate: draft.transportMode === "PersonalVehicle" ? fuelRateFor(policy, draft.vehicleType) : 0,
+    fuelRate: draft.transportMode === "PersonalVehicle" ? (personalVehicleRateFor(policy, session) ?? 0) : 0,
     legs: draft.legs,
     taAmount: computation.taAmount,
     perDiemDays: computation.perDiemDays,
@@ -647,9 +651,22 @@ async function ensureUniqueRequestId(
  * A late-claim unlock is granted after the token was signed, so trusting the
  * token would keep the window shut until the person signed in again.
  */
+/** This employee's vehicle, if HR or Admin has approved one — never a pending or rejected one. */
+async function approvedVehicleFor(employeeId: string): Promise<SessionUser["registeredVehicle"]> {
+  const rows = await readTab("Vehicles");
+  const row = rows.map(toVehicle).find((v) => v.employeeId === employeeId && v.status === "approved");
+  return row
+    ? { vehicleType: row.vehicleType, model: row.model, fuelType: row.fuelType, mileageKmPerLitre: row.mileageKmPerLitre }
+    : undefined;
+}
+
 async function currentSession(session: Session): Promise<Session> {
   const row = (await allEmployees()).find((e) => e.employeeId === session.employeeId);
-  return row ? { ...session, claimUnlockUntil: row.claimUnlockUntil || "" } : session;
+  return {
+    ...session,
+    claimUnlockUntil: row?.claimUnlockUntil || "",
+    registeredVehicle: await approvedVehicleFor(session.employeeId),
+  };
 }
 
 async function awaitingAcknowledgement(employeeId: string): Promise<string[]> {
@@ -664,7 +681,10 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   const policy = await loadPolicy();
   const draft = normaliseDraft(req.body?.draft);
   const submit = req.body?.submit !== false;
-  const computation = computeRequest(policy, draft, await currentSession(req.session));
+  // Read once and reused below: buildRecord's fuel_rate has to be priced
+  // against the same registered vehicle the amount itself was computed from.
+  const session = await currentSession(req.session);
+  const computation = computeRequest(policy, draft, session);
 
   if (submit) {
     const waiting = await awaitingAcknowledgement(req.session.employeeId);
@@ -693,7 +713,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   const prefix = cfgStr(policy, "REQUEST_ID_PREFIX", "TA");
   const written = await withSheetLock(async () => {
     const requestId = await nextRequestId(prefix);
-    const built = buildRecord(draft, computation, req.session, policy, {
+    const built = buildRecord(draft, computation, session, policy, {
       requestId,
       createdAt: now,
       status: submit ? "manager_review" : "draft",
@@ -743,13 +763,16 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
       return;
     }
   }
-  const computation = computeRequest(policy, draft, await currentSession(req.session));
+  // Read once and reused below, same as on create: buildRecord's fuel_rate has
+  // to be priced against the same registered vehicle the amount used.
+  const session = await currentSession(req.session);
+  const computation = computeRequest(policy, draft, session);
   if (submit && computation.errors.length) {
     res.status(400).json({ error: computation.errors[0], computation });
     return;
   }
 
-  const updated = buildRecord(draft, computation, req.session, policy, {
+  const updated = buildRecord(draft, computation, session, policy, {
     ...existing,
     status: submit ? "manager_review" : "draft",
     submittedAt: submit ? nowISO() : existing.submittedAt,
@@ -1243,6 +1266,108 @@ app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
   await updateRow("Employees", _row, { ...rest, claim_unlock_until: until });
   invalidateEmployees();
   res.json({ ok: true, employeeId, until });
+}));
+
+// ── Vehicles: register, approve, claim against ──────────────────────────────
+
+/** The signed-in employee's own vehicle registration, whatever state it is in. */
+app.get("/api/vehicles/mine", requireAuth, handler(async (req, res) => {
+  const rows = await readTab("Vehicles");
+  const row = rows.map(toVehicle).find((v) => v.employeeId === req.session.employeeId);
+  if (!row) { res.json({ vehicle: null }); return; }
+  const { _row, ...vehicle } = row;
+  res.json({ vehicle });
+}));
+
+/**
+ * Submits a vehicle for approval, or resubmits one already on file.
+ *
+ * One row per employee — a resubmission overwrites it and drops the status
+ * back to pending, since a changed mileage or fuel type changes the rate a
+ * claim would be priced at, and that has to be looked at again.
+ */
+app.post("/api/vehicles", requireAuth, handler(async (req, res) => {
+  const vehicleType = req.body?.vehicleType === "Car" ? "Car" : req.body?.vehicleType === "Bike" ? "Bike" : "";
+  const model = String(req.body?.model || "").trim();
+  const fuelType = String(req.body?.fuelType || "").trim();
+  const mileageKmPerLitre = Number(req.body?.mileageKmPerLitre);
+
+  if (!vehicleType) { res.status(400).json({ error: "Select whether this is a bike or a car." }); return; }
+  if (!model) { res.status(400).json({ error: "Enter the vehicle's model." }); return; }
+  const policy = await loadPolicy();
+  if (!policy.fuelTypes.some((f) => f.value === fuelType)) {
+    res.status(400).json({ error: "Select a fuel type." });
+    return;
+  }
+  if (!(mileageKmPerLitre > 0)) {
+    res.status(400).json({ error: "Enter how many km this vehicle does on one litre." });
+    return;
+  }
+
+  const record: VehicleRegistration = {
+    employeeId: req.session.employeeId,
+    employeeName: req.session.name,
+    vehicleType,
+    model,
+    fuelType,
+    mileageKmPerLitre,
+    status: "pending",
+    submittedAt: nowISO(),
+    reviewedBy: "",
+    reviewedAt: "",
+    reviewNote: "",
+  };
+
+  const rows = await readTab("Vehicles");
+  const existing = rows.find((r) => r.employee_id === req.session.employeeId);
+  if (existing) await updateRow("Vehicles", existing._row, fromVehicle(record));
+  else await appendRow("Vehicles", fromVehicle(record));
+
+  res.json({ vehicle: record });
+}));
+
+/** The vehicles HR/Admin have to decide on — or everyone's, for a full register. */
+app.get("/api/vehicles", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const scope = String(req.query.scope || "pending");
+  const rows = (await readTab("Vehicles")).map(toVehicle);
+  const filtered = scope === "all" ? rows : rows.filter((v) => v.status === "pending");
+  const vehicles = filtered
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    .map(({ _row, ...v }) => v);
+  res.json({ vehicles });
+}));
+
+app.post("/api/vehicles/:employeeId/decide", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const action = req.body?.action === "approve" ? "approved" : req.body?.action === "reject" ? "rejected" : "";
+  const remarks = String(req.body?.remarks || "").trim();
+  if (!action) { res.status(400).json({ error: "Unknown action." }); return; }
+  if (action === "rejected" && !remarks) {
+    res.status(400).json({ error: "Add a remark explaining why this vehicle was not approved." });
+    return;
+  }
+
+  const rows = await readTab("Vehicles");
+  const row = rows.find((r) => r.employee_id === req.params.employeeId);
+  if (!row) { res.status(404).json({ error: "No vehicle registration for that employee." }); return; }
+  const { _row, ...current } = toVehicle(row);
+
+  const updated: VehicleRegistration = {
+    ...current,
+    status: action,
+    reviewedBy: `${req.session.name} <${req.session.email}>`,
+    reviewedAt: nowISO(),
+    reviewNote: remarks,
+  };
+  await updateRow("Vehicles", _row, fromVehicle(updated));
+  res.json({ vehicle: updated });
 }));
 
 app.post("/api/admin/tabs/:tab", requireAuth, handler(async (req, res) => {

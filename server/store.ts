@@ -11,7 +11,7 @@
 import crypto from "crypto";
 import { appendRow, readTab, readTabs, updateRow, withSheetLock, type Row } from "./sheets.js";
 import type {
-  ApprovalRow, Leg, Policy, RequestRecord, Role, SessionUser, StageKey, Status, TeamMember,
+  ApprovalRow, Leg, Policy, RequestRecord, Role, SessionUser, StageKey, Status, TeamMember, VehicleRegistration,
 } from "../shared/types.js";
 
 const num = (v: string | undefined): number => {
@@ -99,6 +99,7 @@ export async function loadPolicy(): Promise<Policy> {
     dualWorkstationOptions: of("DualWorkstation").map((r) => r.value),
     paymentMethods: of("PaymentMethod").map((r) => r.value),
     documentTypes: of("DocumentType").map((r) => r.value),
+    fuelTypes: of("FuelType").map((r) => ({ value: r.value, label: r.label || r.value, pricePerLitre: num(r.extra_1) })),
     approvalFlow: of("ApprovalStage")
       .map((r) => ({ step: num(r.extra_1), stage: r.value, label: r.label || r.value, roleRequired: r.extra_2 }))
       .sort((a, b) => a.step - b.step),
@@ -444,6 +445,43 @@ export function fromRequest(req: RequestRecord): Row {
     paid_by: req.paidBy,
     policy_notes: req.policyNotes,
     employee_note: req.employeeNote,
+  };
+}
+
+// ── Vehicles ─────────────────────────────────────────────────────────────────
+// One row per employee. A resubmission overwrites it in place rather than
+// adding a row — there is only ever one current registration to approve.
+
+export function toVehicle(r: Row & { _row: string }): VehicleRegistration & { _row: string } {
+  return {
+    _row: r._row,
+    employeeId: r.employee_id,
+    employeeName: r.employee_name,
+    vehicleType: r.vehicle_type === "Car" ? "Car" : "Bike",
+    model: r.model,
+    fuelType: r.fuel_type,
+    mileageKmPerLitre: num(r.mileage_km_per_litre),
+    status: (["pending", "approved", "rejected"].includes(r.status) ? r.status : "pending") as VehicleRegistration["status"],
+    submittedAt: r.submitted_at,
+    reviewedBy: r.reviewed_by,
+    reviewedAt: r.reviewed_at,
+    reviewNote: r.review_note,
+  };
+}
+
+export function fromVehicle(v: VehicleRegistration): Row {
+  return {
+    employee_id: v.employeeId,
+    employee_name: v.employeeName,
+    vehicle_type: v.vehicleType,
+    model: v.model,
+    fuel_type: v.fuelType,
+    mileage_km_per_litre: String(v.mileageKmPerLitre),
+    status: v.status,
+    submitted_at: v.submittedAt,
+    reviewed_by: v.reviewedBy,
+    reviewed_at: v.reviewedAt,
+    review_note: v.reviewNote,
   };
 }
 
