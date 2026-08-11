@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, ArrowRight, Check, ChevronDown, FileText, FileUp, Loader2, Plus, Send, Trash2, Users,
 } from "lucide-react";
@@ -90,12 +90,20 @@ export default function NewRequest({
     draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection, draft.purpose,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
+  // How many legs were auto-generated last time this ran — e.g. switching a
+  // two-way trip back to one-way shrinks the auto portion. Legs between the
+  // new and old count were themselves auto-generated and are now stale, not
+  // something the person added by hand, so they are dropped rather than left
+  // behind as a lookalike "manual" trip with its own amount box.
+  const prevAutoCountRef = useRef(0);
   useEffect(() => {
+    const keepFrom = Math.max(prevAutoCountRef.current, implied.length);
     setDraft((d) => {
-      const kept = d.legs.slice(implied.length);
+      const kept = d.legs.slice(keepFrom);
       const merged = implied.map((l, i) => ({ ...l, amount: d.legs[i]?.amount ?? 0, note: d.legs[i]?.note ?? "" }));
       return { ...d, legs: [...merged, ...kept] };
     });
+    prevAutoCountRef.current = implied.length;
   }, [impliedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switching city scope invalidates a mode that only exists on the other side.
