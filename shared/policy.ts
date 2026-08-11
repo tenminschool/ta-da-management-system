@@ -727,12 +727,15 @@ export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
 
   if (draft.scope === "inside") {
     const kind = policy.destinationTypes.find((d) => d.value === draft.destinationType);
-    // An "Other Office" destination keeps which office in the purpose, so name
-    // it here — "Other Office" on its own says nothing about where you went.
-    const named = kind?.needs === "office"
-      ? [kind.label, draft.purpose].filter(Boolean).join(" — ")
-      : kind?.label || "";
-    const there = draft.destination || named;
+    // A 10MS Office trip starts from HQ, not from whichever city is on the
+    // draft — the destination is the specific office picked, not a place name.
+    if (kind?.needs === "office") {
+      const office = draft.purpose || kind.label;
+      const outward = leg(draft.fromDate, "HQ", office);
+      if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, office, "HQ")];
+      return [outward];
+    }
+    const there = draft.destination || kind?.label || "";
     const outward = leg(draft.fromDate, draft.city, there);
     // Two-way is the same day back to the office — a second fare, priced
     // separately, not the outward one doubled.
