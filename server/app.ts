@@ -8,7 +8,11 @@
  */
 
 import "dotenv/config";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { type NextFunction, type Request, type Response } from "express";
+import ExcelJS from "exceljs";
 
 import {
   apiCalls, appendRow, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls, updateRow,
@@ -394,6 +398,84 @@ app.get("/api/requests/:id", requireAuth, handler(async (req, res) => {
     canEdit: record.employeeId === req.session.employeeId && ["draft", "returned"].includes(record.status),
     advanceStep: await advanceStepFor(req.session, record),
   });
+}));
+
+// ── Payment export (the bKash bulk-disbursement file) ───────────────────────
+
+/**
+ * bKash's own bulk-disbursement workbook: Finance fills in Wallet No and
+ * Principal Amount on the Client sheet, and every other sheet's formulas
+ * (fees, the summary, the final upload format) recalculate from those in
+ * Excel. Read once and reused — the template file on disk never changes.
+ *
+ * This server runs both as plain ESM (`tsx` in dev, and Vercel's function
+ * builder) and as an esbuild CJS bundle (the self-hosted build) — and
+ * `import.meta.url` comes back empty in that CJS output, so `__dirname` (a
+ * real CJS global there) is tried first. The bundle also lands next to
+ * Vite's own `dist/assets`, so the self-hosted copy sits in a differently
+ * named folder to avoid mixing a server-only file into the public static
+ * output — see the "build" script in package.json.
+ */
+declare const __dirname: string | undefined;
+const PAYMENT_TEMPLATE_PATH = typeof __dirname !== "undefined"
+  ? path.join(__dirname, "server-assets", "payment-template.xlsx")
+  : path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "payment-template.xlsx");
+let paymentTemplateBuffer: Buffer | null = null;
+async function paymentTemplate(): Promise<Buffer> {
+  if (!paymentTemplateBuffer) paymentTemplateBuffer = await readFile(PAYMENT_TEMPLATE_PATH);
+  return paymentTemplateBuffer;
+}
+
+app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "finance")) {
+    res.status(403).json({ error: "Only Finance or Admin can export a payment file." });
+    return;
+  }
+  const ids: string[] = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length) {
+    res.status(400).json({ error: "Select at least one claim to export." });
+    return;
+  }
+
+  const rows = await readTab("Requests");
+  const byId = new Map(rows.map((r) => [r.request_id, toRequest(r)]));
+
+  // A bank payout has no wallet to disburse to — those, along with anything
+  // the caller cannot see, are left out and reported back rather than
+  // silently dropped.
+  const skipped: string[] = [];
+  const payouts: { wallet: string; principal: number }[] = [];
+  for (const id of ids) {
+    const record = byId.get(id);
+    if (!record || !canView(req.session, record) || record.payoutMethod === "bank" || !record.bkashNumber) {
+      skipped.push(id);
+      continue;
+    }
+    payouts.push({ wallet: record.bkashNumber, principal: record.approvedAmount > 0 ? record.approvedAmount : record.finalPayable });
+  }
+  if (!payouts.length) {
+    res.status(400).json({ error: "None of the selected claims pay out to a bKash number." });
+    return;
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await paymentTemplate());
+  // Values were written by us, not by Excel, so nothing is marked dirty —
+  // without this the Final/Fee/bKash sheets would open still showing blank.
+  workbook.calcProperties.fullCalcOnLoad = true;
+  const client = workbook.getWorksheet("Client");
+  if (!client) throw new Error("The payment template is missing its Client sheet.");
+  payouts.forEach((p, i) => {
+    const row = 4 + i;
+    client.getCell(`B${row}`).value = p.wallet;
+    client.getCell(`C${row}`).value = p.principal;
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="bkash-payment-${nowISO().slice(0, 10)}.xlsx"`);
+  if (skipped.length) res.setHeader("X-Skipped-Ids", encodeURIComponent(skipped.join(",")));
+  res.send(Buffer.from(buffer));
 }));
 
 // ── Live policy preview (no writes) ─────────────────────────────────────────

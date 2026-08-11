@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Download, RotateCcw, X } from "lucide-react";
+import { ChevronRight, Download, FileSpreadsheet, RotateCcw, X } from "lucide-react";
 import { api, type RequestListItem } from "../api.js";
 import { STATUS_GROUPS, STATUS_LABEL, type StatusGroup } from "../../shared/types.js";
 import { downloadCSV } from "../lib/csv.js";
-import { Card, Empty, Money, ProgressBar, SearchInput, Spinner, StatusBadge } from "./ui.js";
+import { Card, Empty, Money, Notice, ProgressBar, SearchInput, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestList({
   scope, title, subtitle, onOpen, refreshKey, showEmployee = true, showFilters = false,
@@ -35,6 +35,8 @@ export default function RequestList({
   const [waiting, setWaiting] = useState("");
   const [quick, setQuick] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState<{ tone: "warn" | "error"; text: string } | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -83,9 +85,35 @@ export default function RequestList({
     });
   const totalValue = filtered.reduce((s, r) => s + r.finalPayable, 0);
 
+  /** The bKash bulk-disbursement file, built from whichever rows are ticked. */
+  async function exportPaymentFile() {
+    setExporting(true);
+    setExportNotice(null);
+    try {
+      const { blob, filename, skipped } = await api.paymentExport([...picked]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (skipped.length) {
+        setExportNotice({
+          tone: "warn",
+          text: `${skipped.length} of ${picked.size} claim(s) were left out of the file — no bKash number to pay: ${skipped.join(", ")}.`,
+        });
+      }
+    } catch (err) {
+      setExportNotice({ tone: "error", text: (err as Error).message });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   function reset() {
     setQuick("");
     setPicked(new Set());
+    setExportNotice(null);
     setQ("");
     setStatus("");
     setDepartment("");
@@ -204,15 +232,27 @@ export default function RequestList({
               {picked.size ? `${picked.size} selected · ` : ""}
               <Money value={pickedRows.reduce((sum, r) => sum + r.finalPayable, 0)} /> payable
             </span>
-            <button
-              className="btn-primary ml-auto !px-3 !py-1.5 text-xs"
-              disabled={!picked.size}
-              onClick={() => downloadCSV(`claims-${new Date().toISOString().slice(0, 10)}.csv`, pickedRows)}
-            >
-              <Download size={14} /> Download CSV
-            </button>
+            <div className="ml-auto flex gap-2">
+              <button
+                className="btn-ghost !px-3 !py-1.5 text-xs"
+                disabled={!picked.size}
+                onClick={() => downloadCSV(`claims-${new Date().toISOString().slice(0, 10)}.csv`, pickedRows)}
+              >
+                <Download size={14} /> Download CSV
+              </button>
+              <button
+                className="btn-primary !px-3 !py-1.5 text-xs"
+                disabled={!picked.size || exporting}
+                onClick={exportPaymentFile}
+                title="The bKash bulk-disbursement workbook — Wallet No and Principal Amount filled in, everything else left as it is."
+              >
+                <FileSpreadsheet size={14} /> {exporting ? "Building…" : "Download payment file"}
+              </button>
+            </div>
           </div>
         )}
+
+        {exportNotice && <Notice tone={exportNotice.tone} items={[exportNotice.text]} />}
 
         {loading ? (
           <Spinner />

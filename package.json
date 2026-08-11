@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "setup": "tsx scripts/setup-sheets.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && mkdir -p dist/server-assets && cp server/assets/payment-template.xlsx dist/server-assets/",
     "start": "NODE_ENV=production node dist/server.cjs",
     "lint": "tsc --noEmit",
     "vercel-build": "vite build"
@@ -14,6 +14,7 @@
   "dependencies": {
     "@tenminuteschool/auth-admin-react": "^0.4.0",
     "dotenv": "^17.2.3",
+    "exceljs": "^4.4.0",
     "express": "^4.21.2",
     "googleapis": "^173.0.0",
     "lucide-react": "^0.546.0",

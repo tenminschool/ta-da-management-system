@@ -225,4 +225,27 @@ export const api = {
     ),
   saveTab: (tab: string, rows: Record<string, string>[]) =>
     post<{ ok: boolean }>(`/admin/tabs/${encodeURIComponent(tab)}`, { rows }),
+
+  /**
+   * The bKash bulk-disbursement workbook — binary, not JSON, so this bypasses
+   * `call` and reads the response as a Blob instead.
+   */
+  paymentExport: async (ids: string[]): Promise<{ blob: Blob; filename: string; skipped: string[] }> => {
+    const res = await fetch("/api/requests/payment-export", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body: JSON.stringify({ ids }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Request failed (${res.status})`);
+    }
+    const filename = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "bkash-payment.xlsx";
+    const skippedHeader = res.headers.get("X-Skipped-Ids");
+    const skipped = skippedHeader ? decodeURIComponent(skippedHeader).split(",") : [];
+    return { blob: await res.blob(), filename, skipped };
+  },
 };
