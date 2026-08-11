@@ -257,7 +257,7 @@ export default function RequestDetail({
       )}
 
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_22rem]">
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           <Card title="Travel">
             <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               <Row label="Type" value={r.scope === "inside" ? "Inside city" : "Outside city"} />
@@ -445,7 +445,7 @@ export default function RequestDetail({
           </Card>
         </div>
 
-        <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+        <aside className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
           <div className="card overflow-hidden">
             <div className="border-b border-slate-200 bg-slate-50 px-5 py-3">
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Claim summary</p>
