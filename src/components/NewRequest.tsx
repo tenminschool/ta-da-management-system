@@ -22,6 +22,13 @@ export default function NewRequest({
   onCancel: () => void;
 }) {
   const [step, setStep] = useState(0);
+  // Next/Back swaps in an entirely different set of fields; staying scrolled
+  // to wherever the previous step left off — often the bottom, since that is
+  // where the button just clicked lives — showed the new step's middle with
+  // nothing above it to explain what was on screen.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [step]);
   const [draft, setDraft] = useState<RequestDraft>(() => {
     if (editing?.draft) return editing.draft;
     // Pre-fill the payout number from the Employees sheet so most people only
