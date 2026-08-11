@@ -215,7 +215,7 @@ export const TABS: TabSpec[] = [
       // The last column is the on/off switch: turn one back on here and it
       // reappears in the form, no code change needed.
       ["TransportMode", "Rickshaw", "Rickshaw", "Inside", "No", "Yes"],
-      ["TransportMode", "Bike", "Bike", "Inside", "No", "Yes"],
+      ["TransportMode", "Bike", "Bike", "Inside", "Yes", "Yes"],
       ["TransportMode", "CNG", "CNG", "Inside", "No", "No"],
       ["TransportMode", "Car", "Car", "Inside", "No", "No"],
       ["TransportMode", "CompanyVehicle", "Company Vehicle", "Both", "No", "No"],
