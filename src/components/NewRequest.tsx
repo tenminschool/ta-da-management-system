@@ -848,11 +848,21 @@ function StepTransport({
       {inside && draft.transportMode && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
         <Card title="One way, or there and back?">
           <ChoiceGrid
+            columns={3}
             value={draft.tripDirection}
-            onChange={(tripDirection) => set({ tripDirection: tripDirection as RequestDraft["tripDirection"] })}
+            onChange={(tripDirection) =>
+              set({
+                tripDirection: tripDirection as RequestDraft["tripDirection"],
+                // Stepping back out of More Ways drops whatever extra stops
+                // were chained on — One way and Two way have no "add" button
+                // to remove them with otherwise.
+                legs: tripDirection === "more_ways" ? draft.legs : draft.legs.slice(0, impliedCount),
+              })
+            }
             options={[
               { value: "one_way", label: "One way", description: "Office to the destination — a single fare." },
               { value: "two_way", label: "Two way", description: "Office to the destination, and back to office — two fares." },
+              { value: "more_ways", label: "More Ways", description: "Several stops in one trip — add each leg as you go." },
             ]}
           />
         </Card>
@@ -864,6 +874,12 @@ function StepTransport({
           set={set}
           currency={currency}
           autoCount={impliedCount}
+          // One way and Two way are exactly the fare(s) the trip implies —
+          // nothing to add by hand. More Ways is a chain of stops the
+          // traveller builds up themselves, so each new leg starts where the
+          // last one left off rather than blank.
+          allowAdd={!inside || draft.tripDirection === "more_ways"}
+          chainNewLegs={inside && draft.tripDirection === "more_ways"}
           title={inside ? "Trips taken" : "Travel tickets"}
           subtitle={
             inside
@@ -1021,7 +1037,7 @@ function PersonalVehicleCard({
 
 
 function LegsEditor({
-  draft, set, currency, title, subtitle, autoCount,
+  draft, set, currency, title, subtitle, autoCount, allowAdd = true, chainNewLegs = false,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -1030,6 +1046,10 @@ function LegsEditor({
   subtitle: string;
   /** How many leading trips the form worked out for itself. */
   autoCount: number;
+  /** One way and Two way are exactly what the trip implies — nothing to add. */
+  allowAdd?: boolean;
+  /** More Ways: each new leg starts where the last one left off. */
+  chainNewLegs?: boolean;
 }) {
   const legs = draft.legs;
   const update = (i: number, patch: Partial<Leg>) =>
@@ -1053,19 +1073,30 @@ function LegsEditor({
       title={title}
       subtitle={subtitle}
       actions={
-        <button
-          className="btn-ghost !px-3 !py-1.5 text-xs"
-          onClick={() =>
-            set({
-              legs: [
-                ...legs,
-                { travelDate: draft.fromDate, mode: draft.transportMode, travelFrom: "", travelTo: "", amount: 0, note: "" },
-              ],
-            })
-          }
-        >
-          <Plus size={14} /> Add another trip
-        </button>
+        allowAdd && (
+          <button
+            className="btn-ghost !px-3 !py-1.5 text-xs"
+            onClick={() =>
+              set({
+                legs: [
+                  ...legs,
+                  {
+                    travelDate: draft.fromDate,
+                    mode: draft.transportMode,
+                    // Chained trips continue from wherever the last leg
+                    // ended — only the next stop is new information.
+                    travelFrom: chainNewLegs ? legs[legs.length - 1]?.travelTo || "" : "",
+                    travelTo: "",
+                    amount: 0,
+                    note: "",
+                  },
+                ],
+              })
+            }
+          >
+            <Plus size={14} /> Add another trip
+          </button>
+        )
       }
     >
       {!legs.length ? (
@@ -1088,6 +1119,38 @@ function LegsEditor({
                   </div>
                   <div className="w-32 shrink-0">{amount(leg, i)}</div>
                 </div>
+              ) : chainNewLegs ? (
+                /* A More Ways stop: same day, continuing from wherever the
+                   last leg ended — only where it goes next is new. */
+                <>
+                  <div className="mb-2 flex items-center justify-between sm:hidden">
+                    <span className="text-xs font-bold text-slate-500">Trip {i + 1}</span>
+                    <button
+                      onClick={() => remove(i)}
+                      className="rounded-lg p-2 text-slate-400 active:bg-rose-50 active:text-rose-600"
+                      aria-label="Remove trip"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="grid gap-2.5 sm:grid-cols-[9rem_1fr_1fr_8rem_auto] sm:items-center sm:gap-3">
+                    <span className="text-sm text-slate-500">{leg.travelDate || "—"}</span>
+                    <span className="truncate text-sm text-slate-600">{leg.travelFrom || "—"}</span>
+                    <input
+                      className="field"
+                      placeholder="Where next?"
+                      value={leg.travelTo}
+                      onChange={(e) => update(i, { travelTo: e.target.value })}
+                    />
+                    {amount(leg, i)}
+                    <button
+                      onClick={() => remove(i)}
+                      className="hidden rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 sm:block"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </>
               ) : (
                 <>
                   <div className="mb-2 flex items-center justify-between sm:hidden">

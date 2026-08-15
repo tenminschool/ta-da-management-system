@@ -168,7 +168,7 @@ export interface RequestDraft {
    * too. "two_way" implies a second leg, office to destination reversed, so
    * the fare is entered and reimbursed for both directions.
    */
-  tripDirection: "one_way" | "two_way";
+  tripDirection: "one_way" | "two_way" | "more_ways";
   /** Outside-city route taken — a Route value. Empty on inside-city trips. */
   route: string;
   /** Transport taken outside band policy, with the reason it had to be. */
@@ -315,7 +315,7 @@ export interface RequestRecord {
   tripDays: number;
   purpose: string;
   destinationType: string;
-  tripDirection: "one_way" | "two_way";
+  tripDirection: "one_way" | "two_way" | "more_ways";
   route: string;
   exceptionClaimed: boolean;
   exceptionReason: string;
