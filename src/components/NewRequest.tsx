@@ -107,7 +107,9 @@ export default function NewRequest({
     const keepFrom = Math.max(prevAutoCountRef.current, implied.length);
     setDraft((d) => {
       const kept = d.legs.slice(keepFrom);
-      const merged = implied.map((l, i) => ({ ...l, amount: d.legs[i]?.amount ?? 0, note: d.legs[i]?.note ?? "" }));
+      const merged = implied.map((l, i) => ({
+        ...l, mode: d.legs[i]?.mode || l.mode, amount: d.legs[i]?.amount ?? 0, note: d.legs[i]?.note ?? "",
+      }));
       return { ...d, legs: [...merged, ...kept] };
     });
     prevAutoCountRef.current = implied.length;
@@ -119,6 +121,15 @@ export default function NewRequest({
       set({ transportMode: "" });
     }
   }, [modes]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Inside city, the mode is picked per trip now — the first trip's choice
+  // still stands in for "the" mode wherever the rest of the app needs one
+  // (receipt requirements, eligibility, the claims register).
+  useEffect(() => {
+    if (draft.scope !== "inside" || ["PersonalVehicle", "CompanyVehicle"].includes(draft.transportMode)) return;
+    const legMode = draft.legs[0]?.mode || "";
+    if (legMode !== draft.transportMode) set({ transportMode: legMode });
+  }, [draft.scope, draft.legs, draft.transportMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The vehicle is no longer chosen by hand — it is whichever one is approved.
   useEffect(() => {
@@ -195,6 +206,7 @@ export default function NewRequest({
               currency={currency}
               bankAllowed={bankPayoutAllowed(policy)}
               needsReceipt={computation.needsReceipt}
+              user={user}
             />
           )}
 
@@ -803,36 +815,62 @@ function StepTransport({
   // A rickshaw fare has no receipt to reimburse against — say so rather than
   // repeating a line that only applies to the modes that do issue one.
   const modeNeedsReceipt = !!modes.find((m) => m.mode === draft.transportMode)?.requiresReceipt;
+  // Own/company vehicle are whole-trip choices with nothing to itemise —
+  // everything else is picked per trip, right where its fare is entered.
+  const wholeTripModes = modes.filter((m) => ["PersonalVehicle", "CompanyVehicle"].includes(m.mode));
+  const perLegModes = modes.filter((m) => !["PersonalVehicle", "CompanyVehicle"].includes(m.mode));
 
   return (
     <>
-      <Card
-        title="How did you travel?"
-        subtitle={`Only the options your Band ${user.band} policy allows are shown${draft.travelType === "team" ? `, adjusted for a team of ${draft.teamMembers.length + 1}` : ""}.`}
-      >
-        <ChoiceGrid
-          columns={4}
-          value={draft.transportMode}
-          onChange={(transportMode) => set({ transportMode, legs: [] })}
-          options={modes.map((m) => ({
-            value: m.mode,
-            label: m.label,
-            disabled: !m.enabled,
-            reason: m.reason,
-          }))}
-        />
+      {inside ? (
+        <Card
+          title="Own or company vehicle?"
+          subtitle="Skip this for a fare — Rickshaw, Bike, CNG and the rest are picked per trip, below."
+        >
+          <ChoiceGrid
+            columns={3}
+            value={["PersonalVehicle", "CompanyVehicle"].includes(draft.transportMode) ? draft.transportMode : "fare"}
+            onChange={(v) => set({ transportMode: v === "fare" ? "" : v, legs: [] })}
+            options={[
+              { value: "fare", label: "Neither — a fare", description: "Rickshaw, Bike, CNG or similar." },
+              ...wholeTripModes.map((m) => ({
+                value: m.mode,
+                label: m.label,
+                disabled: !m.enabled,
+                reason: m.reason,
+              })),
+            ]}
+          />
 
-        {juniorMale && (
-          <div className="mt-4">
-            <Toggle
-              checked={draft.carSpecialApproval}
-              onChange={(carSpecialApproval) => set({ carSpecialApproval })}
-              label="Car was pre-approved for this trip"
-              hint="Attach the approval mail in the Documents step — Administration will verify it."
-            />
-          </div>
-        )}
-      </Card>
+          {juniorMale && (
+            <div className="mt-4">
+              <Toggle
+                checked={draft.carSpecialApproval}
+                onChange={(carSpecialApproval) => set({ carSpecialApproval })}
+                label="Car was pre-approved for this trip"
+                hint="Attach the approval mail in the Documents step — Administration will verify it."
+              />
+            </div>
+          )}
+        </Card>
+      ) : (
+        <Card
+          title="How did you travel?"
+          subtitle={`Only the options your Band ${user.band} policy allows are shown${draft.travelType === "team" ? `, adjusted for a team of ${draft.teamMembers.length + 1}` : ""}.`}
+        >
+          <ChoiceGrid
+            columns={4}
+            value={draft.transportMode}
+            onChange={(transportMode) => set({ transportMode, legs: [] })}
+            options={modes.map((m) => ({
+              value: m.mode,
+              label: m.label,
+              disabled: !m.enabled,
+              reason: m.reason,
+            }))}
+          />
+        </Card>
+      )}
 
       {draft.transportMode === "CompanyVehicle" && (
         <Notice tone="info" items={["A company vehicle was used, so no transport reimbursement is payable for this trip."]} />
@@ -845,7 +883,7 @@ function StepTransport({
         />
       )}
 
-      {inside && draft.transportMode && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
+      {inside && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
         <Card title="One way, or there and back?">
           <ChoiceGrid
             columns={3}
@@ -868,7 +906,7 @@ function StepTransport({
         </Card>
       )}
 
-      {draft.transportMode && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
+      {(inside ? !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) : !!draft.transportMode) && (
         <LegsEditor
           draft={draft}
           set={set}
@@ -880,6 +918,8 @@ function StepTransport({
           // last one left off rather than blank.
           allowAdd={!inside || draft.tripDirection === "more_ways"}
           chainNewLegs={inside && draft.tripDirection === "more_ways"}
+          // Inside city, the mode is picked per trip now, not once up top.
+          legModes={inside ? perLegModes : undefined}
           title={inside ? "Trips taken" : "Travel tickets"}
           subtitle={
             inside
@@ -1037,7 +1077,7 @@ function PersonalVehicleCard({
 
 
 function LegsEditor({
-  draft, set, currency, title, subtitle, autoCount, allowAdd = true, chainNewLegs = false,
+  draft, set, currency, title, subtitle, autoCount, allowAdd = true, chainNewLegs = false, legModes,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -1050,6 +1090,8 @@ function LegsEditor({
   allowAdd?: boolean;
   /** More Ways: each new leg starts where the last one left off. */
   chainNewLegs?: boolean;
+  /** Inside city: the mode is picked per trip, right beside its amount. */
+  legModes?: ModeOption[];
 }) {
   const legs = draft.legs;
   const update = (i: number, patch: Partial<Leg>) =>
@@ -1068,6 +1110,15 @@ function LegsEditor({
     />
   );
 
+  const modeSelect = (leg: Leg, i: number) => (
+    <select className="field" value={leg.mode} onChange={(e) => update(i, { mode: e.target.value })}>
+      <option value="">Mode</option>
+      {(legModes || []).filter((m) => m.enabled).map((m) => (
+        <option key={m.mode} value={m.mode}>{m.label}</option>
+      ))}
+    </select>
+  );
+
   return (
     <Card
       title={title}
@@ -1082,9 +1133,11 @@ function LegsEditor({
                   ...legs,
                   {
                     travelDate: draft.fromDate,
-                    mode: draft.transportMode,
                     // Chained trips continue from wherever the last leg
-                    // ended — only the next stop is new information.
+                    // ended, defaulting to the same mode too — both are
+                    // still editable, but most multi-stop errands stay on
+                    // one.
+                    mode: chainNewLegs ? legs[legs.length - 1]?.mode || "" : draft.transportMode,
                     travelFrom: chainNewLegs ? legs[legs.length - 1]?.travelTo || "" : "",
                     travelTo: "",
                     amount: 0,
@@ -1117,7 +1170,10 @@ function LegsEditor({
                     </p>
                     <p className="text-xs text-slate-500">{leg.travelDate || "—"}</p>
                   </div>
-                  <div className="w-32 shrink-0">{amount(leg, i)}</div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {legModes && <div className="w-36">{modeSelect(leg, i)}</div>}
+                    <div className="w-32">{amount(leg, i)}</div>
+                  </div>
                 </div>
               ) : chainNewLegs ? (
                 /* A More Ways stop: same day, continuing from wherever the
@@ -1133,7 +1189,7 @@ function LegsEditor({
                       <Trash2 size={16} />
                     </button>
                   </div>
-                  <div className="grid gap-2.5 sm:grid-cols-[9rem_1fr_1fr_8rem_auto] sm:items-center sm:gap-3">
+                  <div className="grid gap-2.5 sm:grid-cols-[8rem_1fr_1fr_9rem_8rem_auto] sm:items-center sm:gap-3">
                     <span className="text-sm text-slate-500">{leg.travelDate || "—"}</span>
                     <span className="truncate text-sm text-slate-600">{leg.travelFrom || "—"}</span>
                     <input
@@ -1142,6 +1198,7 @@ function LegsEditor({
                       value={leg.travelTo}
                       onChange={(e) => update(i, { travelTo: e.target.value })}
                     />
+                    {modeSelect(leg, i)}
                     {amount(leg, i)}
                     <button
                       onClick={() => remove(i)}
@@ -1420,7 +1477,7 @@ interface Upload {
 }
 
 function StepDocuments({
-  draft, set, documentTypes, payable, currency, bankAllowed, needsReceipt,
+  draft, set, documentTypes, payable, currency, bankAllowed, needsReceipt, user,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -1430,6 +1487,7 @@ function StepDocuments({
   bankAllowed: boolean;
   /** False for a rickshaw fare or a personal-vehicle claim — neither issues one. */
   needsReceipt: boolean;
+  user: SessionUser;
 }) {
   // Names are only known for files uploaded in this session; a claim being
   // edited comes back with links alone, so those fall back to the URL.
@@ -1444,6 +1502,70 @@ function StepDocuments({
   // upload box was the thing people kept asking about. One click brings it
   // back for anyone who genuinely wants to attach something anyway.
   const [showUploader, setShowUploader] = useState(needsReceipt);
+
+  // Whatever is on the employee record right now — starts open for editing
+  // until there is something saved, then locks so it reads as confirmed
+  // rather than as a field still waiting to be filled in.
+  const [savedBkash, setSavedBkash] = useState(user.accountNumber || "");
+  const [editingBkash, setEditingBkash] = useState(!savedBkash);
+  const [savingBkash, setSavingBkash] = useState(false);
+  const [bkashSaveError, setBkashSaveError] = useState("");
+
+  async function saveBkash() {
+    setSavingBkash(true);
+    setBkashSaveError("");
+    try {
+      const { bkashNumber } = await api.saveBkashNumber(draft.bkashNumber);
+      setSavedBkash(bkashNumber);
+      setEditingBkash(false);
+    } catch (err) {
+      setBkashSaveError((err as Error).message);
+    } finally {
+      setSavingBkash(false);
+    }
+  }
+
+  // Shared by the individual and team layouts — both ask for the submitter's
+  // own number, just inside a differently-titled card.
+  function myBkashField(required: boolean) {
+    if (!editingBkash && savedBkash) {
+      return (
+        <Field label="Give your personal bKash number" required={required}>
+          <div className="field flex items-center justify-between gap-2">
+            <span className="font-mono text-slate-800">{savedBkash}</span>
+            <button type="button" className="shrink-0 text-xs font-semibold text-brand-600 hover:underline" onClick={() => setEditingBkash(true)}>
+              Edit
+            </button>
+          </div>
+        </Field>
+      );
+    }
+    return (
+      <Field label="Give your personal bKash number" required={required} hint="11 digits starting with 01.">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            className="field"
+            type="tel"
+            inputMode="numeric"
+            autoComplete="tel"
+            maxLength={14}
+            placeholder="01712345678"
+            value={draft.bkashNumber}
+            onChange={(e) => set({ bkashNumber: e.target.value })}
+          />
+          <button
+            type="button"
+            className="btn-ghost shrink-0 whitespace-nowrap text-xs"
+            disabled={savingBkash || !draft.bkashNumber.trim()}
+            onClick={saveBkash}
+          >
+            {savingBkash ? <Loader2 size={14} className="animate-spin" /> : null} Save this bKash number
+          </button>
+        </div>
+        {bkashSaveError && <p className="mt-1.5 text-xs text-rose-600">{bkashSaveError}</p>}
+      </Field>
+    );
+  }
 
   useEffect(() => {
     api.uploadConfig()
@@ -1640,18 +1762,7 @@ function StepDocuments({
         {draft.travelType === "team" && draft.payoutMethod !== "bank" && (
           <div className="mb-5 space-y-3 rounded-xl bg-slate-50 p-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Team payout numbers</p>
-            <Field label="Your bKash number" required={payable > 0}>
-              <input
-                className="field"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel"
-                maxLength={14}
-                placeholder="01712345678"
-                value={draft.bkashNumber}
-                onChange={(e) => set({ bkashNumber: e.target.value })}
-              />
-            </Field>
+            {myBkashField(payable > 0)}
             {draft.teamMembers.map((m, i) => (
               <Field key={m.employeeId || i} label={`${m.name || "Team member " + (i + 1)}'s bKash number`} required={payable > 0}>
                 <input
@@ -1691,24 +1802,7 @@ function StepDocuments({
             </Field>
           </div>
         ) : (
-          draft.travelType !== "team" && (
-          <Field
-            label="Your bKash number"
-            required={payable > 0}
-            hint="11 digits starting with 01. Pre-filled from your employee record — change it if the money should go somewhere else."
-          >
-            <input
-              className="field"
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel"
-              maxLength={14}
-              placeholder="01712345678"
-              value={draft.bkashNumber}
-              onChange={(e) => set({ bkashNumber: e.target.value })}
-            />
-          </Field>
-          )
+          draft.travelType !== "team" && myBkashField(payable > 0)
         )}
       </Card>
 

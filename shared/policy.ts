@@ -537,6 +537,9 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       );
     }
     if (!draft.transportMode) errors.push("Select a mode of transport.");
+    if (!["PersonalVehicle", "CompanyVehicle"].includes(draft.transportMode) && draft.legs.some((l) => !l.mode)) {
+      errors.push("Select a travel mode for every trip.");
+    }
     if (draft.transportMode === "PersonalVehicle") {
       // The vehicle itself is no longer chosen here — it is whichever one HR
       // or Admin has approved, so without one there is no rate to claim against.
@@ -625,8 +628,12 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   // A rickshaw fare or a personal-vehicle claim has nothing to attach — there
   // is no receipt for either. Only ask for one when something actually issues
   // one: the chosen transport mode, or a cost that always comes with a bill.
+  // Inside city, mode is picked per trip, so one leg needing a receipt is
+  // enough — a mixed rickshaw-then-ride-share trip still needs that ticket.
   const modeSpec = policy.modes.find((m) => m.mode === draft.transportMode);
-  const needsReceipt = !!modeSpec?.requiresReceipt
+  const anyLegNeedsReceipt = draft.scope === "inside"
+    && draft.legs.some((l) => policy.modes.find((m) => m.mode === l.mode)?.requiresReceipt);
+  const needsReceipt = !!modeSpec?.requiresReceipt || anyLegNeedsReceipt
     || accommodationAmount > 0 || rentACarAmount > 0 || flightAmount > 0 || otherAmount > 0;
   if (cfgStr(policy, "REQUIRE_DOCUMENT_LINK", "Yes").toLowerCase() === "yes" && needsReceipt && !links.length) {
     errors.push("Share at least one document link (Drive, bill, ticket or receipt) supporting this claim.");
@@ -706,7 +713,11 @@ export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
   const mode = draft.transportMode;
   // These two are not reimbursed per journey — one is free, the other by the
   // kilometre — so neither has fares to enter.
-  if (!mode || mode === "CompanyVehicle" || mode === "PersonalVehicle") return [];
+  if (mode === "CompanyVehicle" || mode === "PersonalVehicle") return [];
+  // Outside city still picks its mode up front, so there is nothing to show
+  // without one. Inside city picks it per trip instead — the trip itself
+  // (and its first leg) exists before that choice is made.
+  if (draft.scope === "outside" && !mode) return [];
 
   const leg = (travelDate: string, travelFrom: string, travelTo: string): Leg =>
     ({ travelDate, mode, travelFrom, travelTo, amount: 0, note: "" });

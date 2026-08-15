@@ -166,6 +166,25 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   res.json({ user: { ...user, managesOthers: await managesOthers(user.employeeId) } });
 }));
 
+/** Saves this employee's own bKash number, so every future claim starts pre-filled with it. */
+app.post("/api/me/bkash", requireAuth, handler(async (req, res) => {
+  const bkashNumber = String(req.body?.bkashNumber || "").replace(/[\s-]/g, "");
+  if (!/^01[3-9]\d{8}$/.test(bkashNumber)) {
+    res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
+    return;
+  }
+  const rows = await readTab("Employees");
+  const row = rows.find((r) => r.employee_id === req.session.employeeId);
+  if (!row) {
+    res.status(404).json({ error: "Your employee record was not found." });
+    return;
+  }
+  const { _row, ...rest } = row;
+  await updateRow("Employees", _row, { ...rest, account_number: bkashNumber });
+  invalidateEmployees();
+  res.json({ ok: true, bkashNumber });
+}));
+
 // ── Reference data ──────────────────────────────────────────────────────────
 
 app.get("/api/policy", requireAuth, handler(async (_req, res) => {

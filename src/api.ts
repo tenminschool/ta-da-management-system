@@ -177,6 +177,7 @@ export const api = {
   login: (email: string, password: string) =>
     post<{ token: string; user: SessionUser }>("/login", { email, password }),
   me: () => call<{ user: SessionUser }>("/me"),
+  saveBkashNumber: (bkashNumber: string) => post<{ ok: boolean; bkashNumber: string }>("/me/bkash", { bkashNumber }),
   policy: () => call<Policy>("/policy"),
   employees: (q: string) => call<{ employees: EmployeeLite[] }>(`/employees?q=${encodeURIComponent(q)}`),
 
