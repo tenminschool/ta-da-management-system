@@ -4,13 +4,19 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import {
-  bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
-  impliedLegs, personalVehicleRateFor, type ModeOption,
+  addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
+  impliedLegs, personalVehicleRateFor, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
 
 const STEPS = ["Travel Type", "Transportation", "Allowances", "Documents"];
+
+/** A plain ISO date, read the way a person would say it — "22 Aug 2026". */
+function fmtDate(date: string | undefined): string {
+  if (!date) return "—";
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
 
 export default function NewRequest({
   user, policy, editing, onDone, onCancel,
@@ -276,6 +282,14 @@ function StepTravelType({
   const destinationNeeds = destination?.needs;
   const destinationLabel = destination?.label || "";
 
+  // A claim has to be filed within this many days of the trip ending —
+  // inside city, that is the travel date itself; outside city, the return.
+  // Administration can lift this per person from Configuration, which is
+  // exactly what unlocks the calendar back open here too.
+  const claimWindowDays = cfgNum(policy, "CLAIM_WINDOW_DAYS", 7);
+  const claimWindowUnlocked = !!(user.claimUnlockUntil && todayISO() <= user.claimUnlockUntil);
+  const earliestClaimableDate = claimWindowUnlocked ? "" : addDays(todayISO(), -claimWindowDays);
+
   // Company Arrangement chosen against one date can go stale if the date is
   // pushed closer — dropped back to Self rather than left selected behind a
   // disabled option nobody notices.
@@ -459,17 +473,42 @@ function StepTravelType({
             </>
           )}
 
-          <Field label={outside ? "Departure date" : "Travel date"} required>
+          <Field
+            label={outside ? "Departure date" : "Travel date"}
+            required
+            hint={
+              !outside
+                ? claimWindowUnlocked
+                  ? `Administration has unlocked late filing for you until ${fmtDate(user.claimUnlockUntil)} — any date is fine.`
+                  : `Claims must be filed within ${claimWindowDays} days of travel, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
+                : undefined
+            }
+          >
             <input
               type="date"
               className="field"
               value={draft.fromDate}
+              min={!outside ? earliestClaimableDate || undefined : undefined}
               onChange={(e) => set({ fromDate: e.target.value, toDate: outside ? draft.toDate : e.target.value })}
             />
           </Field>
           {outside && (
-            <Field label="Return date" required>
-              <input type="date" className="field" value={draft.toDate} onChange={(e) => set({ toDate: e.target.value })} />
+            <Field
+              label="Return date"
+              required
+              hint={
+                claimWindowUnlocked
+                  ? `Administration has unlocked late filing for you until ${fmtDate(user.claimUnlockUntil)} — any date is fine.`
+                  : `Claims must be filed within ${claimWindowDays} days of your return, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
+              }
+            >
+              <input
+                type="date"
+                className="field"
+                value={draft.toDate}
+                min={earliestClaimableDate || undefined}
+                onChange={(e) => set({ toDate: e.target.value })}
+              />
             </Field>
           )}
 

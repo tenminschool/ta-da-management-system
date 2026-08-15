@@ -57,6 +57,13 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86400000);
 }
 
+/** Shifts a plain ISO date by a number of calendar days — negative moves it earlier. */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export function daySpan(fromDate: string, toDate: string): { total: number; weekday: number; weekend: number } {
   const from = new Date(`${fromDate}T00:00:00`);
   const to = new Date(`${toDate || fromDate}T00:00:00`);
