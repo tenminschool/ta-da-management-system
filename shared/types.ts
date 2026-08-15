@@ -198,6 +198,8 @@ export interface RequestDraft {
   officeMealTaken: boolean;
   dualWorkstation: boolean;
   dualWorkstationType: string;
+  /** Outside-city only: a personal stay has no hotel bill, so nothing to claim. */
+  accommodationType: "hotel" | "personal" | "";
   hotelName: string;
   checkIn: string;
   checkOut: string;
@@ -207,6 +209,8 @@ export interface RequestDraft {
   flightAmount: number;
   otherAmount: number;
   otherNote: string;
+  /** "full" pays out the whole claim up front; "partial" is typed in by hand. */
+  advanceType: "full" | "partial" | "";
   advanceRequested: number;
   /** Where the employee wants the money sent. */
   bkashNumber: string;
@@ -347,6 +351,7 @@ export interface RequestRecord {
   officeMealTaken: boolean;
   dualWorkstation: boolean;
   dualWorkstationType: string;
+  accommodationType: "hotel" | "personal" | "";
   hotelName: string;
   checkIn: string;
   checkOut: string;
@@ -357,6 +362,7 @@ export interface RequestRecord {
   otherAmount: number;
   otherNote: string;
   totalClaim: number;
+  advanceType: "full" | "partial" | "";
   advanceRequested: number;
   bkashNumber: string;
   advanceApproved: number;

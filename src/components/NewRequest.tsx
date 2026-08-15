@@ -1283,6 +1283,14 @@ function StepAllowances({
   const minHours = cfgNum(policy, "PER_DIEM_MIN_HOURS", 5);
   const band = policy.bands.find((b) => b.band === user.band);
 
+  // "Full amount" tracks the claim total live, so it stays correct as the
+  // claimant fills in the rest of the form after choosing it.
+  useEffect(() => {
+    if (draft.advanceWanted && draft.advanceType === "full" && draft.advanceRequested !== computation.totalClaim) {
+      set({ advanceRequested: computation.totalClaim });
+    }
+  }, [draft.advanceWanted, draft.advanceType, computation.totalClaim]);
+
   if (inside) {
     return (
       <>
@@ -1323,26 +1331,44 @@ function StepAllowances({
       </Card>
 
       <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${band?.accommodationLimit ?? 0} per night for Band ${user.band}.`}>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Hotel name">
-            <input className="field" value={draft.hotelName} onChange={(e) => set({ hotelName: e.target.value })} />
-          </Field>
-          <Field label={`Amount (${currency})`}>
-            <input
-              type="number"
-              min={0}
-              className="field"
-              value={draft.accommodationAmount || ""}
-              onChange={(e) => set({ accommodationAmount: Number(e.target.value) })}
-            />
-          </Field>
-          <Field label="Check-in">
-            <input type="date" className="field" value={draft.checkIn} onChange={(e) => set({ checkIn: e.target.value })} />
-          </Field>
-          <Field label="Check-out">
-            <input type="date" className="field" value={draft.checkOut} onChange={(e) => set({ checkOut: e.target.value })} />
-          </Field>
-        </div>
+        <ChoiceGrid
+          value={draft.accommodationType}
+          // Switching to Personal clears any hotel figures already entered,
+          // so nothing is claimed for a stay with no bill.
+          onChange={(v) =>
+            set(
+              v === "personal"
+                ? { accommodationType: "personal", hotelName: "", checkIn: "", checkOut: "", accommodationAmount: 0 }
+                : { accommodationType: "hotel" },
+            )
+          }
+          options={[
+            { value: "hotel", label: "Hotel", description: "Stayed at a hotel — claim the bill." },
+            { value: "personal", label: "Personal", description: "Stayed with family or friends — no hotel bill to claim." },
+          ]}
+        />
+        {draft.accommodationType !== "personal" && (
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <Field label="Hotel name">
+              <input className="field" value={draft.hotelName} onChange={(e) => set({ hotelName: e.target.value })} />
+            </Field>
+            <Field label={`Amount (${currency})`}>
+              <input
+                type="number"
+                min={0}
+                className="field"
+                value={draft.accommodationAmount || ""}
+                onChange={(e) => set({ accommodationAmount: Number(e.target.value) })}
+              />
+            </Field>
+            <Field label="Check-in">
+              <input type="date" className="field" value={draft.checkIn} onChange={(e) => set({ checkIn: e.target.value })} />
+            </Field>
+            <Field label="Check-out">
+              <input type="date" className="field" value={draft.checkOut} onChange={(e) => set({ checkOut: e.target.value })} />
+            </Field>
+          </div>
+        )}
       </Card>
 
       <Card title="Other costs">
@@ -1376,7 +1402,11 @@ function StepAllowances({
               // Declining clears any figure already typed, so nothing is
               // requested by accident.
               onChange={(v) =>
-                set({ advanceWanted: v === "yes", advanceRequested: v === "yes" ? draft.advanceRequested : 0 })
+                set({
+                  advanceWanted: v === "yes",
+                  advanceType: v === "yes" ? draft.advanceType : "",
+                  advanceRequested: v === "yes" ? draft.advanceRequested : 0,
+                })
               }
               options={[
                 { value: "yes", label: "Yes, I want an advance", description: "Paid before you travel, settled against this claim afterwards." },
@@ -1384,16 +1414,35 @@ function StepAllowances({
               ]}
             />
             {draft.advanceWanted ? (
-              <div className="mt-5">
-                <Field label={`Advance needed (${currency})`}>
-                  <input
-                    type="number"
-                    min={0}
-                    className="field"
-                    value={draft.advanceRequested || ""}
-                    onChange={(e) => set({ advanceRequested: Number(e.target.value) })}
-                  />
-                </Field>
+              <div className="mt-5 space-y-5">
+                <ChoiceGrid
+                  value={draft.advanceType}
+                  onChange={(v) =>
+                    set({
+                      advanceType: v === "full" ? "full" : "partial",
+                      advanceRequested: v === "full" ? computation.totalClaim : draft.advanceRequested,
+                    })
+                  }
+                  options={[
+                    { value: "full", label: "Full amount", description: "The whole claim total is requested as your advance." },
+                    { value: "partial", label: "Partial amount", description: "Type in the specific amount you need up front." },
+                  ]}
+                />
+                {draft.advanceType === "full" ? (
+                  <Field label={`Advance needed (${currency})`}>
+                    <input type="number" className="field" value={computation.totalClaim} disabled readOnly />
+                  </Field>
+                ) : draft.advanceType === "partial" ? (
+                  <Field label={`Advance needed (${currency})`}>
+                    <input
+                      type="number"
+                      min={0}
+                      className="field"
+                      value={draft.advanceRequested || ""}
+                      onChange={(e) => set({ advanceRequested: Number(e.target.value) })}
+                    />
+                  </Field>
+                ) : null}
               </div>
             ) : (
               <div className="mt-5">

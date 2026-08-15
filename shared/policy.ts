@@ -395,7 +395,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     : 0;
   const perNightLimit = band?.accommodationLimit ?? 0;
   const accommodationLimit = money(perNightLimit * (nights || 1));
-  let accommodationAmount = money(Number(draft.accommodationAmount) || 0);
+  let accommodationAmount = draft.accommodationType === "personal" ? 0 : money(Number(draft.accommodationAmount) || 0);
 
   if (accommodationAmount > 0) {
     if (draft.scope !== "outside") {
@@ -465,7 +465,9 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   // Three days qualifies — the threshold is the shortest trip that earns one,
   // not the one it has to beat.
   const advanceAvailable = draft.scope === "outside" && tripDays >= advanceMinDays && advanceNoticeOK;
-  let advanceRequested = money(Number(draft.advanceRequested) || 0);
+  let advanceRequested = draft.advanceWanted && draft.advanceType === "full"
+    ? totalClaim
+    : money(Number(draft.advanceRequested) || 0);
   if (advanceRequested > 0 && !advanceAvailable) {
     errors.push(
       !advanceNoticeOK
@@ -794,6 +796,7 @@ export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecial
     officeMealTaken: false,
     dualWorkstation: false,
     dualWorkstationType: "",
+    accommodationType: "",
     hotelName: "",
     checkIn: "",
     checkOut: "",
@@ -803,6 +806,7 @@ export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecial
     flightAmount: 0,
     otherAmount: 0,
     otherNote: "",
+    advanceType: "",
     advanceRequested: 0,
     bkashNumber: "",
     documentTypes: [],
