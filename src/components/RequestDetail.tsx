@@ -55,13 +55,13 @@ export default function RequestDetail({
   // a single receipt or a flat amount for the whole group.
   const isTeam = r.travelType === "team" && r.teamMembers.length > 0;
   const perDiemPerHead = isTeam && r.teamSize > 0 ? r.perDiemAmount / r.teamSize : 0;
+  // Rent-a-car and Flight are trips too, so their cost is already folded
+  // into Transportation — listing them again here would look charged twice.
   const lines: [string, number][] = [
     ["Transportation (TA)", r.taAmount],
     ...(isTeam ? [] : [[`Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}`, r.perDiemAmount] as [string, number]]),
     ["Lunch allowance", r.lunchAllowance],
     ["Accommodation", r.accommodationAmount],
-    ["Rent-a-car", r.rentACarAmount],
-    ["Flight", r.flightAmount],
     ["Other", r.otherAmount],
   ];
 

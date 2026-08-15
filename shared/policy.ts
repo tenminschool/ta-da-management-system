@@ -257,10 +257,13 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
       continue;
     }
     if (s.mode === "RentACar") {
-      if (band?.carPoolEligible || femaleTravelling(ctx.gender, ctx.travelType, ctx.teamGenders) || ctx.exceptionClaimed) {
+      if (ctx.travelType !== "team") {
+        push("RentACar", false, "Rent-a-car needs a team pooling together — not available for individual travel.");
+      } else if (band?.carPoolEligible || femaleTravelling(ctx.gender, ctx.travelType, ctx.teamGenders) || ctx.exceptionClaimed) {
         push("RentACar", true);
+      } else {
+        push("RentACar", false, `Rent-a-car pooling is not available for Band ${ctx.band}.`);
       }
-      else push("RentACar", false, `Rent-a-car pooling is not available for Band ${ctx.band}.`);
       continue;
     }
     push(s.mode, true);
@@ -276,6 +279,15 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
  * and blocking error. Callers show `errors` as hard blocks (submit disabled)
  * and `warnings` as things an approver will have to look at.
  */
+/**
+ * Priced per traveller — each person needs their own seat/ticket, so the
+ * amount entered for one of these legs is per head, multiplied out by the
+ * party size. Everything else (a shared rickshaw or CNG, a pooled
+ * rent-a-car, a personal or company vehicle) is one cost for the whole
+ * party regardless of how many are on the trip.
+ */
+const PER_TRAVELLER_MODES = new Set(["Bus", "Train", "Flight"]);
+
 export function computeRequest(policy: Policy, draft: RequestDraft, user: SessionUser): Computation {
   const notes: string[] = [];
   const errors: string[] = [];
@@ -291,40 +303,35 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const teamSize = draft.travelType === "team" ? draft.teamMembers.length + 1 : 1;
 
   // ── Transportation ────────────────────────────────────────────────────────
-  let taAmount = 0;
+  // Every mode is picked per trip now, so there is nothing left to branch on
+  // here — a leg's own amount (already worked out, per-vehicle or per-ticket,
+  // by whichever picker asked for it) is all this adds up. A company vehicle
+  // leg is zeroed out regardless of what is stored against it, in case
+  // anything ever slips through the picker with a stray amount.
   let fuelRate = 0;
-  const legTotal = draft.legs.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
-
-  if (draft.scope === "inside") {
-    {
-      if (draft.transportMode === "CompanyVehicle") {
-        taAmount = 0;
-        notes.push("Company vehicle used — no transport reimbursement is payable.");
-      } else if (draft.transportMode === "PersonalVehicle") {
-        // Null means nothing approved yet; the validation below is what turns
-        // that into a blocking error, so it is only priced at zero here.
-        const rate = personalVehicleRateFor(policy, user);
-        if (rate !== null) {
-          fuelRate = rate;
-          const km = Number(draft.totalKM) || 0;
-          taAmount = money(km * fuelRate);
-          const v = user.registeredVehicle!;
-          const fuelPrice = policy.fuelTypes.find((f) => f.value === v.fuelType)?.pricePerLitre ?? 0;
-          const litres = v.mileageKmPerLitre > 0 ? km / v.mileageKmPerLitre : 0;
-          notes.push(
-            `${v.vehicleType} (${v.model}): ${km} km ÷ ${v.mileageKmPerLitre} km/l = ${litres.toFixed(2)} l of ${v.fuelType} ` +
-            `at ${fuelPrice} ${cfgStr(policy, "CURRENCY", "BDT")}/l — ${km} km × ${fuelRate.toFixed(2)} ${cfgStr(policy, "CURRENCY", "BDT")}/km = ${money(taAmount)}.`,
-          );
-        }
-      } else {
-        taAmount = money(legTotal);
-        if (draft.transportMode) notes.push("Inside-city transport is reimbursed against actual receipts.");
-      }
+  const legTotal = draft.legs.reduce((sum, l) => {
+    if (l.mode === "CompanyVehicle") return sum;
+    const multiplier = teamSize > 1 && PER_TRAVELLER_MODES.has(l.mode) ? teamSize : 1;
+    return sum + (Number(l.amount) || 0) * multiplier;
+  }, 0);
+  const taAmount = money(legTotal);
+  if (draft.scope === "inside" && legTotal > 0) {
+    notes.push("Inside-city transport is reimbursed against actual receipts where one is issued.");
+  } else if (draft.scope === "outside" && legTotal > 0) {
+    notes.push("Intercity travel is reimbursed at actual against tickets/receipts.");
+  }
+  if (draft.legs.some((l) => l.mode === "CompanyVehicle")) {
+    notes.push("A company vehicle leg is not reimbursed.");
+  }
+  if (draft.legs.some((l) => l.mode === "PersonalVehicle")) {
+    // The rate itself was already worked out per-leg from the employee's own
+    // approved vehicle — this just gates the trip on that vehicle existing.
+    if (!user.registeredVehicle) {
+      errors.push("Register your vehicle and get it approved by HR or Admin before claiming a personal-vehicle trip.");
+    } else {
+      const rate = personalVehicleRateFor(policy, user);
+      if (rate !== null) fuelRate = rate;
     }
-  } else {
-    // Outside city: intercity fares are reimbursed at actual against receipts.
-    taAmount = money(legTotal);
-    if (legTotal > 0) notes.push("Intercity travel is reimbursed at actual against tickets/receipts.");
   }
 
   // ── Per-Diem and lunch ────────────────────────────────────────────────────
@@ -408,37 +415,44 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   }
 
   // ── Rent-a-car / car pool ─────────────────────────────────────────────────
-  let rentACarAmount = money(Number(draft.rentACarAmount) || 0);
-  if (rentACarAmount > 0) {
+  // Picked per trip like everything else now, so its rules apply per leg —
+  // "the 6000 limit" was always a one-way limit, which is exactly what one
+  // rent-a-car leg is.
+  const rentACarLegs = draft.legs.filter((l) => l.mode === "RentACar");
+  const rentACarAmount = money(rentACarLegs.reduce((s, l) => s + (Number(l.amount) || 0), 0));
+  if (rentACarLegs.length) {
     const minHead = cfgNum(policy, "RENT_A_CAR_MIN_HEADCOUNT", 3);
     const limit = cfgNum(policy, "RENT_A_CAR_LIMIT", 6000);
     const head = Number(draft.rentACarHeadcount) || 0;
     const femaleParty = femaleTravelling(user.gender, draft.travelType, draft.teamMembers.map((m) => m.gender));
-    if (!band?.carPoolEligible && !femaleParty) {
+    if (draft.travelType !== "team") {
+      errors.push("Rent-a-car needs a team pooling together — not available for individual travel.");
+    } else if (!band?.carPoolEligible && !femaleParty) {
       errors.push(`Rent-a-car pooling is not available for Band ${user.band}.`);
-      rentACarAmount = 0;
     } else if (head < minHead) {
       errors.push(`Rent-a-car needs at least ${minHead} employees — ${head} entered. Request rejected by policy.`);
-      rentACarAmount = 0;
-    } else if (rentACarAmount > limit) {
-      warnings.push(`Rent-a-car ${rentACarAmount} exceeds the ${limit} one-way limit — this needs special approval.`);
+    } else if (rentACarLegs.some((l) => Number(l.amount) > limit)) {
+      errors.push(`Rent-a-car cannot exceed ${limit} one-way — check each rent-a-car leg.`);
     } else {
       notes.push(`Rent-a-car pooled across ${head} employees, within the ${limit} one-way limit.`);
     }
   }
 
   // ── Flight ────────────────────────────────────────────────────────────────
-  let flightAmount = money(Number(draft.flightAmount) || 0);
-  if (flightAmount > 0 && !band?.flightEligible) {
+  const flightLegs = draft.legs.filter((l) => l.mode === "Flight");
+  const flightAmount = money(flightLegs.reduce((s, l) => s + (Number(l.amount) || 0) * (teamSize > 1 ? teamSize : 1), 0));
+  if (flightLegs.length && !band?.flightEligible) {
     errors.push(`Flight is not available for Band ${user.band}.`);
-    flightAmount = 0;
   }
 
   const otherAmount = money(Number(draft.otherAmount) || 0);
   if (otherAmount > 0 && !draft.otherNote) warnings.push("Explain the “other” amount so Finance can verify it.");
 
   // ── Totals ────────────────────────────────────────────────────────────────
-  const totalClaim = money(taAmount + perDiemAmount + lunchAllowance + accommodationAmount + rentACarAmount + flightAmount + otherAmount);
+  // Rent-a-car and Flight are already folded into taAmount via the legs
+  // above — kept as their own figures here only so the breakdown can still
+  // show them as separate lines, not added in twice.
+  const totalClaim = money(taAmount + perDiemAmount + lunchAllowance + accommodationAmount + otherAmount);
 
   // ── Advance ───────────────────────────────────────────────────────────────
   const advanceMinDays = cfgNum(policy, "ADVANCE_MIN_TRIP_DAYS", 3);
@@ -536,23 +550,6 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
         `Visiting the ${chosen.label} — you must punch the card both in and out. Without both punches this claim will be rejected.`,
       );
     }
-    if (!draft.transportMode) errors.push("Select a mode of transport.");
-    if (!["PersonalVehicle", "CompanyVehicle"].includes(draft.transportMode) && draft.legs.some((l) => !l.mode)) {
-      errors.push("Select a travel mode for every trip.");
-    }
-    if (draft.transportMode === "PersonalVehicle") {
-      // The vehicle itself is no longer chosen here — it is whichever one HR
-      // or Admin has approved, so without one there is no rate to claim against.
-      if (!user.registeredVehicle) {
-        errors.push("Register your vehicle and get it approved by HR or Admin before claiming a personal-vehicle trip.");
-      } else {
-        if (!(Number(draft.totalKM) > 0)) errors.push("Total KM is required for a personal vehicle claim.");
-        if (!draft.travelFrom || !draft.travelTo) errors.push("Travel from and to are required for a personal vehicle claim.");
-      }
-    }
-    if (draft.transportMode === "RideSharing" && legTotal <= 0) {
-      errors.push("Add at least one ride-sharing trip with its amount and receipt.");
-    }
   } else {
     if (!draft.toDate) errors.push("Return date is required for outside-city travel.");
     if (tripDays <= 0) errors.push("The return date cannot be before the travel date.");
@@ -572,6 +569,15 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
         notes.push(`Company arrangement requested with ${noticeGiven} business days' notice — Administration will be notified automatically.`);
       }
     }
+  }
+
+  // ── Transport mode, per trip ────────────────────────────────────────────
+  // Every leg is picked independently now — no separate whole-claim mode to
+  // ask for, just make sure each trip actually got one.
+  if (!draft.legs.length) errors.push("Add at least one trip.");
+  else if (draft.legs.some((l) => !l.mode)) errors.push("Select a travel mode for every trip.");
+  if (draft.legs.some((l) => l.mode === "PersonalVehicle" && !(Number(l.amount) > 0))) {
+    errors.push("Enter the distance for every personal-vehicle trip.");
   }
 
   if (draft.travelType === "team") {
@@ -627,14 +633,10 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   }
   // A rickshaw fare or a personal-vehicle claim has nothing to attach — there
   // is no receipt for either. Only ask for one when something actually issues
-  // one: the chosen transport mode, or a cost that always comes with a bill.
-  // Inside city, mode is picked per trip, so one leg needing a receipt is
-  // enough — a mixed rickshaw-then-ride-share trip still needs that ticket.
-  const modeSpec = policy.modes.find((m) => m.mode === draft.transportMode);
-  const anyLegNeedsReceipt = draft.scope === "inside"
-    && draft.legs.some((l) => policy.modes.find((m) => m.mode === l.mode)?.requiresReceipt);
-  const needsReceipt = !!modeSpec?.requiresReceipt || anyLegNeedsReceipt
-    || accommodationAmount > 0 || rentACarAmount > 0 || flightAmount > 0 || otherAmount > 0;
+  // one. Mode is picked per trip, so one leg needing a receipt is enough — a
+  // mixed rickshaw-then-ride-share trip still needs that one ticket.
+  const anyLegNeedsReceipt = draft.legs.some((l) => policy.modes.find((m) => m.mode === l.mode)?.requiresReceipt);
+  const needsReceipt = anyLegNeedsReceipt || accommodationAmount > 0 || otherAmount > 0;
   if (cfgStr(policy, "REQUIRE_DOCUMENT_LINK", "Yes").toLowerCase() === "yes" && needsReceipt && !links.length) {
     errors.push("Share at least one document link (Drive, bill, ticket or receipt) supporting this claim.");
   }
@@ -652,8 +654,10 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     }
   }
 
-  // The chosen mode must still be legal for this employee.
-  if (draft.transportMode) {
+  // Every mode actually used must still be legal for this employee — checked
+  // per leg now, since each one is picked independently.
+  const usedModes = new Set(draft.legs.map((l) => l.mode).filter(Boolean));
+  if (usedModes.size) {
     const opts = eligibleModes(policy, {
       band: user.band,
       gender: user.gender,
@@ -664,9 +668,11 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       exceptionClaimed: draft.exceptionClaimed,
       carSpecialApproval: draft.carSpecialApproval,
     });
-    const chosen = opts.find((o) => o.mode === draft.transportMode);
-    if (!chosen) errors.push(`${draft.transportMode} is not available for Band ${user.band}.`);
-    else if (!chosen.enabled) errors.push(chosen.reason);
+    for (const m of usedModes) {
+      const chosen = opts.find((o) => o.mode === m);
+      if (!chosen) errors.push(`${m} is not available for Band ${user.band}.`);
+      else if (!chosen.enabled) errors.push(chosen.reason);
+    }
   }
 
   return {
@@ -710,16 +716,9 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
  * fill in. Extra hops can still be added by hand on top of these.
  */
 export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
-  const mode = draft.transportMode;
-  // These two are not reimbursed per journey — one is free, the other by the
-  // kilometre — so neither has fares to enter.
-  if (mode === "CompanyVehicle" || mode === "PersonalVehicle") return [];
-  // Outside city still picks its mode up front, so there is nothing to show
-  // without one. Inside city picks it per trip instead — the trip itself
-  // (and its first leg) exists before that choice is made.
-  if (draft.scope === "outside" && !mode) return [];
-
-  const leg = (travelDate: string, travelFrom: string, travelTo: string): Leg =>
+  // Mode is picked per trip now, on the leg itself — the trip (and its first
+  // leg) exists before that choice is made, so nothing here waits for it.
+  const leg = (travelDate: string, travelFrom: string, travelTo: string, mode = ""): Leg =>
     ({ travelDate, mode, travelFrom, travelTo, amount: 0, note: "" });
 
   if (draft.scope === "inside") {
@@ -740,15 +739,18 @@ export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
     return [outward];
   }
 
+  // Outside city: same shape as inside — one way is the outbound ticket
+  // alone, two way adds the return, more ways starts the same and leaves the
+  // rest to be chained on by hand.
   const route = policy.routes.find((r) => r.value === draft.route);
   const from = route?.from || "";
   const to = draft.city || route?.to || "";
-  const out = [leg(draft.fromDate, from, to)];
-  // Outside-city travel is there and back, so the return is a second ticket
-  // priced separately — including a same-day return. It waits for a return
-  // date rather than guessing one.
-  if (draft.toDate) out.push(leg(draft.toDate, to, from));
-  return out;
+  const outward = leg(draft.fromDate, from, to);
+  if (draft.tripDirection === "two_way") {
+    // A same-day return still counts; a dated one uses its own date.
+    return [outward, leg(draft.toDate || draft.fromDate, to, from)];
+  }
+  return [outward];
 }
 
 /** Fresh draft with every field defined, so React inputs stay controlled. */

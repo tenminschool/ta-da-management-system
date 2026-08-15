@@ -634,17 +634,19 @@ function buildRecord(
     workingHours: computation.workingHours,
     workedAt: draft.workedAt,
     arrangement: draft.arrangement,
-    transportMode: draft.transportMode,
-    // For a personal-vehicle claim this is the approved registration's type,
+    // Mode is picked per trip now — this is just the first trip's, standing
+    // in wherever a single "the mode" is still wanted (the register, a CSV).
+    transportMode: draft.legs[0]?.mode || draft.transportMode,
+    // For a personal-vehicle leg this is the approved registration's type,
     // not whatever the client sent — the client only ever displays it now.
-    vehicleType: draft.transportMode === "PersonalVehicle"
+    vehicleType: draft.legs.some((l) => l.mode === "PersonalVehicle")
       ? (session.registeredVehicle?.vehicleType || draft.vehicleType)
       : draft.vehicleType,
     carSpecialApproval: draft.carSpecialApproval,
     travelFrom: draft.travelFrom,
     travelTo: draft.travelTo,
     totalKM: draft.totalKM,
-    fuelRate: draft.transportMode === "PersonalVehicle" ? (personalVehicleRateFor(policy, session) ?? 0) : 0,
+    fuelRate: draft.legs.some((l) => l.mode === "PersonalVehicle") ? (personalVehicleRateFor(policy, session) ?? 0) : 0,
     legs: draft.legs,
     taAmount: computation.taAmount,
     perDiemDays: computation.perDiemDays,

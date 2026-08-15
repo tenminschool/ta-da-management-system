@@ -5,10 +5,10 @@ import {
 import { api } from "../api.js";
 import {
   addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
-  impliedLegs, personalVehicleRateFor, todayISO, type ModeOption,
+  impliedLegs, money, personalVehicleRateFor, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, VehicleRegistration } from "../../shared/types.js";
-import { Card, ChoiceGrid, Field, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
+import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
 import { VehicleRegisterForm } from "./VehicleRegister.js";
 
 const STEPS = ["Travel Type", "Transportation", "Allowances", "Documents"];
@@ -93,7 +93,7 @@ export default function NewRequest({
   // carried across so editing a date never wipes what has been typed, and any
   // extra hops added by hand are left alone at the end of the list.
   const implied = useMemo(() => impliedLegs(policy, draft), [
-    policy, draft.transportMode, draft.scope, draft.fromDate, draft.toDate,
+    policy, draft.scope, draft.fromDate, draft.toDate,
     draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection, draft.purpose,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
@@ -114,30 +114,6 @@ export default function NewRequest({
     });
     prevAutoCountRef.current = implied.length;
   }, [impliedKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Switching city scope invalidates a mode that only exists on the other side.
-  useEffect(() => {
-    if (draft.transportMode && !modes.some((m) => m.mode === draft.transportMode)) {
-      set({ transportMode: "" });
-    }
-  }, [modes]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Inside city, the mode is picked per trip now — the first trip's choice
-  // still stands in for "the" mode wherever the rest of the app needs one
-  // (receipt requirements, eligibility, the claims register).
-  useEffect(() => {
-    if (draft.scope !== "inside" || ["PersonalVehicle", "CompanyVehicle"].includes(draft.transportMode)) return;
-    const legMode = draft.legs[0]?.mode || "";
-    if (legMode !== draft.transportMode) set({ transportMode: legMode });
-  }, [draft.scope, draft.legs, draft.transportMode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // The vehicle is no longer chosen by hand — it is whichever one is approved.
-  useEffect(() => {
-    if (draft.transportMode === "PersonalVehicle" && myVehicle?.status === "approved"
-        && draft.vehicleType !== myVehicle.vehicleType) {
-      set({ vehicleType: myVehicle.vehicleType });
-    }
-  }, [draft.transportMode, myVehicle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const insideCities = policy.cities.filter((c) => c.zone === "Inside");
 
@@ -394,34 +370,6 @@ function StepTravelType({
           </Field>
           )}
 
-          {draft.scope === "outside" && (
-            <Field label="Travel arrangement" required>
-              <select
-                className="field"
-                value={draft.arrangement}
-                onChange={(e) => set({ arrangement: e.target.value as RequestDraft["arrangement"] })}
-              >
-                <option value="self">Self Arrangement</option>
-                <option value="company" disabled={!computation.noticeOK}>
-                  Company Arrangement{!computation.noticeOK ? " — needs more notice" : ""}
-                </option>
-              </select>
-            </Field>
-          )}
-
-          {draft.scope === "outside" && !computation.noticeOK && (
-            <div className="sm:col-span-2">
-              <Notice
-                tone="warn"
-                items={[
-                  `Company Arrangement and a travel advance both need at least ${computation.noticeDaysRequired} business ` +
-                  `days' notice before travel${draft.fromDate ? ` — this trip is only ${computation.noticeGiven} business day(s) away` : ""}. ` +
-                  "Choose Self Arrangement, or contact Administration if this cannot wait.",
-                ]}
-              />
-            </div>
-          )}
-
           {/* Inside-city trips name where they went right here, next to the
               city. Outside-city keeps the free-text pair on Trip details. */}
           {draft.scope === "inside" && draft.city && (
@@ -533,6 +481,34 @@ function StepTravelType({
               ]}
             />
           </div>
+
+          {draft.scope === "outside" && (
+            <Field label="Travel arrangement" required>
+              <select
+                className="field"
+                value={draft.arrangement}
+                onChange={(e) => set({ arrangement: e.target.value as RequestDraft["arrangement"] })}
+              >
+                <option value="self">Self Arrangement</option>
+                <option value="company" disabled={!computation.noticeOK}>
+                  Company Arrangement{!computation.noticeOK ? " — needs more notice" : ""}
+                </option>
+              </select>
+            </Field>
+          )}
+
+          {draft.scope === "outside" && !computation.noticeOK && (
+            <div className="sm:col-span-2">
+              <Notice
+                tone="warn"
+                items={[
+                  `Company Arrangement and a travel advance both need at least ${computation.noticeDaysRequired} business ` +
+                  `days' notice before travel${draft.fromDate ? ` — this trip is only ${computation.noticeGiven} business day(s) away` : ""}. ` +
+                  "Choose Self Arrangement, or contact Administration if this cannot wait.",
+                ]}
+              />
+            </div>
+          )}
 
           {/* Inside-city says where it went above, beside the city. */}
           {outside && (
@@ -812,122 +788,70 @@ function StepTransport({
   const inside = draft.scope === "inside";
   const juniorMale = inside && !String(user.gender).toLowerCase().startsWith("f") &&
     modes.some((m) => m.mode === "Car" && !m.enabled && m.reason.includes("pre-approval"));
-  // A rickshaw fare has no receipt to reimburse against — say so rather than
-  // repeating a line that only applies to the modes that do issue one.
-  const modeNeedsReceipt = !!modes.find((m) => m.mode === draft.transportMode)?.requiresReceipt;
-  // Own/company vehicle are whole-trip choices with nothing to itemise —
-  // everything else is picked per trip, right where its fare is entered.
-  const wholeTripModes = modes.filter((m) => ["PersonalVehicle", "CompanyVehicle"].includes(m.mode));
-  const perLegModes = modes.filter((m) => !["PersonalVehicle", "CompanyVehicle"].includes(m.mode));
+  const anyLegNeedsReceipt = draft.legs.some((l) => modes.find((m) => m.mode === l.mode)?.requiresReceipt);
 
   return (
     <>
-      {inside ? (
-        <Card
-          title="Own or company vehicle?"
-          subtitle="Skip this for a fare — Rickshaw, Bike, CNG and the rest are picked per trip, below."
-        >
-          <ChoiceGrid
-            columns={3}
-            value={["PersonalVehicle", "CompanyVehicle"].includes(draft.transportMode) ? draft.transportMode : "fare"}
-            onChange={(v) => set({ transportMode: v === "fare" ? "" : v, legs: [] })}
-            options={[
-              { value: "fare", label: "Neither — a fare", description: "Rickshaw, Bike, CNG or similar." },
-              ...wholeTripModes.map((m) => ({
-                value: m.mode,
-                label: m.label,
-                disabled: !m.enabled,
-                reason: m.reason,
-              })),
-            ]}
-          />
-
-          {juniorMale && (
-            <div className="mt-4">
-              <Toggle
-                checked={draft.carSpecialApproval}
-                onChange={(carSpecialApproval) => set({ carSpecialApproval })}
-                label="Car was pre-approved for this trip"
-                hint="Attach the approval mail in the Documents step — Administration will verify it."
-              />
-            </div>
-          )}
-        </Card>
-      ) : (
-        <Card
-          title="How did you travel?"
-          subtitle={`Only the options your Band ${user.band} policy allows are shown${draft.travelType === "team" ? `, adjusted for a team of ${draft.teamMembers.length + 1}` : ""}.`}
-        >
-          <ChoiceGrid
-            columns={4}
-            value={draft.transportMode}
-            onChange={(transportMode) => set({ transportMode, legs: [] })}
-            options={modes.map((m) => ({
-              value: m.mode,
-              label: m.label,
-              disabled: !m.enabled,
-              reason: m.reason,
-            }))}
-          />
-        </Card>
-      )}
-
-      {draft.transportMode === "CompanyVehicle" && (
-        <Notice tone="info" items={["A company vehicle was used, so no transport reimbursement is payable for this trip."]} />
-      )}
-
-      {draft.transportMode === "PersonalVehicle" && (
-        <PersonalVehicleCard
-          draft={draft} set={set} policy={policy} currency={currency}
-          myVehicle={myVehicle} onVehicleChange={onVehicleChange}
-        />
-      )}
-
-      {inside && !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) && (
-        <Card title="One way, or there and back?">
-          <ChoiceGrid
-            columns={3}
-            value={draft.tripDirection}
-            onChange={(tripDirection) =>
-              set({
-                tripDirection: tripDirection as RequestDraft["tripDirection"],
-                // Stepping back out of More Ways drops whatever extra stops
-                // were chained on — One way and Two way have no "add" button
-                // to remove them with otherwise.
-                legs: tripDirection === "more_ways" ? draft.legs : draft.legs.slice(0, impliedCount),
-              })
-            }
-            options={[
-              { value: "one_way", label: "One way", description: "Office to the destination — a single fare." },
-              { value: "two_way", label: "Two way", description: "Office to the destination, and back to office — two fares." },
-              { value: "more_ways", label: "More Ways", description: "Several stops in one trip — add each leg as you go." },
-            ]}
-          />
-        </Card>
-      )}
-
-      {(inside ? !["CompanyVehicle", "PersonalVehicle"].includes(draft.transportMode) : !!draft.transportMode) && (
-        <LegsEditor
-          draft={draft}
-          set={set}
-          currency={currency}
-          autoCount={impliedCount}
-          // One way and Two way are exactly the fare(s) the trip implies —
-          // nothing to add by hand. More Ways is a chain of stops the
-          // traveller builds up themselves, so each new leg starts where the
-          // last one left off rather than blank.
-          allowAdd={!inside || draft.tripDirection === "more_ways"}
-          chainNewLegs={inside && draft.tripDirection === "more_ways"}
-          // Inside city, the mode is picked per trip now, not once up top.
-          legModes={inside ? perLegModes : undefined}
-          title={inside ? "Trips taken" : "Travel tickets"}
-          subtitle={
-            inside
-              ? modeNeedsReceipt
-                ? "Filled in from your travel date and destination — just enter what each trip cost. Reimbursed against actual receipts."
-                : "Filled in from your travel date and destination — just enter what each trip cost. No receipt needed for this mode."
-              : "Filled in from your route and dates — just enter what each ticket cost. Attach the receipts in the Documents step."
+      <Card
+        title="One way, or there and back?"
+        subtitle={`Only the modes your Band ${user.band} policy allows are offered per trip below${draft.travelType === "team" ? `, adjusted for a team of ${draft.teamMembers.length + 1}` : ""}.`}
+      >
+        <ChoiceGrid
+          columns={3}
+          value={draft.tripDirection}
+          onChange={(tripDirection) =>
+            set({
+              tripDirection: tripDirection as RequestDraft["tripDirection"],
+              // Stepping back out of More Ways drops whatever extra stops
+              // were chained on — One way and Two way have no "add" button
+              // to remove them with otherwise.
+              legs: tripDirection === "more_ways" ? draft.legs : draft.legs.slice(0, impliedCount),
+            })
           }
+          options={
+            inside
+              ? [
+                  { value: "one_way", label: "One way", description: "Office to the destination — a single fare." },
+                  { value: "two_way", label: "Two way", description: "Office to the destination, and back to office — two fares." },
+                  { value: "more_ways", label: "More Ways", description: "Several stops in one trip — add each leg as you go." },
+                ]
+              : [
+                  { value: "one_way", label: "One way", description: "Departure only — a single ticket." },
+                  { value: "two_way", label: "Two way", description: "There and back — two tickets." },
+                  { value: "more_ways", label: "More Ways", description: "Several stops on the way — add each leg as you go." },
+                ]
+          }
+        />
+      </Card>
+
+      <LegsEditor
+        draft={draft}
+        set={set}
+        currency={currency}
+        autoCount={impliedCount}
+        // One way and Two way are exactly the fare(s) the trip implies —
+        // nothing to add by hand. More Ways is a chain of stops the
+        // traveller builds up themselves, so each new leg starts where the
+        // last one left off rather than blank.
+        chained={draft.tripDirection === "more_ways"}
+        legModes={modes}
+        policy={policy}
+        myVehicle={myVehicle}
+        onVehicleChange={onVehicleChange}
+        title={inside ? "Trips taken" : "Travel tickets"}
+        subtitle={
+          anyLegNeedsReceipt
+            ? "Pick each trip's mode and enter what it cost — reimbursed against actual receipts where one is issued."
+            : "Pick each trip's mode and enter what it cost — no receipt needed for the modes used so far."
+        }
+      />
+
+      {juniorMale && (
+        <Toggle
+          checked={draft.carSpecialApproval}
+          onChange={(carSpecialApproval) => set({ carSpecialApproval })}
+          label="Car was pre-approved for this trip"
+          hint="Attach the approval mail in the Documents step — Administration will verify it."
         />
       )}
 
@@ -969,115 +893,11 @@ function StepTransport({
 
 // ── Personal vehicle: register once, HR/Admin approve, then claim against it ──
 
-function PersonalVehicleCard({
-  draft, set, policy, currency, myVehicle, onVehicleChange,
-}: {
-  draft: RequestDraft;
-  set: (p: Partial<RequestDraft>) => void;
-  policy: Policy;
-  currency: string;
-  myVehicle: VehicleRegistration | null | undefined;
-  onVehicleChange: (v: VehicleRegistration) => void;
-}) {
-  // Only used to let someone re-open the form on an already-approved vehicle;
-  // every other state (none registered yet, pending, rejected) shows the form
-  // on its own account, driven by myVehicle itself.
-  const [editing, setEditing] = useState(false);
-  const submitted = (v: VehicleRegistration) => { setEditing(false); onVehicleChange(v); };
-
-  if (myVehicle === undefined) {
-    return (
-      <Card title="Personal vehicle">
-        <Spinner label="Checking your vehicle registration…" />
-      </Card>
-    );
-  }
-
-  if (editing || !myVehicle || myVehicle.status === "rejected") {
-    return (
-      <Card
-        title={myVehicle ? "Update your vehicle" : "Register your vehicle"}
-        subtitle="Reimbursement is worked out from your own vehicle's mileage, once HR or Admin approves it. One registration covers every personal-vehicle claim after that."
-      >
-        {myVehicle?.status === "rejected" && (
-          <div className="mb-4">
-            <Notice
-              tone="error"
-              items={[`Not approved${myVehicle.reviewNote ? ` — ${myVehicle.reviewNote}` : ""}. Update the details and submit again.`]}
-            />
-          </div>
-        )}
-        <VehicleRegisterForm policy={policy} initial={myVehicle} onSubmitted={submitted} />
-      </Card>
-    );
-  }
-
-  if (myVehicle.status === "pending") {
-    return (
-      <Card title="Personal vehicle" subtitle="Waiting on HR or Admin to approve this before it can be claimed against.">
-        <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          <p className="font-medium text-slate-800">{myVehicle.vehicleType} — {myVehicle.model}</p>
-          <p className="mt-0.5">{myVehicle.fuelType} · {myVehicle.mileageKmPerLitre} km per litre</p>
-          {myVehicle.imageLink && (
-            <a href={myVehicle.imageLink} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs font-semibold text-brand-600 hover:underline">
-              View uploaded photo
-            </a>
-          )}
-          <p className="mt-1.5 text-xs text-slate-400">
-            Submitted {myVehicle.submittedAt ? new Date(myVehicle.submittedAt).toLocaleDateString() : "—"}
-          </p>
-        </div>
-      </Card>
-    );
-  }
-
-  // Approved.
-  const fuel = policy.fuelTypes.find((f) => f.value === myVehicle.fuelType);
-  const rate = fuel && myVehicle.mileageKmPerLitre > 0 ? fuel.pricePerLitre / myVehicle.mileageKmPerLitre : 0;
-  const km = Number(draft.totalKM) || 0;
-  const litres = myVehicle.mileageKmPerLitre > 0 ? km / myVehicle.mileageKmPerLitre : 0;
-
-  return (
-    <Card
-      title="Personal vehicle"
-      subtitle={`${myVehicle.vehicleType} — ${myVehicle.model} · ${myVehicle.fuelType}, ${myVehicle.mileageKmPerLitre} km/l. Approved by HR/Admin.`}
-    >
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Total KM" required>
-          <input
-            type="number"
-            min={0}
-            className="field"
-            value={draft.totalKM || ""}
-            onChange={(e) => set({ totalKM: Number(e.target.value) })}
-          />
-        </Field>
-        <div />
-        <Field label="Travel from" required>
-          <input className="field" value={draft.travelFrom} onChange={(e) => set({ travelFrom: e.target.value })} />
-        </Field>
-        <Field label="Travel to" required>
-          <input className="field" value={draft.travelTo} onChange={(e) => set({ travelTo: e.target.value })} />
-        </Field>
-      </div>
-      {km > 0 && fuel && (
-        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          {km} km ÷ {myVehicle.mileageKmPerLitre} km/l = {litres.toFixed(2)} l of {myVehicle.fuelType} at {fuel.pricePerLitre} {currency}/l ={" "}
-          <span className="font-semibold text-slate-900">
-            <Money value={km * rate} currency={currency} />
-          </span>
-        </p>
-      )}
-      <button type="button" className="mt-4 text-xs font-semibold text-brand-600 hover:underline" onClick={() => setEditing(true)}>
-        Update vehicle details
-      </button>
-    </Card>
-  );
-}
-
+/** Priced per traveller, not per trip — kept in step with the same set in policy.ts. */
+const PER_TRAVELLER_MODES = new Set(["Bus", "Train", "Flight"]);
 
 function LegsEditor({
-  draft, set, currency, title, subtitle, autoCount, allowAdd = true, chainNewLegs = false, legModes,
+  draft, set, currency, title, subtitle, autoCount, chained = false, legModes, policy, myVehicle, onVehicleChange,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -1086,32 +906,38 @@ function LegsEditor({
   subtitle: string;
   /** How many leading trips the form worked out for itself. */
   autoCount: number;
-  /** One way and Two way are exactly what the trip implies — nothing to add. */
-  allowAdd?: boolean;
-  /** More Ways: each new leg starts where the last one left off. */
-  chainNewLegs?: boolean;
-  /** Inside city: the mode is picked per trip, right beside its amount. */
+  /** More Ways only: lets a trip be added by hand, each one chained from the last. */
+  chained?: boolean;
   legModes?: ModeOption[];
+  policy: Policy;
+  myVehicle: VehicleRegistration | null | undefined;
+  onVehicleChange: (v: VehicleRegistration) => void;
 }) {
   const legs = draft.legs;
+  const teamSize = draft.travelType === "team" ? draft.teamMembers.length + 1 : 1;
   const update = (i: number, patch: Partial<Leg>) =>
     set({ legs: legs.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) });
   const remove = (i: number) => set({ legs: legs.filter((_, idx) => idx !== i) });
 
-  const amount = (leg: Leg, i: number) => (
-    <input
-      type="number"
-      inputMode="decimal"
-      min={0}
-      className="field"
-      placeholder={`Amount (${currency})`}
-      value={leg.amount || ""}
-      onChange={(e) => update(i, { amount: Number(e.target.value) })}
-    />
-  );
+  const [vehicleModalFor, setVehicleModalFor] = useState<number | null>(null);
+  const [rentACarModalFor, setRentACarModalFor] = useState<number | null>(null);
+
+  function changeMode(i: number, mode: string) {
+    if (mode === "PersonalVehicle") {
+      update(i, { mode, amount: 0 });
+      setVehicleModalFor(i);
+    } else if (mode === "RentACar") {
+      update(i, { mode, amount: 0 });
+      setRentACarModalFor(i);
+    } else if (mode === "CompanyVehicle") {
+      update(i, { mode, amount: 0, note: "Company vehicle — no reimbursement." });
+    } else {
+      update(i, { mode });
+    }
+  }
 
   const modeSelect = (leg: Leg, i: number) => (
-    <select className="field" value={leg.mode} onChange={(e) => update(i, { mode: e.target.value })}>
+    <select className="field" value={leg.mode} onChange={(e) => changeMode(i, e.target.value)}>
       <option value="">Mode</option>
       {(legModes || []).filter((m) => m.enabled).map((m) => (
         <option key={m.mode} value={m.mode}>{m.label}</option>
@@ -1119,12 +945,60 @@ function LegsEditor({
     </select>
   );
 
+  // What this leg's amount box actually is depends on the mode picked —
+  // most are a plain fare, but the three "special" ones each hand off to
+  // their own picker instead of a raw number.
+  const amountCell = (leg: Leg, i: number) => {
+    if (leg.mode === "CompanyVehicle") {
+      return <p className="field flex items-center text-slate-400">Free — no cost</p>;
+    }
+    if (leg.mode === "PersonalVehicle" || leg.mode === "RentACar") {
+      return (
+        <button
+          type="button"
+          className="field flex items-center justify-between text-left"
+          onClick={() => (leg.mode === "PersonalVehicle" ? setVehicleModalFor(i) : setRentACarModalFor(i))}
+        >
+          <span className={leg.amount > 0 ? "font-medium text-slate-800" : "text-slate-400"}>
+            {leg.amount > 0 ? <Money value={leg.amount} currency={currency} /> : "Enter details"}
+          </span>
+          <ChevronDown size={14} className="-rotate-90 text-slate-400" />
+        </button>
+      );
+    }
+    const perTraveller = teamSize > 1 && PER_TRAVELLER_MODES.has(leg.mode);
+    return (
+      <div>
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          className="field"
+          placeholder={perTraveller ? `Per ticket (${currency})` : `Amount (${currency})`}
+          value={leg.amount || ""}
+          onChange={(e) => update(i, { amount: Number(e.target.value) })}
+        />
+        {perTraveller && leg.amount > 0 && (
+          <p className="mt-1 text-xs text-slate-500">
+            {leg.amount} × {teamSize} travellers = <Money value={leg.amount * teamSize} currency={currency} />
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const legTotal = legs.reduce((sum, l) => {
+    if (l.mode === "CompanyVehicle") return sum;
+    const multiplier = teamSize > 1 && PER_TRAVELLER_MODES.has(l.mode) ? teamSize : 1;
+    return sum + (Number(l.amount) || 0) * multiplier;
+  }, 0);
+
   return (
     <Card
       title={title}
       subtitle={subtitle}
       actions={
-        allowAdd && (
+        chained && (
           <button
             className="btn-ghost !px-3 !py-1.5 text-xs"
             onClick={() =>
@@ -1133,12 +1007,11 @@ function LegsEditor({
                   ...legs,
                   {
                     travelDate: draft.fromDate,
-                    // Chained trips continue from wherever the last leg
-                    // ended, defaulting to the same mode too — both are
-                    // still editable, but most multi-stop errands stay on
-                    // one.
-                    mode: chainNewLegs ? legs[legs.length - 1]?.mode || "" : draft.transportMode,
-                    travelFrom: chainNewLegs ? legs[legs.length - 1]?.travelTo || "" : "",
+                    // Chained trips continue from wherever the last leg left
+                    // off, defaulting to the same mode too — both are still
+                    // editable, but most multi-stop errands stay on one.
+                    mode: legs[legs.length - 1]?.mode || "",
+                    travelFrom: legs[legs.length - 1]?.travelTo || "",
                     travelTo: "",
                     amount: 0,
                     note: "",
@@ -1162,7 +1035,7 @@ function LegsEditor({
             <div key={i} className="rounded-xl border border-slate-200 p-3">
               {i < autoCount ? (
                 /* Worked out from the trip already described, so there is
-                   nothing here to re-enter but the fare. */
+                   nothing here to re-enter but the mode and the fare. */
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-800">
@@ -1171,11 +1044,11 @@ function LegsEditor({
                     <p className="text-xs text-slate-500">{leg.travelDate || "—"}</p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {legModes && <div className="w-36">{modeSelect(leg, i)}</div>}
-                    <div className="w-32">{amount(leg, i)}</div>
+                    <div className="w-36">{modeSelect(leg, i)}</div>
+                    <div className="w-40">{amountCell(leg, i)}</div>
                   </div>
                 </div>
-              ) : chainNewLegs ? (
+              ) : (
                 /* A More Ways stop: same day, continuing from wherever the
                    last leg ended — only where it goes next is new. */
                 <>
@@ -1189,7 +1062,7 @@ function LegsEditor({
                       <Trash2 size={16} />
                     </button>
                   </div>
-                  <div className="grid gap-2.5 sm:grid-cols-[8rem_1fr_1fr_9rem_8rem_auto] sm:items-center sm:gap-3">
+                  <div className="grid gap-2.5 sm:grid-cols-[8rem_1fr_1fr_9rem_10rem_auto] sm:items-center sm:gap-3">
                     <span className="text-sm text-slate-500">{leg.travelDate || "—"}</span>
                     <span className="truncate text-sm text-slate-600">{leg.travelFrom || "—"}</span>
                     <input
@@ -1199,32 +1072,7 @@ function LegsEditor({
                       onChange={(e) => update(i, { travelTo: e.target.value })}
                     />
                     {modeSelect(leg, i)}
-                    {amount(leg, i)}
-                    <button
-                      onClick={() => remove(i)}
-                      className="hidden rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 sm:block"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="mb-2 flex items-center justify-between sm:hidden">
-                    <span className="text-xs font-bold text-slate-500">Trip {i + 1}</span>
-                    <button
-                      onClick={() => remove(i)}
-                      className="rounded-lg p-2 text-slate-400 active:bg-rose-50 active:text-rose-600"
-                      aria-label="Remove trip"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                  <div className="grid gap-2.5 sm:grid-cols-[9rem_1fr_1fr_8rem_auto] sm:items-center sm:gap-3">
-                    <input type="date" className="field" value={leg.travelDate} onChange={(e) => update(i, { travelDate: e.target.value })} />
-                    <input className="field" placeholder="From" value={leg.travelFrom} onChange={(e) => update(i, { travelFrom: e.target.value })} />
-                    <input className="field" placeholder="To" value={leg.travelTo} onChange={(e) => update(i, { travelTo: e.target.value })} />
-                    {amount(leg, i)}
+                    {amountCell(leg, i)}
                     <button
                       onClick={() => remove(i)}
                       className="hidden rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 sm:block"
@@ -1237,11 +1085,185 @@ function LegsEditor({
             </div>
           ))}
           <p className="text-right text-sm font-semibold text-slate-700">
-            Total: <Money value={legs.reduce((s, l) => s + (Number(l.amount) || 0), 0)} currency={currency} />
+            Total: <Money value={legTotal} currency={currency} />
           </p>
         </div>
       )}
+
+      {vehicleModalFor !== null && (
+        <PersonalVehicleLegModal
+          policy={policy}
+          currency={currency}
+          myVehicle={myVehicle}
+          onVehicleChange={onVehicleChange}
+          initial={legs[vehicleModalFor]}
+          onClose={() => setVehicleModalFor(null)}
+          onSave={(patch) => { update(vehicleModalFor, patch); setVehicleModalFor(null); }}
+        />
+      )}
+
+      {rentACarModalFor !== null && (
+        <RentACarLegModal
+          policy={policy}
+          currency={currency}
+          initial={legs[rentACarModalFor]}
+          headcount={draft.rentACarHeadcount}
+          onClose={() => setRentACarModalFor(null)}
+          onSave={(patch, headcount) => {
+            update(rentACarModalFor, patch);
+            set({ rentACarHeadcount: headcount });
+            setRentACarModalFor(null);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function PersonalVehicleLegModal({
+  policy, currency, myVehicle, onVehicleChange, initial, onClose, onSave,
+}: {
+  policy: Policy;
+  currency: string;
+  myVehicle: VehicleRegistration | null | undefined;
+  onVehicleChange: (v: VehicleRegistration) => void;
+  initial: Leg;
+  onClose: () => void;
+  onSave: (patch: Partial<Leg>) => void;
+}) {
+  const [travelFrom, setTravelFrom] = useState(initial.travelFrom);
+  const [travelTo, setTravelTo] = useState(initial.travelTo);
+  const [km, setKm] = useState(0);
+  const [editing, setEditing] = useState(false);
+
+  if (myVehicle === undefined) {
+    return (
+      <Modal title="Personal vehicle" onClose={onClose}>
+        <Spinner label="Checking your vehicle registration…" />
+      </Modal>
+    );
+  }
+
+  if (editing || !myVehicle || myVehicle.status !== "approved") {
+    const submitted = (v: VehicleRegistration) => { setEditing(false); onVehicleChange(v); };
+    return (
+      <Modal title={myVehicle ? "Update your vehicle" : "Register your vehicle"} onClose={onClose}>
+        <div className="space-y-4">
+          {myVehicle?.status === "pending" && (
+            <Notice tone="warn" items={["Still waiting on HR or Admin to approve this — you can claim against it once they do."]} />
+          )}
+          {myVehicle?.status === "rejected" && (
+            <Notice
+              tone="error"
+              items={[`Not approved${myVehicle.reviewNote ? ` — ${myVehicle.reviewNote}` : ""}. Update the details and submit again.`]}
+            />
+          )}
+          {!myVehicle && (
+            <Notice tone="info" items={["Register your vehicle once here and HR or Admin approval unlocks every personal-vehicle trip after that."]} />
+          )}
+          <VehicleRegisterForm policy={policy} initial={myVehicle} onSubmitted={submitted} />
+        </div>
+      </Modal>
+    );
+  }
+
+  // Approved.
+  const fuel = policy.fuelTypes.find((f) => f.value === myVehicle.fuelType);
+  const rate = fuel && myVehicle.mileageKmPerLitre > 0 ? fuel.pricePerLitre / myVehicle.mileageKmPerLitre : 0;
+  const litres = myVehicle.mileageKmPerLitre > 0 ? km / myVehicle.mileageKmPerLitre : 0;
+  const tripAmount = money(km * rate);
+
+  return (
+    <Modal title="Personal vehicle trip" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          {myVehicle.vehicleType} — {myVehicle.model} · {myVehicle.fuelType}, {myVehicle.mileageKmPerLitre} km/l.{" "}
+          <button type="button" className="font-semibold text-brand-600 hover:underline" onClick={() => setEditing(true)}>
+            Update vehicle details
+          </button>
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Travel from" required>
+            <input className="field" value={travelFrom} onChange={(e) => setTravelFrom(e.target.value)} />
+          </Field>
+          <Field label="Travel to" required>
+            <input className="field" value={travelTo} onChange={(e) => setTravelTo(e.target.value)} />
+          </Field>
+          <Field label="Total KM" required>
+            <input type="number" min={0} className="field" value={km || ""} onChange={(e) => setKm(Number(e.target.value))} />
+          </Field>
+        </div>
+        {km > 0 && fuel && (
+          <p className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            {km} km ÷ {myVehicle.mileageKmPerLitre} km/l = {litres.toFixed(2)} l of {myVehicle.fuelType} at {fuel.pricePerLitre} {currency}/l ={" "}
+            <span className="font-semibold text-slate-900"><Money value={tripAmount} currency={currency} /></span>
+          </p>
+        )}
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            className="btn-primary"
+            disabled={!travelFrom.trim() || !travelTo.trim() || !(km > 0)}
+            onClick={() => onSave({
+              travelFrom, travelTo, amount: tripAmount,
+              note: `${km} km via ${myVehicle.vehicleType} (${myVehicle.model}).`,
+            })}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function RentACarLegModal({
+  policy, currency, initial, headcount, onClose, onSave,
+}: {
+  policy: Policy;
+  currency: string;
+  initial: Leg;
+  headcount: number;
+  onClose: () => void;
+  onSave: (patch: Partial<Leg>, headcount: number) => void;
+}) {
+  const [amount, setAmount] = useState(initial.amount || 0);
+  const [head, setHead] = useState(headcount || 0);
+  const limit = cfgNum(policy, "RENT_A_CAR_LIMIT", 6000);
+  const minHead = cfgNum(policy, "RENT_A_CAR_MIN_HEADCOUNT", 3);
+
+  return (
+    <Modal title="Rent-a-car" onClose={onClose}>
+      <div className="space-y-4">
+        <Notice
+          tone="warn"
+          items={[`Cannot exceed ${currency} ${limit} one way, and needs at least ${minHead} employees pooling together.`]}
+        />
+        <Field label={`Amount (${currency})`} required>
+          <input
+            type="number"
+            min={0}
+            max={limit}
+            className="field"
+            value={amount || ""}
+            onChange={(e) => setAmount(Math.min(Number(e.target.value), limit))}
+          />
+        </Field>
+        <Field label="Employees sharing the car" required>
+          <input type="number" min={0} className="field" value={head || ""} onChange={(e) => setHead(Number(e.target.value))} />
+        </Field>
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button
+            className="btn-primary"
+            disabled={!(amount > 0) || !(head >= minHead)}
+            onClick={() => onSave({ amount, note: `Rent-a-car pooled across ${head} employees.` }, head)}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1323,53 +1345,9 @@ function StepAllowances({
         </div>
       </Card>
 
-      {/* Only the costs this trip can actually have. A bus, train, launch or
-          personal-vehicle journey has no car-pool split and no air fare, so the
-          whole section stays away rather than showing empty boxes. */}
-      {["RentACar", "Flight", "RideSharing"].includes(draft.transportMode) && (
       <Card title="Other costs">
         <div className="grid gap-4 sm:grid-cols-2">
-          {["RentACar", "RideSharing"].includes(draft.transportMode) && (
-            <>
-              <Field
-                label={`${draft.transportMode === "RideSharing" ? "Shared car" : "Rent-a-car"} amount (${currency})`}
-                hint={`Needs at least ${cfgNum(policy, "RENT_A_CAR_MIN_HEADCOUNT", 3)} employees; limit ${currency} ${cfgNum(policy, "RENT_A_CAR_LIMIT", 6000)} one way.`}
-              >
-                <input
-                  type="number"
-                  min={0}
-                  className="field"
-                  value={draft.rentACarAmount || ""}
-                  onChange={(e) => set({ rentACarAmount: Number(e.target.value) })}
-                />
-              </Field>
-              <Field label="Employees sharing the car">
-                <input
-                  type="number"
-                  min={0}
-                  className="field"
-                  value={draft.rentACarHeadcount || ""}
-                  onChange={(e) => set({ rentACarHeadcount: Number(e.target.value) })}
-                />
-              </Field>
-            </>
-          )}
-          {draft.transportMode === "Flight" && (
-            <Field
-              label={`Flight amount (${currency})`}
-              hint={band?.flightEligible ? "Your band is flight-eligible." : `Band ${user.band} is not flight-eligible.`}
-            >
-              <input
-                type="number"
-                min={0}
-                disabled={!band?.flightEligible}
-                className="field"
-                value={draft.flightAmount || ""}
-                onChange={(e) => set({ flightAmount: Number(e.target.value) })}
-              />
-            </Field>
-          )}
-          <Field label={`Other amount (${currency})`} hint="Anything the categories above do not cover.">
+          <Field label={`Other amount (${currency})`} hint="Anything not covered by a trip's own fare — rent-a-car and flights are picked per trip, on the Transportation step.">
             <input
               type="number"
               min={0}
@@ -1380,7 +1358,6 @@ function StepAllowances({
           </Field>
         </div>
       </Card>
-      )}
 
       <Card
         title="Travel advance"
@@ -1835,12 +1812,13 @@ function LiveSummary({
   const perDiemPerHead = isTeam && teamSize > 0 ? computation.perDiemAmount / teamSize : 0;
 
   const lines: [string, number][] = [
+    // Rent-a-car and Flight are trips too now, so their cost is already
+    // folded into Transportation — showing them again here would look like
+    // it was charged twice.
     ["Transportation", computation.taAmount],
     ...(isTeam ? [] : [["Per-Diem", computation.perDiemAmount] as [string, number]]),
     ["Lunch allowance", computation.lunchAllowance],
     ["Accommodation", computation.accommodationAmount],
-    ["Rent-a-car", computation.rentACarAmount],
-    ["Flight", computation.flightAmount],
     ["Other", computation.otherAmount],
   ];
   const hasLines = lines.some(([, v]) => v > 0) || (isTeam && computation.perDiemAmount > 0);
