@@ -118,6 +118,8 @@ export interface VehicleRegistration {
   model: string;
   fuelType: string;
   mileageKmPerLitre: number;
+  /** A photo of the vehicle with its number plate visible — proof of ownership. */
+  imageLink: string;
   status: "pending" | "approved" | "rejected";
   submittedAt: string;
   reviewedBy: string;

@@ -9,6 +9,7 @@ import {
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
+import { VehicleRegisterForm } from "./VehicleRegister.js";
 
 const STEPS = ["Travel Type", "Transportation", "Allowances", "Documents"];
 
@@ -228,7 +229,7 @@ export default function NewRequest({
           </div>
         </div>
 
-        <LiveSummary computation={computation} currency={currency} />
+        <LiveSummary computation={computation} currency={currency} draft={draft} user={user} />
       </div>
     </div>
   );
@@ -961,7 +962,12 @@ function PersonalVehicleCard({
         <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <p className="font-medium text-slate-800">{myVehicle.vehicleType} — {myVehicle.model}</p>
           <p className="mt-0.5">{myVehicle.fuelType} · {myVehicle.mileageKmPerLitre} km per litre</p>
-          <p className="mt-1 text-xs text-slate-400">
+          {myVehicle.imageLink && (
+            <a href={myVehicle.imageLink} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs font-semibold text-brand-600 hover:underline">
+              View uploaded photo
+            </a>
+          )}
+          <p className="mt-1.5 text-xs text-slate-400">
             Submitted {myVehicle.submittedAt ? new Date(myVehicle.submittedAt).toLocaleDateString() : "—"}
           </p>
         </div>
@@ -1013,79 +1019,6 @@ function PersonalVehicleCard({
   );
 }
 
-function VehicleRegisterForm({
-  policy, initial, onSubmitted,
-}: {
-  policy: Policy;
-  initial?: VehicleRegistration | null;
-  onSubmitted: (v: VehicleRegistration) => void;
-}) {
-  const [vehicleType, setVehicleType] = useState<"Bike" | "Car">(initial?.vehicleType || "Bike");
-  const [model, setModel] = useState(initial?.model || "");
-  const [fuelType, setFuelType] = useState(initial?.fuelType || policy.fuelTypes[0]?.value || "");
-  const [mileage, setMileage] = useState(initial?.mileageKmPerLitre || 0);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit() {
-    setBusy(true);
-    setError("");
-    try {
-      const { vehicle } = await api.registerVehicle({
-        vehicleType, model: model.trim(), fuelType, mileageKmPerLitre: mileage,
-      });
-      onSubmitted(vehicle);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <ChoiceGrid
-        value={vehicleType}
-        onChange={(v) => setVehicleType(v as "Bike" | "Car")}
-        options={[
-          { value: "Bike", label: "Bike", description: "Own motorbike or scooter." },
-          { value: "Car", label: "Car", description: "Own car." },
-        ]}
-      />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Model" required hint="e.g. Honda CB Shine 125">
-          <input className="field" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model name" />
-        </Field>
-        <Field label="Fuel type" required>
-          <select className="field" value={fuelType} onChange={(e) => setFuelType(e.target.value)}>
-            <option value="">Select</option>
-            {policy.fuelTypes.map((f) => (
-              <option key={f.value} value={f.value}>{f.label}</option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Kilometres per litre" required hint="How far this vehicle goes on one litre.">
-          <input
-            type="number"
-            min={0}
-            className="field"
-            value={mileage || ""}
-            onChange={(e) => setMileage(Number(e.target.value))}
-          />
-        </Field>
-      </div>
-      {error && <Notice tone="error" items={[error]} />}
-      <button
-        type="button"
-        className="btn-primary"
-        disabled={busy || !model.trim() || !fuelType || !(mileage > 0)}
-        onClick={submit}
-      >
-        {busy ? <Loader2 size={16} className="animate-spin" /> : null} Submit for approval
-      </button>
-    </div>
-  );
-}
 
 function LegsEditor({
   draft, set, currency, title, subtitle, autoCount,
@@ -1731,26 +1664,54 @@ function StepDocuments({
 // ── Live summary rail ───────────────────────────────────────────────────────
 
 function LiveSummary({
-  computation, currency,
-}: { computation: ReturnType<typeof computeRequest>; currency: string }) {
+  computation, currency, draft, user,
+}: { computation: ReturnType<typeof computeRequest>; currency: string; draft: RequestDraft; user: SessionUser }) {
   // Collapsed by default on phones: the running total stays visible without
   // pushing the actual form off the screen. Always open from lg up.
   const [open, setOpen] = useState(false);
 
+  // Per-Diem is the only line split evenly per traveller — everything else
+  // (transport, accommodation, rent-a-car…) is a single receipt or a flat
+  // amount for the whole group, so only this one gets an itemised breakdown.
+  const isTeam = draft.travelType === "team" && draft.teamMembers.length > 0;
+  const teamSize = isTeam ? draft.teamMembers.length + 1 : 1;
+  const perDiemPerHead = isTeam && teamSize > 0 ? computation.perDiemAmount / teamSize : 0;
+
   const lines: [string, number][] = [
     ["Transportation", computation.taAmount],
-    ["Per-Diem", computation.perDiemAmount],
+    ...(isTeam ? [] : [["Per-Diem", computation.perDiemAmount] as [string, number]]),
     ["Lunch allowance", computation.lunchAllowance],
     ["Accommodation", computation.accommodationAmount],
     ["Rent-a-car", computation.rentACarAmount],
     ["Flight", computation.flightAmount],
     ["Other", computation.otherAmount],
   ];
-  const hasLines = lines.some(([, v]) => v > 0);
+  const hasLines = lines.some(([, v]) => v > 0) || (isTeam && computation.perDiemAmount > 0);
 
   const body = (
     <>
       <div className="space-y-2 px-4 py-4 text-sm sm:px-5">
+        {isTeam && computation.perDiemAmount > 0 && (
+          <div>
+            <span className="mb-1 block text-slate-600">Per-Diem</span>
+            <div className="space-y-1 border-l-2 border-slate-100 pl-3">
+              <div className="flex justify-between gap-3 text-xs">
+                <span className="text-slate-500">{user.name} (you)</span>
+                <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+              </div>
+              {draft.teamMembers.map((m, i) => (
+                <div key={m.employeeId || i} className="flex justify-between gap-3 text-xs">
+                  <span className="text-slate-500">{m.name || `Team member ${i + 1}`}</span>
+                  <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-1.5 flex justify-between gap-3">
+              <span className="text-xs font-medium text-slate-500">Per-Diem total</span>
+              <span className="font-medium text-slate-800"><Money value={computation.perDiemAmount} currency={currency} /></span>
+            </div>
+          </div>
+        )}
         {lines.filter(([, v]) => v > 0).map(([label, value]) => (
           <div key={label} className="flex justify-between gap-3">
             <span className="text-slate-600">{label}</span>

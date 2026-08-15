@@ -90,6 +90,11 @@ export default function VehicleRegistrations({ policy }: { policy: Policy }) {
                       <span className="mt-0.5 block text-xs text-slate-500">
                         {v.vehicleType} — {v.model} · {v.fuelType}, {v.mileageKmPerLitre} km/l
                       </span>
+                      {v.imageLink && (
+                        <a href={v.imageLink} target="_blank" rel="noreferrer" className="mt-0.5 inline-block text-xs font-semibold text-brand-600 hover:underline">
+                          View photo
+                        </a>
+                      )}
                     </div>
                     <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${STATUS_STYLE[v.status]}`}>
                       {v.status}
@@ -132,7 +137,14 @@ export default function VehicleRegistrations({ policy }: { policy: Policy }) {
                         <span className="font-medium text-slate-800">{v.employeeName}</span>
                         <span className="mt-0.5 block text-xs text-slate-400">{v.employeeId}</span>
                       </td>
-                      <td className="px-3 py-3 text-slate-700">{v.vehicleType} — {v.model}</td>
+                      <td className="px-3 py-3 text-slate-700">
+                        {v.vehicleType} — {v.model}
+                        {v.imageLink && (
+                          <a href={v.imageLink} target="_blank" rel="noreferrer" className="mt-0.5 block text-xs font-semibold text-brand-600 hover:underline">
+                            View photo
+                          </a>
+                        )}
+                      </td>
                       <td className="px-3 py-3 text-slate-600">{v.fuelType}</td>
                       <td className="px-3 py-3 text-right text-slate-600">{v.mileageKmPerLitre} km/l</td>
                       <td className="px-3 py-3 text-right font-medium text-slate-800">
@@ -207,6 +219,13 @@ function DecideVehicleModal({
         <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
           <p className="font-medium text-slate-800">{vehicle.vehicleType} — {vehicle.model}</p>
           <p className="mt-0.5">{vehicle.fuelType} · {vehicle.mileageKmPerLitre} km per litre</p>
+          {vehicle.imageLink ? (
+            <a href={vehicle.imageLink} target="_blank" rel="noreferrer" className="mt-1.5 inline-block text-xs font-semibold text-brand-600 hover:underline">
+              View vehicle photo (check the number plate)
+            </a>
+          ) : (
+            <p className="mt-1.5 text-xs text-amber-600">No photo uploaded.</p>
+          )}
         </div>
         <Field label="Remarks" hint="Required if you are rejecting this — the employee sees it.">
           <textarea className="field min-h-20" value={remarks} onChange={(e) => setRemarks(e.target.value)} />

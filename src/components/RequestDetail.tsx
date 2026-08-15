@@ -51,9 +51,13 @@ export default function RequestDetail({
   const r = detail.request;
   const a = detail.approval;
   const isMine = r.employeeId === user.employeeId;
+  // Per-Diem is the only line split evenly per traveller — everything else is
+  // a single receipt or a flat amount for the whole group.
+  const isTeam = r.travelType === "team" && r.teamMembers.length > 0;
+  const perDiemPerHead = isTeam && r.teamSize > 0 ? r.perDiemAmount / r.teamSize : 0;
   const lines: [string, number][] = [
     ["Transportation (TA)", r.taAmount],
-    [`Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}`, r.perDiemAmount],
+    ...(isTeam ? [] : [[`Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}`, r.perDiemAmount] as [string, number]]),
     ["Lunch allowance", r.lunchAllowance],
     ["Accommodation", r.accommodationAmount],
     ["Rent-a-car", r.rentACarAmount],
@@ -451,6 +455,29 @@ export default function RequestDetail({
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Claim summary</p>
             </div>
             <div className="space-y-2 px-5 py-4 text-sm">
+              {isTeam && r.perDiemAmount > 0 && (
+                <div>
+                  <span className="mb-1 block text-slate-600">
+                    Per-Diem{r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}
+                  </span>
+                  <div className="space-y-1 border-l-2 border-slate-100 pl-3">
+                    <div className="flex justify-between gap-3 text-xs">
+                      <span className="text-slate-500">{r.employeeName}{isMine ? " (you)" : ""}</span>
+                      <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                    </div>
+                    {r.teamMembers.map((m, i) => (
+                      <div key={m.employeeId || i} className="flex justify-between gap-3 text-xs">
+                        <span className="text-slate-500">{m.name || `Team member ${i + 1}`}</span>
+                        <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-1.5 flex justify-between gap-3">
+                    <span className="text-xs font-medium text-slate-500">Per-Diem total</span>
+                    <span className="font-medium text-slate-800"><Money value={r.perDiemAmount} currency={currency} /></span>
+                  </div>
+                </div>
+              )}
               {lines.filter(([, v]) => v > 0).map(([label, value]) => (
                 <div key={label} className="flex justify-between">
                   <span className="text-slate-600">{label}</span>

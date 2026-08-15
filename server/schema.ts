@@ -132,10 +132,10 @@ export const TABS: TabSpec[] = [
   {
     title: "Vehicles",
     color: BLUE,
-    widths: [110, 170, 90, 180, 90, 130, 100, 160, 170, 160, 260],
+    widths: [110, 170, 90, 180, 90, 130, 260, 100, 160, 170, 160, 260],
     headers: [
       "employee_id", "employee_name", "vehicle_type", "model", "fuel_type",
-      "mileage_km_per_litre", "status", "submitted_at",
+      "mileage_km_per_litre", "image_link", "status", "submitted_at",
       "reviewed_by", "reviewed_at", "review_note",
     ],
   },

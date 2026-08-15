@@ -16,6 +16,7 @@ import Advances from "./components/Advances.js";
 import AdminConfig from "./components/AdminConfig.js";
 import Reports from "./components/Reports.js";
 import VehicleRegistrations from "./components/VehicleRegistrations.js";
+import VehicleRegisterPage from "./components/VehicleRegister.js";
 import { Spinner } from "./components/ui.js";
 
 /**
@@ -151,6 +152,7 @@ export default function App() {
     { key: "my-requests", label: "My Requests", short: "Claims", icon: FileText },
     { key: "my-advance", label: "My Advance", short: "Advance", icon: HandCoins },
     { key: "my-payments", label: "My Payments", short: "Paid", icon: Wallet },
+    { key: "my-vehicle", label: "Register your Vehicle", short: "Vehicle", icon: Car },
   ];
 
   const deskNav: NavItem[] = ([
@@ -396,6 +398,8 @@ export default function App() {
               onOpen={(requestId) => setView({ name: "detail", requestId })}
             />
           )}
+
+          {view.name === "my-vehicle" && <VehicleRegisterPage policy={policy} />}
 
           {/* ── Approval Desk workspace ── */}
           {view.name === "desk-pending" && (

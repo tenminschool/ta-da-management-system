@@ -207,7 +207,7 @@ export const api = {
     post<{ ok: boolean; employeeId: string; until: string }>("/admin/claim-unlock", { employeeId, until }),
 
   myVehicle: () => call<{ vehicle: VehicleRegistration | null }>("/vehicles/mine"),
-  registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number }) =>
+  registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number; imageLink?: string }) =>
     post<{ vehicle: VehicleRegistration }>("/vehicles", payload),
   vehicles: (scope: "pending" | "all" = "pending") =>
     call<{ vehicles: VehicleRegistration[] }>(`/vehicles?scope=${scope}`),

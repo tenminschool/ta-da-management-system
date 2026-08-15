@@ -1371,6 +1371,7 @@ app.post("/api/vehicles", requireAuth, handler(async (req, res) => {
   const model = String(req.body?.model || "").trim();
   const fuelType = String(req.body?.fuelType || "").trim();
   const mileageKmPerLitre = Number(req.body?.mileageKmPerLitre);
+  const imageLink = String(req.body?.imageLink || "").trim();
 
   if (!vehicleType) { res.status(400).json({ error: "Select whether this is a bike or a car." }); return; }
   if (!model) { res.status(400).json({ error: "Enter the vehicle's model." }); return; }
@@ -1391,6 +1392,7 @@ app.post("/api/vehicles", requireAuth, handler(async (req, res) => {
     model,
     fuelType,
     mileageKmPerLitre,
+    imageLink,
     status: "pending",
     submittedAt: nowISO(),
     reviewedBy: "",
