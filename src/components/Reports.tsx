@@ -163,6 +163,9 @@ export default function Reports({
         <div>
           <h1 className="text-lg font-bold text-slate-900 sm:text-xl">Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">
+            {user.name} <span className="text-slate-300">·</span> {user.employeeId} <span className="text-slate-300">·</span> Band {user.band} <span className="text-slate-300">·</span> {user.gender}
+          </p>
+          <p className="mt-1 text-sm text-slate-500">
             {BASIS[basis].label.toLowerCase()} · {period}
             {department ? ` · ${department}` : " · all departments"}
           </p>

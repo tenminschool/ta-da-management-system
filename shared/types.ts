@@ -193,7 +193,6 @@ export interface RequestDraft {
   travelTo: string;
   totalKM: number;
   legs: Leg[];
-  workedDuringLunch: boolean;
   officeMealTaken: boolean;
   dualWorkstation: boolean;
   dualWorkstationType: string;
@@ -343,7 +342,6 @@ export interface RequestRecord {
   perDiemDays: number;
   perDiemAmount: number;
   lunchAllowance: number;
-  workedDuringLunch: boolean;
   officeMealTaken: boolean;
   dualWorkstation: boolean;
   dualWorkstationType: string;

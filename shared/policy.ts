@@ -120,20 +120,6 @@ export function workingHours(start: string, end: string): number {
   return Math.round((mins / 60) * 100) / 100;
 }
 
-/** True when the shift overlaps the configured office lunch window. */
-export function coversLunchWindow(policy: Policy, start: string, end: string): boolean {
-  const toMin = (t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
-  };
-  const s = toMin(start);
-  const e = toMin(end);
-  const ls = toMin(cfgStr(policy, "LUNCH_WINDOW_START", "13:00"));
-  const le = toMin(cfgStr(policy, "LUNCH_WINDOW_END", "15:00"));
-  if ([s, e, ls, le].some((v) => Number.isNaN(v))) return false;
-  return s < le && e > ls;
-}
-
 /**
  * BDT per km for a personal-vehicle claim — the employee's own approved
  * mileage against Administration's current fuel price, not a flat band rate.
@@ -375,26 +361,19 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       perDiemEligible = true;
       perDiemDays = 1;
       const perHead = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
-      perDiemAmount = money(perHead * teamSize);
+      // A company-provided lunch is already covered, so it comes off the
+      // Per-Diem itself rather than being tracked as a separate allowance.
+      const mealDeduction = officeMeal ? cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75) : 0;
+      const netPerHead = money(perHead - mealDeduction);
+      perDiemAmount = money(netPerHead * teamSize);
       notes.push(
         `Worked ${hours} hours (≥ ${minHours}) — Per-Diem ${perHead} each` +
+        (mealDeduction > 0 ? ` minus ${mealDeduction} for the office meal = ${netPerHead} each` : "") +
         (teamSize > 1 ? ` × ${teamSize} travellers = ${perDiemAmount}` : "") +
-        " approved automatically. Lunch is included, so lunch allowance is not payable.",
+        " approved automatically.",
       );
-    } else if (draft.workedDuringLunch) {
-      if (officeMeal) {
-        notes.push("Office meal was provided — lunch allowance is not payable (no duplicate meal claim).");
-      } else {
-        lunchEligible = true;
-        const perHead = cfgNum(policy, "LUNCH_ALLOWANCE", 150);
-        lunchAllowance = money(perHead * teamSize);
-        notes.push(
-          `Worked ${hours} hours (< ${minHours}) through the lunch window — lunch allowance ${perHead} each` +
-          (teamSize > 1 ? ` × ${teamSize} travellers = ${lunchAllowance}` : "") + ".",
-        );
-      }
     } else if (hours > 0) {
-      notes.push(`Worked ${hours} hours (< ${minHours}) and not through lunch — no Per-Diem or lunch allowance.`);
+      notes.push(`Worked ${hours} hours (< ${minHours}) — no Per-Diem.`);
     }
   }
 
@@ -799,7 +778,6 @@ export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecial
     travelTo: "",
     totalKM: 0,
     legs: [],
-    workedDuringLunch: false,
     officeMealTaken: false,
     dualWorkstation: false,
     dualWorkstationType: "",

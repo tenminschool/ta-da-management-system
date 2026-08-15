@@ -939,7 +939,6 @@ function toDraft(r: Detail["request"]): RequestDraft {
     travelTo: r.travelTo,
     totalKM: r.totalKM,
     legs: r.legs,
-    workedDuringLunch: r.workedDuringLunch,
     officeMealTaken: r.officeMealTaken,
     dualWorkstation: r.dualWorkstation,
     dualWorkstationType: r.dualWorkstationType,

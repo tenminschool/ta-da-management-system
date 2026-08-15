@@ -512,6 +512,15 @@ function StepTravelType({
             </Field>
           )}
 
+          <div className="sm:col-span-2">
+            <Notice
+              tone="warn"
+              items={[
+                "Enter your travel date exactly as it happened — a manipulated or falsified date is grounds for rejecting this request.",
+              ]}
+            />
+          </div>
+
           {/* Inside-city says where it went above, beside the city. */}
           {outside && (
             <>
@@ -561,6 +570,15 @@ function StepTravelType({
             <Field label="End time" required>
               <input type="time" className="field" value={draft.endTime} onChange={(e) => set({ endTime: e.target.value })} />
             </Field>
+          </div>
+          <div className="mt-4">
+            <Toggle
+              checked={draft.dualWorkstation ? true : draft.officeMealTaken}
+              disabled={draft.dualWorkstation}
+              onChange={(officeMealTaken) => set({ officeMealTaken })}
+              label="Office meal taken?"
+              hint={`If the office provided a meal, ${cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75)} ${cfgStr(policy, "CURRENCY", "BDT")} is deducted from your Per-Diem — otherwise the full amount is paid.`}
+            />
           </div>
         </Card>
       )}
@@ -1193,40 +1211,19 @@ function StepAllowances({
   if (inside) {
     return (
       <>
-        {(
-          <Card
-            title="Per-Diem & meals"
-            subtitle={`You worked ${computation.workingHours} hour(s). Eligibility is decided by the system, not by you.`}
-          >
-            <div className="space-y-3">
-              {computation.perDiemEligible ? (
-                <Notice
-                  tone="info"
-                  items={[
-                    `Per-Diem of ${currency} ${computation.perDiemAmount} is approved automatically (≥ ${minHours} hours). Lunch is included, so lunch allowance is switched off.`,
-                  ]}
-                />
-              ) : (
-                <>
-                  <Toggle
-                    checked={draft.workedDuringLunch}
-                    onChange={(workedDuringLunch) => set({ workedDuringLunch })}
-                    label="Did you work during lunch time?"
-                    hint={`Under ${minHours} hours, working through lunch qualifies for the lunch allowance.`}
-                  />
-                  <Toggle
-                    checked={draft.dualWorkstation ? true : draft.officeMealTaken}
-                    disabled={draft.dualWorkstation}
-                    onChange={(officeMealTaken) => set({ officeMealTaken })}
-                    label="Office meal taken?"
-                    hint="If the office provided a meal, lunch allowance is not payable — no duplicate meal claims."
-                  />
-                </>
-              )}
-            </div>
-          </Card>
-        )}
-
+        <Card
+          title="Per-Diem"
+          subtitle={`You worked ${computation.workingHours} hour(s). Eligibility is decided by the system, not by you.`}
+        >
+          <Notice
+            tone={computation.perDiemEligible ? "info" : "warn"}
+            items={[
+              computation.perDiemEligible
+                ? `Per-Diem of ${currency} ${computation.perDiemAmount} is approved automatically (≥ ${minHours} hours).`
+                : `No Per-Diem — you worked under ${minHours} hour(s).`,
+            ]}
+          />
+        </Card>
       </>
     );
   }
