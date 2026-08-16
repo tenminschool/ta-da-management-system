@@ -48,9 +48,9 @@ export const TABS: TabSpec[] = [
       "employee_id", "name", "email", "password", "gender", "band",
       "department", "designation", "line_manager_id", "roles",
       "payment_method", "account_number", "status",
-      // Set by an administrator to let this person file a late claim: they may
-      // submit past the window until the end of this date.
-      "claim_unlock_until",
+      // Set by an administrator to let this person file a late claim: the
+      // earliest travel date they may now submit a claim for.
+      "claim_unlock_from",
     ],
     seed: [
       ["", "EMP-1001", "Ariful Islam", "ariful@10ms.com", "1234", "Male", "G", "Sales", "Sales Executive", "EMP-1005", "user", "bKash", "01700000001", "Active"],

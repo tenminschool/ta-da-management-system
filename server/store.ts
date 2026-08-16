@@ -148,7 +148,7 @@ export function toEmployee(r: Row & { _row: string }): EmployeeRow {
     roles: parseRoles(r.roles),
     paymentMethod: r.payment_method,
     accountNumber: r.account_number,
-    claimUnlockUntil: r.claim_unlock_until || "",
+    claimUnlockFrom: r.claim_unlock_from || "",
     status: r.status || "Active",
     _row: r._row,
   };

@@ -251,8 +251,8 @@ export const api = {
   acknowledge: (id: string, received: boolean, note = "") =>
     post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/acknowledge`, { received, note }),
 
-  claimUnlock: (employeeId: string, until: string) =>
-    post<{ ok: boolean; employeeId: string; until: string }>("/admin/claim-unlock", { employeeId, until }),
+  claimUnlock: (employeeId: string, from: string) =>
+    post<{ ok: boolean; employeeId: string; from: string }>("/admin/claim-unlock", { employeeId, from }),
 
   myVehicle: () => call<{ vehicle: VehicleRegistration | null }>("/vehicles/mine"),
   registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number; imageLink?: string }) =>

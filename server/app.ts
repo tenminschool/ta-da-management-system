@@ -167,7 +167,7 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   // requiring the person to sign out and back in.
   const fresh = await currentSession(req.session);
   res.json({
-    user: { ...user, claimUnlockUntil: fresh.claimUnlockUntil, registeredVehicle: fresh.registeredVehicle, managesOthers: await managesOthers(user.employeeId) },
+    user: { ...user, claimUnlockFrom: fresh.claimUnlockFrom, registeredVehicle: fresh.registeredVehicle, managesOthers: await managesOthers(user.employeeId) },
   });
 }));
 
@@ -780,7 +780,7 @@ async function currentSession(session: Session): Promise<Session> {
   const row = (await allEmployees()).find((e) => e.employeeId === session.employeeId);
   return {
     ...session,
-    claimUnlockUntil: row?.claimUnlockUntil || "",
+    claimUnlockFrom: row?.claimUnlockFrom || "",
     registeredVehicle: await approvedVehicleFor(session.employeeId),
   };
 }
@@ -1514,7 +1514,8 @@ app.get("/api/admin/tabs", requireAuth, handler(async (req, res) => {
 }));
 
 /**
- * Opens the claim window for one person who missed it.
+ * Opens the claim window for one person who missed it, back to a specific
+ * past date.
  *
  * Granted against the employee rather than a claim, because the claim they
  * need to file does not exist yet — the window is what is stopping them
@@ -1526,10 +1527,10 @@ app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
     return;
   }
   const employeeId = String(req.body?.employeeId || "").trim();
-  const until = String(req.body?.until || "").trim();
+  const from = String(req.body?.from || "").trim();
   // An empty date takes the unlock away again.
-  if (until && !/^\d{4}-\d{2}-\d{2}$/.test(until)) {
-    res.status(400).json({ error: "Give the date to unlock until, as YYYY-MM-DD." });
+  if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    res.status(400).json({ error: "Give the date to unlock from, as YYYY-MM-DD." });
     return;
   }
   const rows = await readTab("Employees");
@@ -1541,9 +1542,9 @@ app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
   // updateRow replaces the whole row, so the record is carried over intact and
   // only the one cell changed.
   const { _row, ...rest } = row;
-  await updateRow("Employees", _row, { ...rest, claim_unlock_until: until });
+  await updateRow("Employees", _row, { ...rest, claim_unlock_from: from });
   invalidateEmployees();
-  res.json({ ok: true, employeeId, until });
+  res.json({ ok: true, employeeId, from });
 }));
 
 // ── Vehicles: register, approve, claim against ──────────────────────────────

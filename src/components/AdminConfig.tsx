@@ -198,11 +198,7 @@ function ClaimUnlock() {
   const [q, setQ] = useState("");
   const [found, setFound] = useState<EmployeeLite[]>([]);
   const [picked, setPicked] = useState<EmployeeLite | null>(null);
-  const [until, setUntil] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
-  });
+  const [from, setFrom] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -228,7 +224,7 @@ function ClaimUnlock() {
       await api.claimUnlock(picked.employeeId, date);
       setMessage(
         date
-          ? `${picked.name} can file late claims until ${date}.`
+          ? `${picked.name} can file claims for travel from ${date} onward.`
           : `Late claims closed again for ${picked.name}.`,
       );
     } catch (err) {
@@ -241,7 +237,7 @@ function ClaimUnlock() {
   return (
     <Card
       title="Unlock a late claim"
-      subtitle="Claims must be filed within the window set by CLAIM_WINDOW_DAYS. This lets one person file past it."
+      subtitle="Claims must be filed within the window set by CLAIM_WINDOW_DAYS. Pick the earliest travel date one person may now file for."
     >
       <div className="grid gap-4 sm:grid-cols-[1fr_12rem_auto] sm:items-end">
         <div className="relative">
@@ -286,12 +282,12 @@ function ClaimUnlock() {
         </div>
 
         <div>
-          <label className="label">Allow until</label>
-          <input type="date" className="field" value={until} onChange={(e) => setUntil(e.target.value)} />
+          <label className="label">Unlocked from</label>
+          <input type="date" className="field" value={from} onChange={(e) => setFrom(e.target.value)} />
         </div>
 
         <div className="flex gap-2">
-          <button className="btn-primary" disabled={!picked || busy || !until} onClick={() => save(until)}>
+          <button className="btn-primary" disabled={!picked || busy || !from} onClick={() => save(from)}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : null} Unlock
           </button>
           <button className="btn-ghost" disabled={!picked || busy} onClick={() => save("")}>

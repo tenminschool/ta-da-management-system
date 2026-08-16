@@ -276,8 +276,8 @@ function StepTravelType({
   // Administration can lift this per person from Configuration, which is
   // exactly what unlocks the calendar back open here too.
   const claimWindowDays = cfgNum(policy, "CLAIM_WINDOW_DAYS", 7);
-  const claimWindowUnlocked = !!(user.claimUnlockUntil && todayISO() <= user.claimUnlockUntil);
-  const earliestClaimableDate = claimWindowUnlocked ? "" : addDays(todayISO(), -claimWindowDays);
+  const claimWindowUnlocked = !!user.claimUnlockFrom;
+  const earliestClaimableDate = user.claimUnlockFrom || addDays(todayISO(), -claimWindowDays);
 
   // Company Arrangement chosen against one date can go stale if the date is
   // pushed closer — dropped back to Self rather than left selected behind a
@@ -459,7 +459,7 @@ function StepTravelType({
             hint={
               !outside
                 ? claimWindowUnlocked
-                  ? `Administration has unlocked late filing for you until ${fmtDate(user.claimUnlockUntil)} — any date is fine.`
+                  ? `Administration has unlocked late filing for you back to ${fmtDate(user.claimUnlockFrom)}.`
                   : `Claims must be filed within ${claimWindowDays} days of travel, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
                 : undefined
             }
@@ -478,7 +478,7 @@ function StepTravelType({
               required
               hint={
                 claimWindowUnlocked
-                  ? `Administration has unlocked late filing for you until ${fmtDate(user.claimUnlockUntil)} — any date is fine.`
+                  ? `Administration has unlocked late filing for you back to ${fmtDate(user.claimUnlockFrom)}.`
                   : `Claims must be filed within ${claimWindowDays} days of your return, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
               }
             >

@@ -522,11 +522,12 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const endedOn = draft.scope === "outside" ? draft.toDate || draft.fromDate : draft.fromDate;
   const daysSince = endedOn ? daysBetween(endedOn, todayISO()) : 0;
   if (windowDays > 0 && daysSince > windowDays) {
-    const unlockedUntil = user.claimUnlockUntil || "";
-    // An administrator can open the window for someone who has a reason.
-    if (unlockedUntil && todayISO() <= unlockedUntil) {
+    const unlockedFrom = user.claimUnlockFrom || "";
+    // An administrator can open the window back to a specific past date for
+    // someone who has a reason — this trip has to have ended on or after it.
+    if (unlockedFrom && endedOn && endedOn >= unlockedFrom) {
       notes.push(
-        `Filed ${daysSince} days after travel, past the ${windowDays}-day window — allowed because Administration unlocked late claims for you until ${unlockedUntil}.`,
+        `Filed ${daysSince} days after travel, past the ${windowDays}-day window — allowed because Administration unlocked claims from ${unlockedFrom} onward for you.`,
       );
     } else {
       errors.push(

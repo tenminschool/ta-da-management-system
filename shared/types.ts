@@ -93,8 +93,8 @@ export interface SessionUser {
   roles: Role[];
   paymentMethod: string;
   accountNumber: string;
-  /** Set by an administrator: submit late until the end of this date. */
-  claimUnlockUntil?: string;
+  /** Set by an administrator: the earliest travel date this person may now file a late claim for. */
+  claimUnlockFrom?: string;
   /**
    * Derived, not stored: true when at least one active employee lists this
    * person as their line manager. Recomputed on every sign-in and /me, so
@@ -104,7 +104,7 @@ export interface SessionUser {
   /**
    * This person's own vehicle, once HR or Admin has approved it — never set
    * from a pending or rejected registration. Read fresh from the Vehicles tab
-   * at every claim computation, the same way claimUnlockUntil is, so an
+   * at every claim computation, the same way claimUnlockFrom is, so an
    * approval takes effect without signing in again.
    */
   registeredVehicle?: { vehicleType: "Bike" | "Car"; model: string; fuelType: string; mileageKmPerLitre: number };
