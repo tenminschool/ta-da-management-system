@@ -162,9 +162,13 @@ app.post("/api/login", handler(async (req, res) => {
 
 app.get("/api/me", requireAuth, handler(async (req, res) => {
   const { expiresAt, ...user } = req.session;
-  // Recomputed rather than read from the token, so a hierarchy change in the
-  // sheet takes effect without the user signing out and back in.
-  res.json({ user: { ...user, managesOthers: await managesOthers(user.employeeId) } });
+  // Recomputed rather than read from the token, so a claim-window unlock (or
+  // a hierarchy change) takes effect on the next page load rather than
+  // requiring the person to sign out and back in.
+  const fresh = await currentSession(req.session);
+  res.json({
+    user: { ...user, claimUnlockUntil: fresh.claimUnlockUntil, registeredVehicle: fresh.registeredVehicle, managesOthers: await managesOthers(user.employeeId) },
+  });
 }));
 
 /** Saves this employee's own bKash number, so every future claim starts pre-filled with it. */
