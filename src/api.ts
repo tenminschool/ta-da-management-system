@@ -110,6 +110,42 @@ export interface RequestDetail {
   advanceStep: AdvanceStep | null;
 }
 
+export interface ReconcileMatch {
+  requestId: string;
+  employeeName: string;
+  bkashNumber: string;
+  expectedAmount: number;
+  fileAmount: number;
+  amountDiff: number;
+  confidence: "exact" | "close" | "mismatch";
+  receiptNo: string;
+  completionDate: string;
+  requestStatus: string;
+}
+
+export interface ReconcileUnmatchedClaim {
+  requestId: string;
+  employeeName: string;
+  bkashNumber: string;
+  expectedAmount: number;
+  status: string;
+}
+
+export interface ReconcileUnmatchedFileRow {
+  receiptNo: string;
+  completionDate: string;
+  amount: number;
+  bkashNumber: string;
+  rawOppositeParty: string;
+  status: string;
+}
+
+export interface ReconcileResult {
+  matches: ReconcileMatch[];
+  unmatchedClaims: ReconcileUnmatchedClaim[];
+  unmatchedFileRows: ReconcileUnmatchedFileRow[];
+}
+
 export interface EmployeeLite {
   employeeId: string;
   name: string;
@@ -205,6 +241,13 @@ export const api = {
     }),
   pay: (id: string, payload: Record<string, unknown>) =>
     post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/payment`, payload),
+  reconcilePreview: (contentBase64: string) =>
+    post<ReconcileResult>("/requests/payment-reconcile/preview", { contentBase64 }),
+  reconcileConfirm: (filename: string, matches: ReconcileMatch[]) =>
+    post<{ results: { requestId: string; ok: boolean; error?: string }[] }>(
+      "/requests/payment-reconcile/confirm",
+      { filename, matches },
+    ),
   acknowledge: (id: string, received: boolean, note = "") =>
     post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/acknowledge`, { received, note }),
 

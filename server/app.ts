@@ -29,6 +29,7 @@ import {
   toRequest, toVehicle, upsertApproval,
 } from "./store.js";
 import { addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor } from "../shared/policy.js";
+import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
 import type { RequestDraft, RequestRecord, SessionUser, Status, VehicleRegistration } from "../shared/types.js";
 
@@ -1162,6 +1163,131 @@ app.post("/api/requests/:id/payment", requireAuth, handler(async (req, res) => {
   );
 
   res.json({ request: updated });
+}));
+
+// ── Finance: bulk payment reconciliation ────────────────────────────────────
+
+/**
+ * Reads a bKash/eMoney settlement export and matches its payout rows against
+ * every claim waiting on Finance for payment — a preview only, nothing is
+ * written. Finance reviews the matches on screen and calls `/confirm` with
+ * whichever ones they accept, so a bad match never silently marks a claim
+ * paid.
+ */
+app.post("/api/requests/payment-reconcile/preview", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "finance")) {
+    res.status(403).json({ error: "Only Finance can reconcile payments." });
+    return;
+  }
+  const contentBase64 = String(req.body?.contentBase64 || "");
+  if (!contentBase64) {
+    res.status(400).json({ error: "No file received." });
+    return;
+  }
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(Buffer.from(contentBase64, "base64"));
+  } catch {
+    res.status(400).json({ error: "That doesn't look like a valid .xlsx file." });
+    return;
+  }
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    res.status(400).json({ error: "The file has no sheet to read." });
+    return;
+  }
+  const fileRows = parseSettlementSheet(worksheet);
+  if (!fileRows.length) {
+    res.status(400).json({ error: "No completed payout rows were found in this file — check it's the right export." });
+    return;
+  }
+
+  const rows = await readTab("Requests");
+  const candidates = rows
+    .map((r) => toRequest(r))
+    .filter((r) => ["payment_processing", "payment_disputed"].includes(r.status) && r.payoutMethod === "bkash")
+    .map((r) => ({
+      requestId: r.requestId,
+      employeeName: r.employeeName,
+      bkashNumber: normalizeBkash(r.bkashNumber),
+      expectedAmount: r.finalPayable,
+      status: r.status,
+    }));
+
+  res.json(matchSettlement(fileRows, candidates));
+}));
+
+/** Marks every accepted match paid, the same way a manual "Mark paid" would. */
+app.post("/api/requests/payment-reconcile/confirm", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "finance")) {
+    res.status(403).json({ error: "Only Finance can reconcile payments." });
+    return;
+  }
+  const filename = String(req.body?.filename || "settlement file").trim();
+  const picked = Array.isArray(req.body?.matches) ? req.body.matches : [];
+  if (!picked.length) {
+    res.status(400).json({ error: "Nothing selected to confirm." });
+    return;
+  }
+
+  const results: { requestId: string; ok: boolean; error?: string }[] = [];
+  for (const m of picked) {
+    const requestId = String(m?.requestId || "");
+    const receiptNo = String(m?.receiptNo || "").trim();
+    const fileAmount = Number(m?.fileAmount);
+    const completionDate = String(m?.completionDate || "").trim() || new Date().toISOString().slice(0, 10);
+    if (!requestId || !receiptNo || !Number.isFinite(fileAmount) || fileAmount <= 0) {
+      results.push({ requestId: requestId || "(unknown row)", ok: false, error: "Malformed row — skipped." });
+      continue;
+    }
+    try {
+      const rows = await readTab("Requests");
+      const row = rows.find((r) => r.request_id === requestId);
+      if (!row) {
+        results.push({ requestId, ok: false, error: "Request not found." });
+        continue;
+      }
+      const record = toRequest(row);
+      if (!["payment_processing", "payment_disputed"].includes(record.status)) {
+        results.push({ requestId, ok: false, error: `Already at "${record.status}" — skipped.` });
+        continue;
+      }
+      const answeringDispute = record.status === "payment_disputed";
+      const updated: RequestRecord = {
+        ...record,
+        status: "paid",
+        completedAt: "",
+        paymentAck: "",
+        paymentAckAt: "",
+        paymentAckNote: "",
+        updatedAt: nowISO(),
+        paymentMode: "bKash",
+        transactionId: receiptNo,
+        paymentDate: completionDate,
+        paidAmount: fileAmount,
+        paidBy: `${req.session.name} <${req.session.email}>`,
+      };
+      await updateRow("Requests", row._row, fromRequest(updated));
+      await upsertApproval(
+        record.requestId,
+        record.employeeName,
+        [{
+          group: "Payment",
+          status: "Paid",
+          by: `${req.session.name} <${req.session.email}>`,
+          remarks: `bKash · ${receiptNo} · ${fileAmount} — auto-reconciled from ${filename}.`,
+        }],
+        {
+          currentStage: updated.status,
+          lastAction: `${answeringDispute ? "Re-paid" : "Paid"} by ${req.session.name} (auto-reconcile)`,
+        },
+      );
+      results.push({ requestId, ok: true });
+    } catch (err) {
+      results.push({ requestId, ok: false, error: (err as Error).message });
+    }
+  }
+  res.json({ results });
 }));
 
 /**

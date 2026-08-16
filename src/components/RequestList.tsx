@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, Download, FileSpreadsheet, RotateCcw, X } from "lucide-react";
+import { ChevronRight, Download, FileSpreadsheet, RotateCcw, UploadCloud, X } from "lucide-react";
 import { api, type RequestListItem } from "../api.js";
 import { STATUS_GROUPS, STATUS_LABEL, type StatusGroup } from "../../shared/types.js";
 import { downloadCSV } from "../lib/csv.js";
 import { Card, Empty, Money, Notice, ProgressBar, SearchInput, Spinner, StatusBadge } from "./ui.js";
+import PaymentReconcileModal from "./PaymentReconcile.js";
 
 export default function RequestList({
   scope, title, subtitle, onOpen, refreshKey, showEmployee = true, showFilters = false,
@@ -37,13 +38,15 @@ export default function RequestList({
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<{ tone: "warn" | "error"; text: string } | null>(null);
+  const [reconciling, setReconciling] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     setLoading(true);
     api.requests(scope)
       .then((r) => setRows(r.requests))
       .finally(() => setLoading(false));
-  }, [scope, refreshKey]);
+  }, [scope, refreshKey, reload]);
 
   // Filter options come from the data itself, so a new department in the sheet
   // shows up here without any code change.
@@ -248,6 +251,13 @@ export default function RequestList({
               >
                 <FileSpreadsheet size={14} /> {exporting ? "Building…" : "Download payment file"}
               </button>
+              <button
+                className="btn-success !px-3 !py-1.5 text-xs"
+                onClick={() => setReconciling(true)}
+                title="Upload the bKash/eMoney settlement export from a payout run — matching claims are marked paid after you review them."
+              >
+                <UploadCloud size={14} /> Reconcile from file
+              </button>
             </div>
           </div>
         )}
@@ -391,6 +401,13 @@ export default function RequestList({
           </>
         )}
       </Card>
+
+      {reconciling && (
+        <PaymentReconcileModal
+          onClose={() => setReconciling(false)}
+          onDone={() => { setPicked(new Set()); setReload((n) => n + 1); }}
+        />
+      )}
     </div>
   );
 }
