@@ -7,6 +7,13 @@ import { STATUS_GROUPS, type StatusGroup } from "../../shared/types.js";
 import type { RequestRecord, SessionUser } from "../../shared/types.js";
 import { Card, Empty, Money, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
+/** Today, read the way a person would say it — "Sunday, 16 August 2026". */
+function todayLabel(): string {
+  return new Date().toLocaleDateString(undefined, {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+}
+
 // Labels come from the shared group definitions, so a card can never be named
 // one thing here and filtered as another.
 const CARDS = [
@@ -46,13 +53,16 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-bold text-slate-900 sm:text-xl">
-          Hello, {user.name.split(" ")[0]}
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Band {user.band} · {user.designation} · {user.department}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900 sm:text-xl">
+            Hello, {user.name.split(" ")[0]}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Band {user.band} · {user.designation} · {user.department}
+          </p>
+        </div>
+        <p className="text-sm font-medium text-slate-500">{todayLabel()}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-6">
