@@ -395,7 +395,11 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     : 0;
   const perNightLimit = band?.accommodationLimit ?? 0;
   const accommodationLimit = money(perNightLimit * (nights || 1));
-  let accommodationAmount = draft.accommodationType === "personal" ? 0 : money(Number(draft.accommodationAmount) || 0);
+  // Company Arrangement is paid by the company directly — the employee has
+  // nothing to claim, so no hotel details are asked for or required.
+  let accommodationAmount = draft.accommodationType === "personal" || draft.arrangement === "company"
+    ? 0
+    : money(Number(draft.accommodationAmount) || 0);
 
   if (accommodationAmount > 0) {
     if (draft.scope !== "outside") {

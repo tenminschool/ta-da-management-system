@@ -107,6 +107,7 @@ export const TABS: TabSpec[] = [
       "payment_ack", "payment_ack_at", "payment_ack_note",
       "approved_amount", "approved_amount_by", "approved_amount_at", "approved_amount_note",
       "trip_direction",
+      "company_transport_amount", "company_accommodation_amount", "company_amounts_by", "company_amounts_at",
     ],
   },
 

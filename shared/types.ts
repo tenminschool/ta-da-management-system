@@ -396,6 +396,16 @@ export interface RequestRecord {
   approvedAmountBy: string;
   approvedAmountAt: string;
   approvedAmountNote: string;
+  /**
+   * Company Arrangement travel is paid by the company directly, so the
+   * employee never enters a transport or hotel figure — HR/Admin can log
+   * what it actually cost here, for reporting only. It does not change what
+   * is payable to the employee.
+   */
+  companyTransportAmount: number;
+  companyAccommodationAmount: number;
+  companyAmountsBy: string;
+  companyAmountsAt: string;
 }
 
 /** One request = one row in the Approvals tab, with a column group per desk. */

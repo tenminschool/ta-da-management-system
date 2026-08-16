@@ -164,7 +164,11 @@ export async function getHeaders(tab: string): Promise<string[]> {
     spreadsheetId: SPREADSHEET_ID,
     range: `${quote(tab)}!1:1`,
   }));
-  const live = (res.data.values?.[0] as string[] | undefined)?.filter(Boolean);
+  // A blank cell here is a real column that just has no name — dropping it
+  // would compact the array and shift every column after it out of position,
+  // since column order elsewhere is taken to be this array's index. The API
+  // already omits unpopulated trailing cells, so nothing further to trim.
+  const live = res.data.values?.[0] as string[] | undefined;
   // Fall back to the compiled-in schema when the tab exists but is blank, so a
   // half-finished setup still behaves predictably.
   const headers = live?.length ? live : TAB[tab]?.headers ?? [];
@@ -215,29 +219,44 @@ function project(headers: string[], record: Row): string[] {
   });
 }
 
-/** Appends a row and returns the sheet row number it landed on (0 if unknown). */
+/**
+ * The next blank row, found from column A alone rather than `values.append`'s
+ * own table auto-detection — that heuristic gets thrown off by any
+ * irregularity in existing rows (a blank header cell, rows of differing
+ * width from older schema versions) and has been seen landing new data at
+ * the wrong column entirely. Column A is always the primary key for every
+ * row this app writes, so its length is an unambiguous row count.
+ */
+async function nextBlankRow(tab: string): Promise<number> {
+  const res = await retry(() => sheetsClient().spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${quote(tab)}!A:A`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  }));
+  return (res.data.values?.length || 1) + 1;
+}
+
+/** Appends a row and returns the sheet row number it landed on. */
 export async function appendRow(tab: string, record: Row): Promise<number> {
   const headers = await getHeaders(tab);
-  const res = await retry(() => sheetsClient().spreadsheets.values.append({
+  const rowNumber = await nextBlankRow(tab);
+  await retry(() => sheetsClient().spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${quote(tab)}!A:${colLetter(headers.length - 1)}`,
+    range: `${quote(tab)}!A${rowNumber}:${colLetter(headers.length - 1)}${rowNumber}`,
     valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
     requestBody: { values: [project(headers, record)] },
   }), 8, "write");
-  // updatedRange looks like 'Requests'!A42:BZ42 — the row is what we need.
-  const match = /![A-Z]+(\d+)/.exec(res.data.updates?.updatedRange || "");
-  return match ? Number(match[1]) : 0;
+  return rowNumber;
 }
 
 export async function appendRows(tab: string, records: Row[]): Promise<void> {
   if (!records.length) return;
   const headers = await getHeaders(tab);
-  await retry(() => sheetsClient().spreadsheets.values.append({
+  const startRow = await nextBlankRow(tab);
+  await retry(() => sheetsClient().spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${quote(tab)}!A:${colLetter(headers.length - 1)}`,
+    range: `${quote(tab)}!A${startRow}:${colLetter(headers.length - 1)}${startRow + records.length - 1}`,
     valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
     requestBody: { values: records.map((r) => project(headers, r)) },
   }), 8, "write");
 }

@@ -699,6 +699,10 @@ function buildRecord(
     approvedAmountBy: base.approvedAmountBy ?? "",
     approvedAmountAt: base.approvedAmountAt ?? "",
     approvedAmountNote: base.approvedAmountNote ?? "",
+    companyTransportAmount: base.companyTransportAmount ?? 0,
+    companyAccommodationAmount: base.companyAccommodationAmount ?? 0,
+    companyAmountsBy: base.companyAmountsBy ?? "",
+    companyAmountsAt: base.companyAmountsAt ?? "",
   };
 }
 
@@ -1040,6 +1044,43 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
   });
 
 
+  res.json({ request: updated });
+}));
+
+// Company Arrangement trips are paid by the company directly, so the
+// employee never enters a transport or hotel figure. HR/Admin logs what it
+// actually cost here, purely for reporting — it never touches totalClaim or
+// what is payable to the employee.
+app.post("/api/requests/:id/company-amounts", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Only HR or Admin can record company-arranged amounts." });
+    return;
+  }
+  const rows = await readTab("Requests");
+  const row = rows.find((r) => r.request_id === req.params.id);
+  if (!row) {
+    res.status(404).json({ error: "Request not found." });
+    return;
+  }
+  const record = toRequest(row);
+  if (record.arrangement !== "company") {
+    res.status(400).json({ error: "This is only for Company Arrangement trips." });
+    return;
+  }
+  const transportAmount = Number(req.body?.companyTransportAmount);
+  const accommodationAmount = Number(req.body?.companyAccommodationAmount);
+  if (!Number.isFinite(transportAmount) || transportAmount < 0 || !Number.isFinite(accommodationAmount) || accommodationAmount < 0) {
+    res.status(400).json({ error: "Enter valid amounts." });
+    return;
+  }
+  const updated: RequestRecord = {
+    ...record,
+    companyTransportAmount: transportAmount,
+    companyAccommodationAmount: accommodationAmount,
+    companyAmountsBy: `${req.session.name} <${req.session.email}>`,
+    companyAmountsAt: nowISO(),
+  };
+  await updateRow("Requests", row._row, fromRequest(updated));
   res.json({ request: updated });
 }));
 

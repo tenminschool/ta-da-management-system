@@ -199,6 +199,10 @@ export const api = {
     post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/action`, {
       action, remarks, approvedAmount,
     }),
+  saveCompanyAmounts: (id: string, companyTransportAmount: number, companyAccommodationAmount: number) =>
+    post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/company-amounts`, {
+      companyTransportAmount, companyAccommodationAmount,
+    }),
   pay: (id: string, payload: Record<string, unknown>) =>
     post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/payment`, payload),
   acknowledge: (id: string, received: boolean, note = "") =>

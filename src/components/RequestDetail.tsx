@@ -364,6 +364,15 @@ export default function RequestDetail({
             </Card>
           )}
 
+          {r.arrangement === "company" && (
+            <CompanyAmountsCard
+              r={r}
+              currency={currency}
+              canEdit={user.roles.some((role) => ["admin", "hr"].includes(role))}
+              onSaved={(updated) => setDetail((d) => (d ? { ...d, request: updated } : d))}
+            />
+          )}
+
           <Card
             title="Documents"
             subtitle={r.documentTypes.length ? r.documentTypes.join(" · ") : undefined}
@@ -702,6 +711,94 @@ const ACTION_TITLE = {
   return: "Return for correction",
   request_docs: "Request more documents",
 };
+
+/** Company Arrangement trips skip employee-entered transport/hotel figures — HR/Admin logs what it actually cost, for reporting only. */
+function CompanyAmountsCard({
+  r, currency, canEdit, onSaved,
+}: {
+  r: Detail["request"];
+  currency: string;
+  canEdit: boolean;
+  onSaved: (updated: Detail["request"]) => void;
+}) {
+  const [transport, setTransport] = useState(r.companyTransportAmount || 0);
+  const [accommodation, setAccommodation] = useState(r.companyAccommodationAmount || 0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const changed = transport !== (r.companyTransportAmount || 0) || accommodation !== (r.companyAccommodationAmount || 0);
+
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      const { request } = await api.saveCompanyAmounts(r.requestId, Number(transport), Number(accommodation));
+      onSaved(request);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Company-arranged amounts"
+      subtitle="Booked and paid by the company directly — for reporting only, this does not change what's payable to the employee."
+    >
+      {canEdit ? (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label={`Transportation (${currency})`}>
+              <input
+                type="number"
+                min={0}
+                className="field"
+                value={transport || ""}
+                onChange={(e) => setTransport(Number(e.target.value))}
+              />
+            </Field>
+            <Field label={`Accommodation (${currency})`}>
+              <input
+                type="number"
+                min={0}
+                className="field"
+                value={accommodation || ""}
+                onChange={(e) => setAccommodation(Number(e.target.value))}
+              />
+            </Field>
+          </div>
+          {r.companyAmountsBy && (
+            <p className="mt-2 text-xs text-slate-500">
+              Last recorded by {r.companyAmountsBy.replace(/<.*>/, "").trim()}
+              {r.companyAmountsAt ? ` on ${new Date(r.companyAmountsAt).toLocaleDateString()}` : ""}.
+            </p>
+          )}
+          {error && <div className="mt-2"><Notice tone="error" items={[error]} /></div>}
+          <div className="mt-3 flex justify-end">
+            <button className="btn-primary" onClick={save} disabled={busy || !changed}>
+              {busy ? "Saving…" : "Save"}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-slate-600">Transportation</span>
+            <span className="font-medium text-slate-800">
+              {r.companyTransportAmount > 0 ? <Money value={r.companyTransportAmount} currency={currency} /> : "Not recorded yet"}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-slate-600">Accommodation</span>
+            <span className="font-medium text-slate-800">
+              {r.companyAccommodationAmount > 0 ? <Money value={r.companyAccommodationAmount} currency={currency} /> : "Not recorded yet"}
+            </span>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function ActionModal({
   action, requestId, onClose, onDone, claimed, currency,

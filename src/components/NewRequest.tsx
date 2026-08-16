@@ -487,7 +487,17 @@ function StepTravelType({
               <select
                 className="field"
                 value={draft.arrangement}
-                onChange={(e) => set({ arrangement: e.target.value as RequestDraft["arrangement"] })}
+                // Company Arrangement means the company books the hotel
+                // directly, so any hotel figures already entered no longer
+                // apply.
+                onChange={(e) => {
+                  const arrangement = e.target.value as RequestDraft["arrangement"];
+                  set(
+                    arrangement === "company"
+                      ? { arrangement, accommodationType: "", hotelName: "", checkIn: "", checkOut: "", accommodationAmount: 0 }
+                      : { arrangement },
+                  );
+                }}
               >
                 <option value="self">Self Arrangement</option>
                 <option value="company" disabled={!computation.noticeOK}>
@@ -1331,43 +1341,55 @@ function StepAllowances({
       </Card>
 
       <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${band?.accommodationLimit ?? 0} per night for Band ${user.band}.`}>
-        <ChoiceGrid
-          value={draft.accommodationType}
-          // Switching to Personal clears any hotel figures already entered,
-          // so nothing is claimed for a stay with no bill.
-          onChange={(v) =>
-            set(
-              v === "personal"
-                ? { accommodationType: "personal", hotelName: "", checkIn: "", checkOut: "", accommodationAmount: 0 }
-                : { accommodationType: "hotel" },
-            )
-          }
-          options={[
-            { value: "hotel", label: "Hotel", description: "Stayed at a hotel — claim the bill." },
-            { value: "personal", label: "Personal", description: "Stayed with family or friends — no hotel bill to claim." },
-          ]}
-        />
-        {draft.accommodationType !== "personal" && (
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
-            <Field label="Hotel name">
-              <input className="field" value={draft.hotelName} onChange={(e) => set({ hotelName: e.target.value })} />
-            </Field>
-            <Field label={`Amount (${currency})`}>
-              <input
-                type="number"
-                min={0}
-                className="field"
-                value={draft.accommodationAmount || ""}
-                onChange={(e) => set({ accommodationAmount: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Check-in">
-              <input type="date" className="field" value={draft.checkIn} onChange={(e) => set({ checkIn: e.target.value })} />
-            </Field>
-            <Field label="Check-out">
-              <input type="date" className="field" value={draft.checkOut} onChange={(e) => set({ checkOut: e.target.value })} />
-            </Field>
-          </div>
+        {draft.arrangement === "company" ? (
+          <Notice
+            tone="info"
+            items={[
+              "Company Arrangement — the company books your hotel directly, so there's nothing to claim here. " +
+              "Got a receipt or other paperwork? Attach it on the Documents step instead.",
+            ]}
+          />
+        ) : (
+          <>
+            <ChoiceGrid
+              value={draft.accommodationType}
+              // Switching to Personal clears any hotel figures already entered,
+              // so nothing is claimed for a stay with no bill.
+              onChange={(v) =>
+                set(
+                  v === "personal"
+                    ? { accommodationType: "personal", hotelName: "", checkIn: "", checkOut: "", accommodationAmount: 0 }
+                    : { accommodationType: "hotel" },
+                )
+              }
+              options={[
+                { value: "hotel", label: "Hotel", description: "Stayed at a hotel — claim the bill." },
+                { value: "personal", label: "Personal", description: "Stayed with family or friends — no hotel bill to claim." },
+              ]}
+            />
+            {draft.accommodationType !== "personal" && (
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <Field label="Hotel name">
+                  <input className="field" value={draft.hotelName} onChange={(e) => set({ hotelName: e.target.value })} />
+                </Field>
+                <Field label={`Amount (${currency})`}>
+                  <input
+                    type="number"
+                    min={0}
+                    className="field"
+                    value={draft.accommodationAmount || ""}
+                    onChange={(e) => set({ accommodationAmount: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label="Check-in">
+                  <input type="date" className="field" value={draft.checkIn} onChange={(e) => set({ checkIn: e.target.value })} />
+                </Field>
+                <Field label="Check-out">
+                  <input type="date" className="field" value={draft.checkOut} onChange={(e) => set({ checkOut: e.target.value })} />
+                </Field>
+              </div>
+            )}
+          </>
         )}
       </Card>
 
