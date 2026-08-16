@@ -326,7 +326,13 @@ function StepTravelType({
                   // who wants to name the actual office rather than the city.
                   onChange={(e) => {
                     const picked = policy.routes.find((r) => r.value === e.target.value);
-                    set({ route: e.target.value, city: picked?.to || "", destination: picked?.to || "" });
+                    const touchesDhaka = picked?.from === "Dhaka" || picked?.to === "Dhaka";
+                    set({
+                      route: e.target.value,
+                      city: picked?.to || "",
+                      destination: picked?.to || "",
+                      dhakaOffice: touchesDhaka ? draft.dhakaOffice : "",
+                    });
                   }}
                 >
                   <option value="">Select a route</option>
@@ -344,6 +350,19 @@ function StepTravelType({
                     onChange={(e) => set({ city: e.target.value, destination: e.target.value })}
                     placeholder="Which city?"
                   />
+                </Field>
+              )}
+
+              {/* Dhaka has several offices to choose between; Chattogram, so
+                  far, does not. */}
+              {route && (route.from === "Dhaka" || route.to === "Dhaka") && (
+                <Field label="Dhaka office" required>
+                  <select className="field" value={draft.dhakaOffice} onChange={(e) => set({ dhakaOffice: e.target.value })}>
+                    <option value="">Select an office</option>
+                    {policy.otherOffices.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
                 </Field>
               )}
             </>

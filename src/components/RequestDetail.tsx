@@ -1042,6 +1042,7 @@ function toDraft(r: Detail["request"]): RequestDraft {
     destinationType: r.destinationType,
     tripDirection: r.tripDirection,
     route: r.route,
+    dhakaOffice: r.dhakaOffice,
     exceptionClaimed: r.exceptionClaimed,
     exceptionReason: r.exceptionReason,
     advanceWanted: r.advanceWanted,

@@ -566,6 +566,11 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     if (!taken) errors.push("Select a route.");
     else if (!draft.city) errors.push(`Which city did you travel to from ${taken.from}?`);
     else if (taken.to && draft.city !== taken.to) errors.push(`${taken.label} must end in ${taken.to}.`);
+    // Dhaka has several offices, so whichever end of the route is Dhaka needs
+    // to say which one — Chattogram, so far, does not.
+    if (taken && (taken.from === "Dhaka" || taken.to === "Dhaka") && !draft.dhakaOffice) {
+      errors.push("Select the Dhaka office for this trip.");
+    }
     if (draft.arrangement === "company") {
       if (!companyArrangementOK) {
         errors.push(
@@ -777,6 +782,7 @@ export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecial
     destinationType: "",
     tripDirection: "one_way",
     route: "",
+    dhakaOffice: "",
     exceptionClaimed: false,
     exceptionReason: "",
     advanceWanted: false,

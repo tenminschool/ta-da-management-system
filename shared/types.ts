@@ -171,6 +171,8 @@ export interface RequestDraft {
   tripDirection: "one_way" | "two_way" | "more_ways";
   /** Outside-city route taken — a Route value. Empty on inside-city trips. */
   route: string;
+  /** Which Dhaka office the trip is to/from, whenever the route touches Dhaka. */
+  dhakaOffice: string;
   /** Transport taken outside band policy, with the reason it had to be. */
   exceptionClaimed: boolean;
   exceptionReason: string;
@@ -321,6 +323,7 @@ export interface RequestRecord {
   destinationType: string;
   tripDirection: "one_way" | "two_way" | "more_ways";
   route: string;
+  dhakaOffice: string;
   exceptionClaimed: boolean;
   exceptionReason: string;
   advanceWanted: boolean;
