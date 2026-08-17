@@ -1057,7 +1057,9 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
 // Company Arrangement trips are paid by the company directly, so the
 // employee never enters a transport or hotel figure. HR/Admin logs what it
 // actually cost here, purely for reporting — it never touches totalClaim or
-// what is payable to the employee.
+// what is payable to anyone. One entry per traveller (the requester, plus
+// each team member) — costs can differ within the same trip, e.g. one
+// person staying an extra night.
 app.post("/api/requests/:id/company-amounts", requireAuth, handler(async (req, res) => {
   if (!hasRole(req.session, "admin", "hr")) {
     res.status(403).json({ error: "Only HR or Admin can record company-arranged amounts." });
@@ -1074,18 +1076,36 @@ app.post("/api/requests/:id/company-amounts", requireAuth, handler(async (req, r
     res.status(400).json({ error: "This is only for Company Arrangement trips." });
     return;
   }
-  const transportAmount = Number(req.body?.companyTransportAmount);
-  const accommodationAmount = Number(req.body?.companyAccommodationAmount);
-  if (!Number.isFinite(transportAmount) || transportAmount < 0 || !Number.isFinite(accommodationAmount) || accommodationAmount < 0) {
-    res.status(400).json({ error: "Enter valid amounts." });
+  const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+  if (!entries.length) {
+    res.status(400).json({ error: "Nothing to save." });
     return;
   }
+  const parsed = new Map<string, { transport: number; accommodation: number }>();
+  for (const e of entries) {
+    const employeeId = String(e?.employeeId || "");
+    const transport = Number(e?.companyTransportAmount);
+    const accommodation = Number(e?.companyAccommodationAmount);
+    if (!employeeId || !Number.isFinite(transport) || transport < 0 || !Number.isFinite(accommodation) || accommodation < 0) {
+      res.status(400).json({ error: "Enter valid amounts for every traveller." });
+      return;
+    }
+    parsed.set(employeeId, { transport, accommodation });
+  }
+
+  const own = parsed.get(record.employeeId);
   const updated: RequestRecord = {
     ...record,
-    companyTransportAmount: transportAmount,
-    companyAccommodationAmount: accommodationAmount,
+    companyTransportAmount: own?.transport ?? record.companyTransportAmount,
+    companyAccommodationAmount: own?.accommodation ?? record.companyAccommodationAmount,
     companyAmountsBy: `${req.session.name} <${req.session.email}>`,
     companyAmountsAt: nowISO(),
+    teamMembers: record.teamMembers.map((m) => {
+      const entry = parsed.get(m.employeeId);
+      return entry
+        ? { ...m, companyTransportAmount: entry.transport, companyAccommodationAmount: entry.accommodation }
+        : m;
+    }),
   };
   await updateRow("Requests", row._row, fromRequest(updated));
   res.json({ request: updated });

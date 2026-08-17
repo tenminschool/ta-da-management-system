@@ -666,6 +666,8 @@ function TeamPicker({
           // personal payout number just for typing their name is a wider leak
           // than this picker should cause. The claimant enters it by hand.
           bkashNumber: "",
+          companyTransportAmount: 0,
+          companyAccommodationAmount: 0,
         })));
       } catch (err) {
         if (!cancelled) setError((err as Error).message);

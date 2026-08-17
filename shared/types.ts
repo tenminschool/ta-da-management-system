@@ -140,6 +140,14 @@ export interface TeamMember {
   gender: string;
   /** Where this person's share of the payment goes. */
   bkashNumber: string;
+  /**
+   * Company Arrangement only: what this person's own transport/accommodation
+   * actually cost, logged by HR/Admin after the fact — e.g. one traveller
+   * staying an extra night. Always 0 on a freshly-submitted claim; reporting
+   * only, never payable.
+   */
+  companyTransportAmount: number;
+  companyAccommodationAmount: number;
 }
 
 export interface Leg {

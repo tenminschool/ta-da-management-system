@@ -55,6 +55,11 @@ export default function RequestDetail({
   // a single receipt or a flat amount for the whole group.
   const isTeam = r.travelType === "team" && r.teamMembers.length > 0;
   const perDiemPerHead = isTeam && r.teamSize > 0 ? r.perDiemAmount / r.teamSize : 0;
+  // Company-arranged costs are logged per traveller — the requester's own
+  // figure plus whatever each team member cost, since one person can differ
+  // from the rest (an extra night, say).
+  const companyTransportTotal = (r.companyTransportAmount || 0) + r.teamMembers.reduce((s, m) => s + (m.companyTransportAmount || 0), 0);
+  const companyAccommodationTotal = (r.companyAccommodationAmount || 0) + r.teamMembers.reduce((s, m) => s + (m.companyAccommodationAmount || 0), 0);
   // Rent-a-car and Flight are trips too, so their cost is already folded
   // into Transportation — listing them again here would look charged twice.
   const lines: [string, number][] = [
@@ -63,13 +68,13 @@ export default function RequestDetail({
     ["Lunch allowance", r.lunchAllowance],
     ["Accommodation", r.accommodationAmount],
     ["Other", r.otherAmount],
-    ["Company transportation (arranged)", r.companyTransportAmount],
-    ["Company accommodation (arranged)", r.companyAccommodationAmount],
+    ["Company transportation (arranged)", companyTransportTotal],
+    ["Company accommodation (arranged)", companyAccommodationTotal],
   ];
   // What the company already paid directly is real trip cost, so it belongs
   // in the total for the record — but it was never owed to the employee, so
   // it must never touch what Finance actually pays out.
-  const displayTotalClaim = r.totalClaim + (r.companyTransportAmount || 0) + (r.companyAccommodationAmount || 0);
+  const displayTotalClaim = r.totalClaim + companyTransportTotal + companyAccommodationTotal;
 
   // The server decides which advance step this person may take — the
   // Department Head is derived from the requester's line-manager chain, so it
@@ -505,9 +510,9 @@ export default function RequestDetail({
                   <Money value={displayTotalClaim} currency={currency} />
                 </span>
               </div>
-              {(r.companyTransportAmount > 0 || r.companyAccommodationAmount > 0) && (
+              {(companyTransportTotal > 0 || companyAccommodationTotal > 0) && (
                 <p className="text-xs text-slate-400">
-                  Includes <Money value={r.companyTransportAmount + r.companyAccommodationAmount} currency={currency} /> the
+                  Includes <Money value={companyTransportTotal + companyAccommodationTotal} currency={currency} /> the
                   company paid directly — not part of what's payable below.
                 </p>
               )}
@@ -733,17 +738,34 @@ function CompanyAmountsCard({
   canEdit: boolean;
   onSaved: (updated: Detail["request"]) => void;
 }) {
-  const [transport, setTransport] = useState(r.companyTransportAmount || 0);
-  const [accommodation, setAccommodation] = useState(r.companyAccommodationAmount || 0);
+  const isTeam = r.travelType === "team" && r.teamMembers.length > 0;
+  // The requester isn't in teamMembers, so they're stitched in as row zero —
+  // one line per traveller, since costs genuinely differ within a trip (one
+  // person staying an extra night, say).
+  const baseline = [
+    { employeeId: r.employeeId, name: r.employeeName, transport: r.companyTransportAmount || 0, accommodation: r.companyAccommodationAmount || 0 },
+    ...r.teamMembers.map((m) => ({
+      employeeId: m.employeeId, name: m.name || m.employeeId,
+      transport: m.companyTransportAmount || 0, accommodation: m.companyAccommodationAmount || 0,
+    })),
+  ];
+  const [rows, setRows] = useState(baseline);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const changed = transport !== (r.companyTransportAmount || 0) || accommodation !== (r.companyAccommodationAmount || 0);
+  const changed = rows.some((row, i) => row.transport !== baseline[i].transport || row.accommodation !== baseline[i].accommodation);
+  const update = (i: number, patch: Partial<{ transport: number; accommodation: number }>) =>
+    setRows((prev) => prev.map((row, idx) => (idx === i ? { ...row, ...patch } : row)));
 
   async function save() {
     setBusy(true);
     setError("");
     try {
-      const { request } = await api.saveCompanyAmounts(r.requestId, Number(transport), Number(accommodation));
+      const entries = rows.map((row) => ({
+        employeeId: row.employeeId,
+        companyTransportAmount: row.transport,
+        companyAccommodationAmount: row.accommodation,
+      }));
+      const { request } = await api.saveCompanyAmounts(r.requestId, entries);
       onSaved(request);
     } catch (err) {
       setError((err as Error).message);
@@ -755,30 +777,67 @@ function CompanyAmountsCard({
   return (
     <Card
       title="Company-arranged amounts"
-      subtitle="Booked and paid by the company directly — for reporting only, this does not change what's payable to the employee."
+      subtitle="Booked and paid by the company directly — for reporting only, this does not change what's payable to anyone."
     >
       {canEdit ? (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={`Transportation (${currency})`}>
-              <input
-                type="number"
-                min={0}
-                className="field"
-                value={transport || ""}
-                onChange={(e) => setTransport(Number(e.target.value))}
-              />
-            </Field>
-            <Field label={`Accommodation (${currency})`}>
-              <input
-                type="number"
-                min={0}
-                className="field"
-                value={accommodation || ""}
-                onChange={(e) => setAccommodation(Number(e.target.value))}
-              />
-            </Field>
-          </div>
+          {isTeam ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="py-2 pr-3 font-semibold">Traveller</th>
+                    <th className="py-2 pr-3 font-semibold">Transportation ({currency})</th>
+                    <th className="py-2 font-semibold">Accommodation ({currency})</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.map((row, i) => (
+                    <tr key={row.employeeId || i}>
+                      <td className="py-2 pr-3 text-slate-700">
+                        {row.name}{row.employeeId === r.employeeId ? " (requester)" : ""}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <input
+                          type="number" min={0} className="field"
+                          value={row.transport || ""}
+                          onChange={(e) => update(i, { transport: Number(e.target.value) })}
+                        />
+                      </td>
+                      <td className="py-2">
+                        <input
+                          type="number" min={0} className="field"
+                          value={row.accommodation || ""}
+                          onChange={(e) => update(i, { accommodation: Number(e.target.value) })}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={`Transportation (${currency})`}>
+                <input
+                  type="number"
+                  min={0}
+                  className="field"
+                  value={rows[0].transport || ""}
+                  onChange={(e) => update(0, { transport: Number(e.target.value) })}
+                />
+              </Field>
+              <Field label={`Accommodation (${currency})`}>
+                <input
+                  type="number"
+                  min={0}
+                  className="field"
+                  value={rows[0].accommodation || ""}
+                  onChange={(e) => update(0, { accommodation: Number(e.target.value) })}
+                />
+              </Field>
+            </div>
+          )}
           {r.companyAmountsBy && (
             <p className="mt-2 text-xs text-slate-500">
               Last recorded by {r.companyAmountsBy.replace(/<.*>/, "").trim()}
@@ -792,6 +851,33 @@ function CompanyAmountsCard({
             </button>
           </div>
         </>
+      ) : isTeam ? (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="py-2 pr-3 font-semibold">Traveller</th>
+                <th className="py-2 pr-3 font-semibold">Transportation</th>
+                <th className="py-2 font-semibold">Accommodation</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {baseline.map((row, i) => (
+                <tr key={row.employeeId || i}>
+                  <td className="py-2 pr-3 text-slate-700">
+                    {row.name}{row.employeeId === r.employeeId ? " (requester)" : ""}
+                  </td>
+                  <td className="py-2 pr-3 text-slate-800">
+                    {row.transport > 0 ? <Money value={row.transport} currency={currency} /> : "—"}
+                  </td>
+                  <td className="py-2 text-slate-800">
+                    {row.accommodation > 0 ? <Money value={row.accommodation} currency={currency} /> : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
