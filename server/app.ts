@@ -28,7 +28,9 @@ import {
   managesOthers, nextRequestId, nowISO, parseLinks, rememberAuthId, STAGE_COLUMN, toApprovalRow,
   toRequest, toVehicle, upsertApproval,
 } from "./store.js";
-import { addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor } from "../shared/policy.js";
+import {
+  addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit,
+} from "../shared/policy.js";
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
 import type { RequestDraft, RequestRecord, SessionUser, Status, VehicleRegistration } from "../shared/types.js";
@@ -463,16 +465,29 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
 
   // A bank payout has no wallet to disburse to — those, along with anything
   // the caller cannot see, are left out and reported back rather than
-  // silently dropped.
+  // silently dropped. A team claim splits into one row per traveller — see
+  // teamPayoutSplit — so any one of them missing a bKash number is reported
+  // on its own rather than dropping the whole claim.
   const skipped: string[] = [];
+  const skippedTravellers: string[] = [];
   const payouts: { wallet: string; principal: number }[] = [];
   for (const id of ids) {
     const record = byId.get(id);
-    if (!record || !canView(req.session, record) || record.payoutMethod === "bank" || !record.bkashNumber) {
+    if (!record || !canView(req.session, record) || record.payoutMethod === "bank") {
       skipped.push(id);
       continue;
     }
-    payouts.push({ wallet: record.bkashNumber, principal: record.approvedAmount > 0 ? record.approvedAmount : record.finalPayable });
+    let any = false;
+    for (const p of teamPayoutSplit(record)) {
+      if (!(p.amount > 0)) continue;
+      if (!p.bkashNumber) {
+        skippedTravellers.push(`${id}: ${p.name}`);
+        continue;
+      }
+      payouts.push({ wallet: p.bkashNumber, principal: p.amount });
+      any = true;
+    }
+    if (!any) skipped.push(id);
   }
   if (!payouts.length) {
     res.status(400).json({ error: "None of the selected claims pay out to a bKash number." });
@@ -496,6 +511,7 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="bkash-payment-${nowISO().slice(0, 10)}.xlsx"`);
   if (skipped.length) res.setHeader("X-Skipped-Ids", encodeURIComponent(skipped.join(",")));
+  if (skippedTravellers.length) res.setHeader("X-Skipped-Travellers", encodeURIComponent(skippedTravellers.join(",")));
   res.send(Buffer.from(buffer));
 }));
 

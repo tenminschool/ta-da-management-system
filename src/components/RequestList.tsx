@@ -93,19 +93,21 @@ export default function RequestList({
     setExporting(true);
     setExportNotice(null);
     try {
-      const { blob, filename, skipped } = await api.paymentExport([...picked]);
+      const { blob, filename, skipped, skippedTravellers } = await api.paymentExport([...picked]);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
+      const notes: string[] = [];
       if (skipped.length) {
-        setExportNotice({
-          tone: "warn",
-          text: `${skipped.length} of ${picked.size} claim(s) were left out of the file — no bKash number to pay: ${skipped.join(", ")}.`,
-        });
+        notes.push(`${skipped.length} of ${picked.size} claim(s) were left out of the file — no bKash number to pay: ${skipped.join(", ")}.`);
       }
+      if (skippedTravellers.length) {
+        notes.push(`${skippedTravellers.length} traveller(s) on a team claim have no bKash number, so their share was left out: ${skippedTravellers.join(", ")}.`);
+      }
+      if (notes.length) setExportNotice({ tone: "warn", text: notes.join(" ") });
     } catch (err) {
       setExportNotice({ tone: "error", text: (err as Error).message });
     } finally {

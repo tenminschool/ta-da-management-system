@@ -6,7 +6,7 @@ import {
 import { api, type RequestDetail as Detail } from "../api.js";
 import type { ApprovalRow, Policy, RequestDraft, SessionUser } from "../../shared/types.js";
 import { STATUS_PROGRESS, TRACK_STAGES } from "../../shared/types.js";
-import { cfgNum, cfgStr } from "../../shared/policy.js";
+import { cfgNum, cfgStr, teamPayoutSplit } from "../../shared/policy.js";
 import { Card, Empty, Field, Modal, Money, Notice, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestDetail({
@@ -538,14 +538,15 @@ export default function RequestDetail({
                 <div className="border-t border-slate-200 pt-2">
                   <span className="text-slate-600">Pay to (bKash) — paid separately per traveller</span>
                   <div className="mt-1 space-y-1">
-                    <div className="flex justify-between gap-3">
-                      <span className="text-xs text-slate-500">{r.employeeName} (you)</span>
-                      <span className="font-mono text-sm font-semibold text-slate-800">{r.bkashNumber || "—"}</span>
-                    </div>
-                    {r.teamMembers.map((m) => (
-                      <div key={m.employeeId} className="flex justify-between gap-3">
-                        <span className="text-xs text-slate-500">{m.name}</span>
-                        <span className="font-mono text-sm font-semibold text-slate-800">{m.bkashNumber || "—"}</span>
+                    {teamPayoutSplit(r).map((p) => (
+                      <div key={p.employeeId} className="flex justify-between gap-3">
+                        <span className="text-xs text-slate-500">
+                          {p.employeeId === r.employeeId ? `${p.name}${isMine ? " (you)" : ""}` : p.name}
+                        </span>
+                        <span className="text-right">
+                          <span className="font-mono text-xs text-slate-500">{p.bkashNumber || "—"}</span>{" "}
+                          <span className="text-sm font-semibold text-slate-800"><Money value={p.amount} currency={currency} /></span>
+                        </span>
                       </div>
                     ))}
                   </div>

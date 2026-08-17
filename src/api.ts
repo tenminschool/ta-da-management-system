@@ -279,7 +279,7 @@ export const api = {
    * The bKash bulk-disbursement workbook — binary, not JSON, so this bypasses
    * `call` and reads the response as a Blob instead.
    */
-  paymentExport: async (ids: string[]): Promise<{ blob: Blob; filename: string; skipped: string[] }> => {
+  paymentExport: async (ids: string[]): Promise<{ blob: Blob; filename: string; skipped: string[]; skippedTravellers: string[] }> => {
     const res = await fetch("/api/requests/payment-export", {
       method: "POST",
       headers: {
@@ -295,6 +295,8 @@ export const api = {
     const filename = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "bkash-payment.xlsx";
     const skippedHeader = res.headers.get("X-Skipped-Ids");
     const skipped = skippedHeader ? decodeURIComponent(skippedHeader).split(",") : [];
-    return { blob: await res.blob(), filename, skipped };
+    const skippedTravellersHeader = res.headers.get("X-Skipped-Travellers");
+    const skippedTravellers = skippedTravellersHeader ? decodeURIComponent(skippedTravellersHeader).split(",") : [];
+    return { blob: await res.blob(), filename, skipped, skippedTravellers };
   },
 };

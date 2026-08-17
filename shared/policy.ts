@@ -11,7 +11,7 @@
  */
 
 import type {
-  BandPolicy, ClaimType, Computation, Leg, Policy, RequestDraft, Scope, SessionUser,
+  BandPolicy, ClaimType, Computation, Leg, Policy, RequestDraft, RequestRecord, Scope, SessionUser,
 } from "./types.js";
 
 // ── small helpers ───────────────────────────────────────────────────────────
@@ -286,7 +286,7 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
  * rent-a-car, a personal or company vehicle) is one cost for the whole
  * party regardless of how many are on the trip.
  */
-const PER_TRAVELLER_MODES = new Set(["Bus", "Train", "Flight"]);
+export const PER_TRAVELLER_MODES = new Set(["Bus", "Train", "Flight"]);
 
 export function computeRequest(policy: Policy, draft: RequestDraft, user: SessionUser): Computation {
   const notes: string[] = [];
@@ -724,6 +724,54 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     errors,
     warnings,
   };
+}
+
+export interface TeamPayout {
+  employeeId: string;
+  name: string;
+  bkashNumber: string;
+  amount: number;
+}
+
+/**
+ * How a team claim's payout splits across bKash wallets, since one member
+ * files the whole claim but everyone still gets paid to their own number.
+ *
+ * Per-Diem and any per-traveller fare (Bus/Train/Flight — already priced ×
+ * headcount) divide evenly per person. A shared cost — accommodation,
+ * rent-a-car, a pooled leg — goes entirely to the requester, since that is
+ * who actually booked and paid it. An advance already disbursed comes off
+ * the requester's own share, and a Finance override (approvedAmount) scales
+ * every share by the same proportion rather than being decided by guesswork.
+ */
+export function teamPayoutSplit(record: RequestRecord): TeamPayout[] {
+  const teamSize = record.travelType === "team" ? record.teamMembers.length + 1 : 1;
+  if (teamSize <= 1) {
+    return [{ employeeId: record.employeeId, name: record.employeeName, bkashNumber: record.bkashNumber, amount: record.finalPayable }];
+  }
+
+  // A per-traveller leg's stored amount is the per-head fare — the same
+  // figure computeRequest multiplies by teamSize to build taAmount — so it
+  // has to be multiplied back out here to match what's actually in taAmount.
+  const perTravellerTa = money(
+    record.legs.reduce((s, l) => (PER_TRAVELLER_MODES.has(l.mode) ? s + (Number(l.amount) || 0) * teamSize : s), 0),
+  );
+  const sharedTa = money(record.taAmount - perTravellerTa);
+  const perHeadPool = money(record.perDiemAmount + perTravellerTa);
+  const perHead = money(perHeadPool / teamSize);
+  const sharedTotal = money(sharedTa + record.accommodationAmount + record.lunchAllowance + record.otherAmount);
+
+  const claimTotal = money(perHeadPool + sharedTotal);
+  const payableTotal = record.approvedAmount > 0 ? record.approvedAmount : record.totalClaim;
+  const scale = claimTotal > 0 ? payableTotal / claimTotal : 1;
+
+  const requesterAmount = money((perHead + sharedTotal) * scale - record.advanceRequested);
+  const memberAmount = money(perHead * scale);
+
+  return [
+    { employeeId: record.employeeId, name: record.employeeName, bkashNumber: record.bkashNumber, amount: requesterAmount },
+    ...record.teamMembers.map((m) => ({ employeeId: m.employeeId, name: m.name, bkashNumber: m.bkashNumber, amount: memberAmount })),
+  ];
 }
 
 /**
