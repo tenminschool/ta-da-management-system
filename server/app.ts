@@ -161,14 +161,11 @@ app.post("/api/login", handler(async (req, res) => {
 }));
 
 app.get("/api/me", requireAuth, handler(async (req, res) => {
-  const { expiresAt, ...user } = req.session;
-  // Recomputed rather than read from the token, so a claim-window unlock (or
-  // a hierarchy change) takes effect on the next page load rather than
-  // requiring the person to sign out and back in.
-  const fresh = await currentSession(req.session);
-  res.json({
-    user: { ...user, claimUnlockFrom: fresh.claimUnlockFrom, registeredVehicle: fresh.registeredVehicle, managesOthers: await managesOthers(user.employeeId) },
-  });
+  // Recomputed rather than read from the token, so a saved bKash number, a
+  // claim-window unlock, a hierarchy change etc. all take effect on the next
+  // page load rather than requiring the person to sign out and back in.
+  const { expiresAt, ...fresh } = await currentSession(req.session);
+  res.json({ user: { ...fresh, managesOthers: await managesOthers(fresh.employeeId) } });
 }));
 
 /** Saves this employee's own bKash number, so every future claim starts pre-filled with it. */
@@ -780,7 +777,22 @@ async function currentSession(session: Session): Promise<Session> {
   const row = (await allEmployees()).find((e) => e.employeeId === session.employeeId);
   return {
     ...session,
-    claimUnlockFrom: row?.claimUnlockFrom || "",
+    // Whatever HR/Admin can edit on this person's row, or the person
+    // themselves (their own bKash number) — trusting the token here would
+    // keep every one of these stuck at whatever they were at sign-in.
+    ...(row && {
+      name: row.name,
+      email: row.email,
+      gender: row.gender,
+      band: row.band,
+      department: row.department,
+      designation: row.designation,
+      lineManagerId: row.lineManagerId,
+      roles: row.roles,
+      paymentMethod: row.paymentMethod,
+      accountNumber: row.accountNumber,
+      claimUnlockFrom: row.claimUnlockFrom || "",
+    }),
     registeredVehicle: await approvedVehicleFor(session.employeeId),
   };
 }
