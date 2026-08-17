@@ -542,13 +542,8 @@ function StepTravelType({
           {/* Inside-city says where it went above, beside the city. */}
           {outside && (
             <>
-              <Field label="Destination" hint="Filled in from the route — change it to name the actual place">
-                <input
-                  className="field"
-                  value={draft.destination}
-                  onChange={(e) => set({ destination: e.target.value })}
-                  placeholder="Sylhet regional office"
-                />
+              <Field label="Destination" hint="Set from the route you picked above.">
+                <input className="field" value={draft.destination} disabled readOnly />
               </Field>
               <Field label="Purpose" required>
                 <input
