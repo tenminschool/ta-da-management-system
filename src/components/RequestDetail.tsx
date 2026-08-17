@@ -50,6 +50,7 @@ export default function RequestDetail({
 
   const r = detail.request;
   const a = detail.approval;
+  const linked = detail.linkedRequests;
   const isMine = r.employeeId === user.employeeId;
   // Per-Diem is the only line split evenly per traveller — everything else is
   // a single receipt or a flat amount for the whole group.
@@ -536,14 +537,43 @@ export default function RequestDetail({
               </div>
               {r.bkashNumber && r.payoutMethod !== "bank" && (
                 <div className="flex justify-between gap-3 border-t border-slate-200 pt-2">
-                  <span className="text-slate-600">Pay to (bKash){r.travelType === "team" ? " — your own share" : ""}</span>
+                  <span className="text-slate-600">Pay to (bKash){linked.length ? " — your own share" : ""}</span>
                   <span className="font-mono font-semibold text-slate-800">{r.bkashNumber}</span>
                 </div>
               )}
-              {r.travelType === "team" && r.teamMembers.length > 0 && (
-                <p className="border-t border-slate-200 pt-2 text-xs text-slate-400">
-                  Each teammate's share is paid on its own linked request — see Payments.
-                </p>
+              {linked.length > 0 && (
+                <div className="border-t border-slate-200 pt-2">
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-slate-700">Combined trip total</span>
+                    <span className="font-bold text-slate-900">
+                      <Money value={r.totalClaim + linked.reduce((s, l) => s + l.totalClaim, 0)} currency={currency} />
+                    </span>
+                  </div>
+                  <div className="mt-1 flex justify-between">
+                    <span className="text-slate-600">Combined payable</span>
+                    <span className="font-semibold text-slate-800">
+                      <Money value={r.finalPayable + linked.reduce((s, l) => s + l.finalPayable, 0)} currency={currency} />
+                    </span>
+                  </div>
+                  <div className="mt-2 space-y-1.5 border-t border-slate-100 pt-2">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="min-w-0 truncate text-slate-500">{r.employeeName}{isMine ? " (you)" : ""}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="font-mono text-slate-400">{r.bkashNumber || "—"}</span>
+                        <span className="font-semibold text-slate-700"><Money value={r.finalPayable} currency={currency} /></span>
+                      </span>
+                    </div>
+                    {linked.map((l) => (
+                      <div key={l.requestId} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="min-w-0 truncate text-slate-500">{l.employeeName}</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <span className="font-mono text-slate-400">{l.bkashNumber || "—"}</span>
+                          <span className="font-semibold text-slate-700"><Money value={l.finalPayable} currency={currency} /></span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           </div>

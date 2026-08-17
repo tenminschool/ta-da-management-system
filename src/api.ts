@@ -102,12 +102,22 @@ export interface RequestListItem extends RequestRecord {
   lastActionAt: string;
 }
 
+export interface LinkedRequest {
+  requestId: string;
+  employeeName: string;
+  bkashNumber: string;
+  totalClaim: number;
+  finalPayable: number;
+  status: string;
+}
+
 export interface RequestDetail {
   request: RequestRecord;
   approval: ApprovalRow | null;
   canAct: boolean;
   canEdit: boolean;
   advanceStep: AdvanceStep | null;
+  linkedRequests: LinkedRequest[];
 }
 
 export interface ReconcileMatch {

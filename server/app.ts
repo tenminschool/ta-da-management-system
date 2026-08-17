@@ -426,12 +426,28 @@ app.get("/api/requests/:id", requireAuth, handler(async (req, res) => {
   }
   const approvalRow = tabs.Approvals.find((a) => a.request_id === record.requestId);
 
+  // A team claim's linked children carry the rest of the trip's cost — the
+  // main record alone only shows the requester's own share. Surfaced here so
+  // the detail page can show what the whole trip actually adds up to.
+  const linkedRequests = tabs.Requests
+    .filter((r) => r.linked_to === record.requestId)
+    .map(toRequest)
+    .map((r) => ({
+      requestId: r.requestId,
+      employeeName: r.employeeName,
+      bkashNumber: r.bkashNumber,
+      totalClaim: r.totalClaim,
+      finalPayable: r.finalPayable,
+      status: r.status,
+    }));
+
   res.json({
     request: record,
     approval: approvalRow ? toApprovalRow(approvalRow) : null,
     canAct: canActOn(req.session, record),
     canEdit: record.employeeId === req.session.employeeId && ["draft", "returned"].includes(record.status),
     advanceStep: await advanceStepFor(req.session, record),
+    linkedRequests,
   });
 }));
 
