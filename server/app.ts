@@ -316,6 +316,12 @@ app.get("/api/requests", requireAuth, handler(async (req, res) => {
   // them, and this keeps it out of summary counts for the requester too.
   const isMine = (r: RequestRecord) => r.employeeId === me && !r.linkedTo;
   const settled = (r: RequestRecord) => ["payment_processing", "paid", "payment_disputed", "completed"].includes(r.status);
+  // Once a team claim has split into linked children, its main record is
+  // carrying other people's money too — someone filing their own team trip
+  // (a small Finance desk, say) still needs their own share in the very same
+  // payout batch as their teammates', so it can't stay hidden the way a
+  // solo claim of theirs correctly does.
+  const hasChildren = new Set(all.map((r) => r.linkedTo).filter(Boolean));
 
   // Requests this user has personally decided on, read off the Approvals row.
   const actedOn = new Set(
@@ -339,7 +345,8 @@ app.get("/api/requests", requireAuth, handler(async (req, res) => {
       case "desk_advance": return !isMine(r) && r.advanceRequested > 0;
       // Finance's own screen: what is waiting on their approval as well as
       // what is waiting to be paid.
-      case "desk_payments": return !isMine(r) && (settled(r) || ["finance_review", "payment_disputed"].includes(r.status));
+      case "desk_payments":
+        return (!isMine(r) || hasChildren.has(r.requestId)) && (settled(r) || ["finance_review", "payment_disputed"].includes(r.status));
       default: return true;
     }
   });
