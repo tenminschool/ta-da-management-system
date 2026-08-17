@@ -9,3 +9,6 @@ dist
 
 # Holds the raw service-account private key — never commit
 test.md
+
+pnpm-lock.yaml
+pnpm-workspace.yaml
