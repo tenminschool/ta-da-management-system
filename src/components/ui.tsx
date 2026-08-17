@@ -1,7 +1,9 @@
 /** Small shared presentational pieces used across every screen. */
 
 import React from "react";
-import { AlertTriangle, ChevronDown, Info, Loader2, Search, X } from "lucide-react";
+import {
+  AlertTriangle, ChevronDown, ChevronsUpDown, Info, Loader2, LogOut, Search, UserRound, X,
+} from "lucide-react";
 import { STATUS_LABEL, STATUS_PROGRESS, type Status } from "../../shared/types.js";
 
 export function Money({ value, currency = "BDT" }: { value: number; currency?: string }) {
@@ -315,6 +317,76 @@ export function MultiSelect({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The header's account control: an avatar trigger that opens a small card with
+ * the signed-in person's identity and a sign-out action. Mirrors the pattern
+ * used by the 10MS HQ shell's own header, right down to closing on an outside
+ * click rather than needing a dedicated close button.
+ */
+export function UserMenu({
+  name, email, subtitle, onSignOut,
+}: { name: string; email: string; subtitle?: string; onSignOut?: () => void }) {
+  const [open, setOpen] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const AvatarGlyph = () => (
+    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+      <UserRound size={16} />
+    </span>
+  );
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Open user menu"
+        className={`flex max-w-56 items-center gap-2 rounded-lg p-1 text-left transition-colors hover:bg-slate-100 ${open ? "bg-slate-100" : ""}`}
+      >
+        <AvatarGlyph />
+        <span className="hidden min-w-0 flex-1 leading-tight sm:grid">
+          <span className="truncate text-sm font-semibold text-slate-800">{name}</span>
+          {subtitle && <span className="truncate text-xs text-slate-400">{subtitle}</span>}
+        </span>
+        <ChevronsUpDown size={15} className="hidden shrink-0 text-slate-400 sm:block" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 z-30 mt-1.5 w-64 rounded-lg border border-slate-200 bg-white py-1 shadow-md">
+          <div className="flex items-center gap-2.5 px-3 py-2.5">
+            <AvatarGlyph />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-slate-800">{name}</p>
+              <p className="truncate text-xs text-slate-400">{email}</p>
+            </div>
+          </div>
+          {onSignOut && (
+            <>
+              <div className="my-1 border-t border-slate-200" />
+              <button
+                type="button"
+                onClick={() => { setOpen(false); onSignOut(); }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-medium text-rose-600 hover:bg-rose-50"
+              >
+                <LogOut size={15} /> Sign out
+              </button>
+            </>
+          )}
+        </div>
       )}
     </div>
   );

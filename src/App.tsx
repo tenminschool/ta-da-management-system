@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Banknote, Car, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
-  LogOut, Menu, Plus, Settings, ShieldCheck, User, Wallet, X,
+  Menu, Plus, Settings, ShieldCheck, User, Wallet,
 } from "lucide-react";
 import { useTenMSAuth } from "@tenminuteschool/auth-admin-react";
 import { api, clearToken, getToken, setToken, setUnauthorizedHandler } from "./api.js";
@@ -17,19 +17,7 @@ import AdminConfig from "./components/AdminConfig.js";
 import Reports from "./components/Reports.js";
 import VehicleRegistrations from "./components/VehicleRegistrations.js";
 import VehicleRegisterPage from "./components/VehicleRegister.js";
-import { Spinner } from "./components/ui.js";
-
-/** Today, read the way a person would say it — "Sunday, 16 August 2026". */
-function todayLabel(): string {
-  return new Date().toLocaleDateString(undefined, {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
-}
-
-/** Same, short enough for a phone-width header — "16 Aug". */
-function todayLabelShort(): string {
-  return new Date().toLocaleDateString(undefined, { day: "numeric", month: "short" });
-}
+import { Spinner, UserMenu } from "./components/ui.js";
 
 /**
  * Two workspaces, never mixed: "self" is what the person claims, "desk" is
@@ -161,6 +149,7 @@ export default function App() {
 
   const selfNav: NavItem[] = [
     { key: "dashboard", label: "Dashboard", short: "Home", icon: LayoutDashboard },
+    { key: "new", label: "New Request", short: "New", icon: Plus },
     { key: "my-requests", label: "My Requests", short: "Claims", icon: FileText },
     { key: "my-advance", label: "My Advance", short: "Advance", icon: HandCoins },
     { key: "my-payments", label: "My Payments", short: "Paid", icon: Wallet },
@@ -245,14 +234,18 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-full lg:flex">
-      {/* Sidebar — a drawer on phones, always-on from lg up */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:w-64 lg:max-w-none lg:translate-x-0 ${
-          menuOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex h-16 shrink-0 items-center gap-2.5 border-b border-slate-200 px-5">
+    <div className="flex min-h-full flex-col">
+      {/* Navbar — full width, its own row above the sidebar rather than sharing a border with it */}
+      <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:px-4 lg:px-8">
+        <button
+          className="-ml-1 shrink-0 rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 lg:hidden"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Open menu"
+        >
+          <Menu size={20} />
+        </button>
+
+        <div className="flex shrink-0 items-center gap-2.5">
           <img
             src="/logo.png"
             alt="10 Minute School"
@@ -260,20 +253,37 @@ export default function App() {
             height={32}
             className="size-8 shrink-0 rounded-lg object-contain"
           />
-          <span className="text-sm font-bold leading-tight text-slate-800">
-            TA & Per-Diem
-            <span className="block text-xs font-normal text-slate-400">PeopleOps</span>
+          <span className="hidden text-sm font-semibold tracking-tight text-slate-800 sm:inline">
+            TA &amp; Per-Diem
           </span>
-          <button
-            className="-mr-2 ml-auto rounded-lg p-2 text-slate-400 hover:bg-slate-100 lg:hidden"
-            onClick={() => setMenuOpen(false)}
-            aria-label="Close menu"
-          >
-            <X size={20} />
-          </button>
         </div>
 
-        {isApprover && (
+        <div aria-hidden className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" />
+
+        <div className="min-w-0 flex-1">
+          <span className="hidden truncate text-sm font-semibold tracking-tight text-slate-500 sm:inline">
+            {nav.find((n) => n.key === view.name)?.label ?? (workspace === "self" ? "My Claims" : "Approval Desk")}
+          </span>
+        </div>
+
+        <UserMenu
+          name={tenmsUser?.name || user.name}
+          email={user.email}
+          subtitle={`Band ${user.band} · ${user.department}`}
+          // The host owns the session when this panel is embedded — signing
+          // out here would strand the two out of step.
+          onSignOut={HOST_OWNS_SESSION ? undefined : () => void signOut()}
+        />
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        {/* Sidebar — a drawer on phones, always-on from lg up */}
+        <aside
+          className={`fixed inset-x-0 top-14 bottom-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:inset-auto lg:w-64 lg:max-w-none lg:translate-x-0 ${
+            menuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          {isApprover && (
           <div className="border-b border-slate-200 p-3">
             <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Workspace</p>
             <WorkspaceSwitch />
@@ -297,67 +307,17 @@ export default function App() {
             </button>
           ))}
         </nav>
-
-        <div className="shrink-0 border-t border-slate-200 p-3">
-          <div className="mb-2 px-2">
-            <p className="truncate text-sm font-semibold text-slate-700">{user.name}</p>
-            <p className="truncate text-xs text-slate-400">Band {user.band} · {user.department}</p>
-          </div>
-          {/* The host owns the session when this panel is embedded — signing
-              out here would strand the two out of step. */}
-          {!HOST_OWNS_SESSION && (
-            <button
-              className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
-              onClick={() => void signOut()}
-            >
-              <LogOut size={16} /> Sign out
-            </button>
-          )}
-        </div>
       </aside>
 
       {menuOpen && (
-        <div className="fixed inset-0 z-40 bg-slate-900/40 lg:hidden" onClick={() => setMenuOpen(false)} />
+        <div
+          className="fixed inset-x-0 top-14 bottom-0 z-40 bg-slate-900/40 lg:hidden"
+          onClick={() => setMenuOpen(false)}
+        />
       )}
 
       {/* Main */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:h-16 sm:px-4 lg:px-8">
-          <button
-            className="-ml-1 rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu size={20} />
-          </button>
-          <img
-            src="/logo.png"
-            alt="10 Minute School"
-            width={28}
-            height={28}
-            className="size-7 shrink-0 rounded-lg object-contain sm:hidden"
-          />
-          <span className={`hidden rounded-full px-3 py-1 text-xs font-semibold ring-1 sm:inline-flex ${
-            workspace === "self"
-              ? "bg-slate-50 text-slate-600 ring-slate-200"
-              : "bg-brand-50 text-brand-700 ring-brand-200"
-          }`}>
-            {workspace === "self" ? "My Claims" : "Approval Desk"}
-          </span>
-          <div className="flex-1" />
-          <span className="text-xs font-medium text-slate-500 sm:hidden">{todayLabelShort()}</span>
-          <span className="hidden text-sm font-medium text-slate-500 sm:inline">{todayLabel()}</span>
-          {workspace === "self" && (
-            <button
-              className="btn-primary !px-3 !py-2 text-xs sm:!px-4 sm:text-sm"
-              onClick={() => setView({ name: "new" })}
-            >
-              <Plus size={15} />
-              New<span className="hidden sm:inline">&nbsp;Request</span>
-            </button>
-          )}
-        </header>
-
         {/* Workspace switch is worth a permanent slot on phones */}
         {isApprover && (
           <div className="border-b border-slate-200 bg-white px-3 py-2 lg:hidden">
@@ -506,6 +466,7 @@ export default function App() {
             </button>
           ))}
         </nav>
+      </div>
       </div>
     </div>
   );
