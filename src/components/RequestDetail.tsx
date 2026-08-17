@@ -63,7 +63,13 @@ export default function RequestDetail({
     ["Lunch allowance", r.lunchAllowance],
     ["Accommodation", r.accommodationAmount],
     ["Other", r.otherAmount],
+    ["Company transportation (arranged)", r.companyTransportAmount],
+    ["Company accommodation (arranged)", r.companyAccommodationAmount],
   ];
+  // What the company already paid directly is real trip cost, so it belongs
+  // in the total for the record — but it was never owed to the employee, so
+  // it must never touch what Finance actually pays out.
+  const displayTotalClaim = r.totalClaim + (r.companyTransportAmount || 0) + (r.companyAccommodationAmount || 0);
 
   // The server decides which advance step this person may take — the
   // Department Head is derived from the requester's line-manager chain, so it
@@ -496,9 +502,15 @@ export default function RequestDetail({
               <div className="flex justify-between border-t border-slate-200 pt-3">
                 <span className="font-semibold text-slate-700">Total claim</span>
                 <span className={`font-bold ${r.approvedAmount ? "text-slate-400 line-through" : "text-slate-900"}`}>
-                  <Money value={r.totalClaim} currency={currency} />
+                  <Money value={displayTotalClaim} currency={currency} />
                 </span>
               </div>
+              {(r.companyTransportAmount > 0 || r.companyAccommodationAmount > 0) && (
+                <p className="text-xs text-slate-400">
+                  Includes <Money value={r.companyTransportAmount + r.companyAccommodationAmount} currency={currency} /> the
+                  company paid directly — not part of what's payable below.
+                </p>
+              )}
               {/* Both figures stay on screen: the claim as filed, and what an
                   approver decided to pay instead. */}
               {r.approvedAmount > 0 && (
