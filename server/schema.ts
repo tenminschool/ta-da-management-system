@@ -109,6 +109,7 @@ export const TABS: TabSpec[] = [
       "trip_direction",
       "company_transport_amount", "company_accommodation_amount", "company_amounts_by", "company_amounts_at",
       "dhaka_office",
+      "linked_to",
     ],
   },
 

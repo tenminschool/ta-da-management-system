@@ -33,7 +33,7 @@ import {
 } from "../shared/policy.js";
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
-import type { RequestDraft, RequestRecord, SessionUser, Status, VehicleRegistration } from "../shared/types.js";
+import type { RequestDraft, RequestRecord, SessionUser, Status, TeamMember, VehicleRegistration } from "../shared/types.js";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -262,6 +262,10 @@ app.post("/api/uploads/finish", requireAuth, handler(async (req, res) => {
  * Admin/Finance/HR see the whole pipeline for reporting.
  */
 function canView(session: Session, req: RequestRecord): boolean {
+  // A team-child record is internal bookkeeping split off the main request
+  // so Finance can pay and reconcile each traveller separately — the
+  // teammate it's nominally under never sees it, even by employeeId match.
+  if (req.linkedTo) return hasRole(session, "admin", "finance", "hr");
   if (req.employeeId === session.employeeId) return true;
   if (req.teamMembers.some((m) => m.employeeId === session.employeeId)) return true;
   if (hasRole(session, "admin", "finance", "hr")) return true;
@@ -272,6 +276,11 @@ function canView(session: Session, req: RequestRecord): boolean {
 }
 
 function canActOn(session: Session, req: RequestRecord): boolean {
+  // A child mirrors the main request's status automatically through the
+  // review stages — see the cascade in the action handler — so nobody
+  // approves/rejects/returns it on its own. Once it reaches Finance, though,
+  // each wallet is a separate real transfer, so it's paid independently.
+  if (req.linkedTo && !["payment_processing", "payment_disputed"].includes(req.status)) return false;
   switch (req.status) {
     // A line manager acts only on their own reports; Administration can unblock.
     case "manager_review":
@@ -302,7 +311,10 @@ app.get("/api/requests", requireAuth, handler(async (req, res) => {
   const visible = all.filter((r) => canView(req.session, r));
   const scope = String(req.query.scope || "all");
 
-  const isMine = (r: RequestRecord) => r.employeeId === me;
+  // A team-child record's employeeId is the teammate it's paying, but it is
+  // never "theirs" to see — canView already keeps it out of `visible` for
+  // them, and this keeps it out of summary counts for the requester too.
+  const isMine = (r: RequestRecord) => r.employeeId === me && !r.linkedTo;
   const settled = (r: RequestRecord) => ["payment_processing", "paid", "payment_disputed", "completed"].includes(r.status);
 
   // Requests this user has personally decided on, read off the Approvals row.
@@ -462,12 +474,15 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
 
   const rows = await readTab("Requests");
   const byId = new Map(rows.map((r) => [r.request_id, toRequest(r)]));
+  const hasChildren = new Set(rows.map((r) => r.linked_to).filter(Boolean));
 
   // A bank payout has no wallet to disburse to — those, along with anything
   // the caller cannot see, are left out and reported back rather than
-  // silently dropped. A team claim splits into one row per traveller — see
-  // teamPayoutSplit — so any one of them missing a bKash number is reported
-  // on its own rather than dropping the whole claim.
+  // silently dropped. A team claim already split into linked children at
+  // submission (see teamPayoutSplit / childFromMain) pays through its own
+  // reduced finalPayable like any other request — the split already
+  // happened, each child is its own row. Only a team claim from before that
+  // — no linked children — still needs the split worked out here.
   const skipped: string[] = [];
   const skippedTravellers: string[] = [];
   const payouts: { wallet: string; principal: number }[] = [];
@@ -477,8 +492,17 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
       skipped.push(id);
       continue;
     }
+    const isUnsplitTeam = record.travelType === "team" && record.teamMembers.length > 0 && !hasChildren.has(id);
+    const rowsToPay = isUnsplitTeam
+      ? teamPayoutSplit(record)
+      : [{
+          employeeId: record.employeeId,
+          name: record.employeeName,
+          bkashNumber: record.bkashNumber,
+          amount: record.approvedAmount > 0 ? record.approvedAmount : record.finalPayable,
+        }];
     let any = false;
-    for (const p of teamPayoutSplit(record)) {
+    for (const p of rowsToPay) {
       if (!(p.amount > 0)) continue;
       if (!p.bkashNumber) {
         skippedTravellers.push(`${id}: ${p.name}`);
@@ -723,6 +747,7 @@ function buildRecord(
     companyAccommodationAmount: base.companyAccommodationAmount ?? 0,
     companyAmountsBy: base.companyAmountsBy ?? "",
     companyAmountsAt: base.companyAmountsAt ?? "",
+    linkedTo: base.linkedTo ?? "",
   };
 }
 
@@ -817,8 +842,54 @@ async function awaitingAcknowledgement(employeeId: string): Promise<string[]> {
   const rows = await readTab("Requests");
   return rows
     .map(toRequest)
-    .filter((r) => r.employeeId === employeeId && r.status === "paid" && !r.paymentAck)
+    // A team-child record is invisible to the teammate it's under and never
+    // shows them a "did you get paid" prompt, so it can't be what's blocking
+    // them either.
+    .filter((r) => r.employeeId === employeeId && r.status === "paid" && !r.paymentAck && !r.linkedTo)
     .map((r) => r.requestId);
+}
+
+/**
+ * A team claim's payout, split off into one independent record per
+ * teammate — see teamPayoutSplit. Everything about the trip is copied over
+ * for context; what's genuinely theirs (identity, bKash number, their own
+ * share) replaces the requester's. It mirrors the main record's status
+ * automatically (see the cascade in the action handler) and is invisible
+ * to the teammate it's under — canView/canActOn gate on `linkedTo`.
+ */
+function childFromMain(main: RequestRecord, member: TeamMember, amount: number, requestId: string, now: string): RequestRecord {
+  return {
+    ...main,
+    requestId,
+    employeeId: member.employeeId,
+    employeeName: member.name,
+    email: "",
+    band: member.band,
+    department: member.department,
+    designation: member.designation,
+    bkashNumber: member.bkashNumber,
+    travelType: "individual",
+    teamMembers: [],
+    teamSize: 1,
+    totalClaim: money(amount),
+    finalPayable: money(amount),
+    // The advance was disbursed to the requester alone, so it has nothing to
+    // do with a teammate's own share.
+    advanceRequested: 0,
+    advanceApproved: 0,
+    advanceStatus: "",
+    settlementDueDate: "",
+    settledAmount: 0,
+    settledAt: "",
+    createdAt: now,
+    updatedAt: now,
+    submittedAt: now,
+    completedAt: "",
+    linkedTo: main.requestId,
+    paymentMode: "", transactionId: "", paymentDate: "", paidAmount: 0, paidBy: "",
+    paymentAck: "", paymentAckAt: "", paymentAckNote: "",
+    approvedAmount: 0, approvedAmountBy: "", approvedAmountAt: "", approvedAmountNote: "",
+  };
 }
 
 app.post("/api/requests", requireAuth, handler(async (req, res) => {
@@ -857,7 +928,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   const prefix = cfgStr(policy, "REQUEST_ID_PREFIX", "TA");
   const written = await withSheetLock(async () => {
     const requestId = await nextRequestId(prefix);
-    const built = buildRecord(draft, computation, session, policy, {
+    let built = buildRecord(draft, computation, session, policy, {
       requestId,
       createdAt: now,
       status: submit ? "manager_review" : "draft",
@@ -865,7 +936,39 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
       managerEmail: manager?.email || "",
       submittedAt: submit ? now : "",
     });
+
+    // A submitted team claim splits into one payable line per traveller:
+    // the main record keeps only the requester's own share, and a linked
+    // child is created for each teammate with theirs. The split is computed
+    // once, against the full-team totals, before the main record's own
+    // finalPayable/totalClaim are reduced — the children's shares must not
+    // be derived from an already-reduced figure.
+    const split = submit && draft.travelType === "team" && draft.teamMembers.length > 0
+      ? teamPayoutSplit(built)
+      : null;
+    if (split) {
+      const requesterShare = split[0]?.amount ?? built.finalPayable;
+      built = {
+        ...built,
+        finalPayable: money(requesterShare),
+        totalClaim: money(requesterShare + built.advanceRequested),
+      };
+    }
+
     const rowNumber = await appendRow("Requests", fromRequest(built));
+
+    // Each child's ID has to be allocated after the row before it is
+    // actually written — nextRequestId reads the sheet fresh every time, so
+    // computing them all up front would hand out the same number twice.
+    if (split) {
+      for (let i = 0; i < built.teamMembers.length; i++) {
+        const share = split[i + 1]?.amount ?? 0;
+        const childId = await nextRequestId(prefix);
+        const child = childFromMain(built, built.teamMembers[i], share, childId, now);
+        await appendRow("Requests", fromRequest(child));
+      }
+    }
+
     return { built, rowNumber };
   });
   const record = await ensureUniqueRequestId(written.built, written.rowNumber, prefix);
@@ -1061,6 +1164,16 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
       : record.advanceStatus,
   };
   await updateRow("Requests", row._row, fromRequest(updated));
+
+  // A team claim's linked children mirror the main record's status
+  // automatically — one decision on the main request governs the whole
+  // trip. Their own finalPayable/totalClaim (each traveller's own share,
+  // set once at creation) is untouched; only status moves with them.
+  const childRows = rows.filter((r) => r.linked_to === record.requestId);
+  for (const childRow of childRows) {
+    const child = toRequest(childRow);
+    await updateRow("Requests", childRow._row, fromRequest({ ...child, status: next, updatedAt: nowISO() }));
+  }
 
   // This desk's decision and the next desk's "Pending" go into the same row in
   // one write.

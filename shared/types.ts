@@ -417,6 +417,15 @@ export interface RequestRecord {
   companyAccommodationAmount: number;
   companyAmountsBy: string;
   companyAmountsAt: string;
+  /**
+   * Set only on a team-travel child record — the requestId of the "main"
+   * request it was split off from. A child carries one teammate's own share
+   * (bkashNumber, finalPayable, totalClaim already reduced to just their
+   * cut) so Finance can pay and reconcile it independently; it mirrors the
+   * main record's status automatically and is never acted on directly, and
+   * it's invisible to the teammate it's under — Finance/Admin/HR only.
+   */
+  linkedTo: string;
 }
 
 /** One request = one row in the Approvals tab, with a column group per desk. */
