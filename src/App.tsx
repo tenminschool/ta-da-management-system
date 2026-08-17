@@ -19,6 +19,18 @@ import VehicleRegistrations from "./components/VehicleRegistrations.js";
 import VehicleRegisterPage from "./components/VehicleRegister.js";
 import { Spinner } from "./components/ui.js";
 
+/** Today, read the way a person would say it — "Sunday, 16 August 2026". */
+function todayLabel(): string {
+  return new Date().toLocaleDateString(undefined, {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+}
+
+/** Same, short enough for a phone-width header — "16 Aug". */
+function todayLabelShort(): string {
+  return new Date().toLocaleDateString(undefined, { day: "numeric", month: "short" });
+}
+
 /**
  * Two workspaces, never mixed: "self" is what the person claims, "desk" is
  * what they decide on for other people. Approvers switch between them; everyone
@@ -333,6 +345,8 @@ export default function App() {
             {workspace === "self" ? "My Claims" : "Approval Desk"}
           </span>
           <div className="flex-1" />
+          <span className="text-xs font-medium text-slate-500 sm:hidden">{todayLabelShort()}</span>
+          <span className="hidden text-sm font-medium text-slate-500 sm:inline">{todayLabel()}</span>
           {workspace === "self" && (
             <button
               className="btn-primary !px-3 !py-2 text-xs sm:!px-4 sm:text-sm"
