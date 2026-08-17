@@ -819,6 +819,20 @@ function StepTransport({
     modes.some((m) => m.mode === "Car" && !m.enabled && m.reason.includes("pre-approval"));
   const anyLegNeedsReceipt = draft.legs.some((l) => modes.find((m) => m.mode === l.mode)?.requiresReceipt);
 
+  if (draft.scope === "outside" && draft.arrangement === "company") {
+    return (
+      <Card title="Transportation">
+        <Notice
+          tone="info"
+          items={[
+            "Company Arrangement — the company books your transport directly, so there's nothing to pick or claim here. " +
+            "Got a ticket or other paperwork? Attach it on the Documents step instead.",
+          ]}
+        />
+      </Card>
+    );
+  }
+
   return (
     <>
       <Card
@@ -1410,20 +1424,6 @@ function StepAllowances({
             )}
           </>
         )}
-      </Card>
-
-      <Card title="Other costs">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={`Other amount (${currency})`} hint="Anything not covered by a trip's own fare — rent-a-car and flights are picked per trip, on the Transportation step.">
-            <input
-              type="number"
-              min={0}
-              className="field"
-              value={draft.otherAmount || ""}
-              onChange={(e) => set({ otherAmount: Number(e.target.value) })}
-            />
-          </Field>
-        </div>
       </Card>
 
       <Card

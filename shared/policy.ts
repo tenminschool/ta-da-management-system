@@ -301,15 +301,19 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const hours = workingHours(draft.startTime, draft.endTime);
 
   const teamSize = draft.travelType === "team" ? draft.teamMembers.length + 1 : 1;
+  // Company Arrangement is paid by the company directly — transport,
+  // accommodation, nothing here is out of the employee's pocket to reclaim.
+  const companyArranged = draft.scope === "outside" && draft.arrangement === "company";
 
   // ── Transportation ────────────────────────────────────────────────────────
   // Every mode is picked per trip now, so there is nothing left to branch on
   // here — a leg's own amount (already worked out, per-vehicle or per-ticket,
   // by whichever picker asked for it) is all this adds up. A company vehicle
   // leg is zeroed out regardless of what is stored against it, in case
-  // anything ever slips through the picker with a stray amount.
+  // anything ever slips through the picker with a stray amount — the same
+  // goes for every leg at once under Company Arrangement.
   let fuelRate = 0;
-  const legTotal = draft.legs.reduce((sum, l) => {
+  const legTotal = companyArranged ? 0 : draft.legs.reduce((sum, l) => {
     if (l.mode === "CompanyVehicle") return sum;
     const multiplier = teamSize > 1 && PER_TRAVELLER_MODES.has(l.mode) ? teamSize : 1;
     return sum + (Number(l.amount) || 0) * multiplier;
@@ -397,7 +401,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const accommodationLimit = money(perNightLimit * (nights || 1));
   // Company Arrangement is paid by the company directly — the employee has
   // nothing to claim, so no hotel details are asked for or required.
-  let accommodationAmount = draft.accommodationType === "personal" || draft.arrangement === "company"
+  let accommodationAmount = draft.accommodationType === "personal" || companyArranged
     ? 0
     : money(Number(draft.accommodationAmount) || 0);
 
@@ -585,11 +589,14 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
 
   // ── Transport mode, per trip ────────────────────────────────────────────
   // Every leg is picked independently now — no separate whole-claim mode to
-  // ask for, just make sure each trip actually got one.
-  if (!draft.legs.length) errors.push("Add at least one trip.");
-  else if (draft.legs.some((l) => !l.mode)) errors.push("Select a travel mode for every trip.");
-  if (draft.legs.some((l) => l.mode === "PersonalVehicle" && !(Number(l.amount) > 0))) {
-    errors.push("Enter the distance for every personal-vehicle trip.");
+  // ask for, just make sure each trip actually got one. Company Arrangement
+  // books transport directly, so there is nothing to pick here at all.
+  if (!companyArranged) {
+    if (!draft.legs.length) errors.push("Add at least one trip.");
+    else if (draft.legs.some((l) => !l.mode)) errors.push("Select a travel mode for every trip.");
+    if (draft.legs.some((l) => l.mode === "PersonalVehicle" && !(Number(l.amount) > 0))) {
+      errors.push("Enter the distance for every personal-vehicle trip.");
+    }
   }
 
   if (draft.travelType === "team") {
