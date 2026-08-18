@@ -354,9 +354,10 @@ function StepTravelType({
               )}
 
               {/* Dhaka has several offices to choose between; Chattogram, so
-                  far, does not. */}
+                  far, does not. The question reads differently depending on
+                  which end of the route Dhaka is. */}
               {route && (route.from === "Dhaka" || route.to === "Dhaka") && (
-                <Field label="Dhaka office" required>
+                <Field label={route.from === "Dhaka" ? "From which Dhaka office are you travelling?" : "Which Dhaka office are you going to?"} required>
                   <select className="field" value={draft.dhakaOffice} onChange={(e) => set({ dhakaOffice: e.target.value })}>
                     <option value="">Select an office</option>
                     {policy.otherOffices.map((o) => (

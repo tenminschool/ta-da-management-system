@@ -252,6 +252,7 @@ export const TABS: TabSpec[] = [
       ["Route", "Dhaka to Other city", "Dhaka to Other city", "Dhaka", "", "Yes"],
       ["Route", "Chattogram to Other city", "Chattogram to Other city", "Chattogram", "", "Yes"],
 
+      ["OtherOffice", "10MS HQ", "10MS HQ", "", "", "Yes"],
       ["OtherOffice", "Mirpur LC", "Mirpur LC", "", "", "Yes"],
       ["OtherOffice", "Uttara LC", "Uttara LC", "", "", "Yes"],
       ["OtherOffice", "Panthapath LC", "Panthapath LC", "", "", "Yes"],
