@@ -6,7 +6,7 @@ import {
 import { api, type RequestDetail as Detail } from "../api.js";
 import type { ApprovalRow, Policy, RequestDraft, SessionUser } from "../../shared/types.js";
 import { STATUS_PROGRESS, TRACK_STAGES } from "../../shared/types.js";
-import { cfgNum, cfgStr } from "../../shared/policy.js";
+import { cfgNum, cfgStr, insidePerTravellerAmount, money } from "../../shared/policy.js";
 import { Card, Empty, Field, Modal, Money, Notice, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestDetail({
@@ -52,10 +52,19 @@ export default function RequestDetail({
   const a = detail.approval;
   const linked = detail.linkedRequests;
   const isMine = r.employeeId === user.employeeId;
-  // Per-Diem is the only line split evenly per traveller — everything else is
-  // a single receipt or a flat amount for the whole group.
+  // Per-Diem is the only line split per traveller — everything else is a
+  // single receipt or a flat amount for the whole group. Inside-city, each
+  // person's own cut comes from their own "office meal taken?" answer —
+  // never a team total divided evenly. Outside-city Per-Diem doesn't vary by
+  // traveller, so it's still shared out evenly there.
   const isTeam = r.travelType === "team" && r.teamMembers.length > 0;
-  const perDiemPerHead = isTeam && r.teamSize > 0 ? r.perDiemAmount / r.teamSize : 0;
+  const ownPerDiem = (mealTaken: boolean) => r.scope === "inside"
+    ? insidePerTravellerAmount(policy, r.workingHours, mealTaken)
+    : (r.teamSize > 0 ? money((r.perDiemAmount + r.lunchAllowance) / r.teamSize) : 0);
+  const requesterPerDiem = ownPerDiem(r.dualWorkstation ? true : r.officeMealTaken);
+  const teamPerDiemBreakdown = isTeam && (r.perDiemAmount > 0 || r.lunchAllowance > 0);
+  const perDiemBreakdownLabel = r.perDiemAmount > 0 ? `Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}` : "Lunch allowance";
+  const perDiemBreakdownTotal = r.perDiemAmount > 0 ? r.perDiemAmount : r.lunchAllowance;
   // Company-arranged costs are logged per traveller — the requester's own
   // figure plus whatever each team member cost, since one person can differ
   // from the rest (an extra night, say).
@@ -65,8 +74,10 @@ export default function RequestDetail({
   // into Transportation — listing them again here would look charged twice.
   const lines: [string, number][] = [
     ["Transportation (TA)", r.taAmount],
-    ...(isTeam ? [] : [[`Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}`, r.perDiemAmount] as [string, number]]),
-    ["Lunch allowance", r.lunchAllowance],
+    ...(isTeam ? [] : [
+      [`Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}`, r.perDiemAmount] as [string, number],
+      ["Lunch allowance", r.lunchAllowance] as [string, number],
+    ]),
     ["Accommodation", r.accommodationAmount],
     ["Other", r.otherAmount],
     ["Company transportation (arranged)", companyTransportTotal],
@@ -476,26 +487,24 @@ export default function RequestDetail({
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Claim summary</p>
             </div>
             <div className="space-y-2 px-5 py-4 text-sm">
-              {isTeam && r.perDiemAmount > 0 && (
+              {teamPerDiemBreakdown && (
                 <div>
-                  <span className="mb-1 block text-slate-600">
-                    Per-Diem{r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}
-                  </span>
+                  <span className="mb-1 block text-slate-600">{perDiemBreakdownLabel}</span>
                   <div className="space-y-1 border-l-2 border-slate-100 pl-3">
                     <div className="flex justify-between gap-3 text-xs">
                       <span className="text-slate-500">{r.employeeName}{isMine ? " (you)" : ""}</span>
-                      <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                      <span className="text-slate-700"><Money value={requesterPerDiem} currency={currency} /></span>
                     </div>
                     {r.teamMembers.map((m, i) => (
                       <div key={m.employeeId || i} className="flex justify-between gap-3 text-xs">
                         <span className="text-slate-500">{m.name || `Team member ${i + 1}`}</span>
-                        <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                        <span className="text-slate-700"><Money value={ownPerDiem(m.officeMealTaken)} currency={currency} /></span>
                       </div>
                     ))}
                   </div>
                   <div className="mt-1.5 flex justify-between gap-3">
-                    <span className="text-xs font-medium text-slate-500">Per-Diem total</span>
-                    <span className="font-medium text-slate-800"><Money value={r.perDiemAmount} currency={currency} /></span>
+                    <span className="text-xs font-medium text-slate-500">{perDiemBreakdownLabel} total</span>
+                    <span className="font-medium text-slate-800"><Money value={perDiemBreakdownTotal} currency={currency} /></span>
                   </div>
                 </div>
               )}

@@ -5,7 +5,7 @@ import {
 import { api } from "../api.js";
 import {
   addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
-  impliedLegs, money, personalVehicleRateFor, todayISO, type ModeOption,
+  impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
@@ -217,7 +217,7 @@ export default function NewRequest({
           </div>
         </div>
 
-        <LiveSummary computation={computation} currency={currency} draft={draft} user={user} />
+        <LiveSummary computation={computation} currency={currency} draft={draft} user={user} policy={policy} />
       </div>
     </div>
   );
@@ -1914,52 +1914,61 @@ function StepDocuments({
 // ── Live summary rail ───────────────────────────────────────────────────────
 
 function LiveSummary({
-  computation, currency, draft, user,
-}: { computation: ReturnType<typeof computeRequest>; currency: string; draft: RequestDraft; user: SessionUser }) {
+  computation, currency, draft, user, policy,
+}: { computation: ReturnType<typeof computeRequest>; currency: string; draft: RequestDraft; user: SessionUser; policy: Policy }) {
   // Collapsed by default on phones: the running total stays visible without
   // pushing the actual form off the screen. Always open from lg up.
   const [open, setOpen] = useState(false);
 
-  // Per-Diem is the only line split evenly per traveller — everything else
+  // Per-Diem is the only line split per traveller — everything else
   // (transport, accommodation, rent-a-car…) is a single receipt or a flat
   // amount for the whole group, so only this one gets an itemised breakdown.
+  // Each person's own cut comes from their own "office meal taken?" answer —
+  // never a team total divided evenly, or one person's answer would look
+  // like it changed everyone's amount.
   const isTeam = draft.travelType === "team" && draft.teamMembers.length > 0;
-  const teamSize = isTeam ? draft.teamMembers.length + 1 : 1;
-  const perDiemPerHead = isTeam && teamSize > 0 ? computation.perDiemAmount / teamSize : 0;
+  const ownPerDiem = (mealTaken: boolean) => insidePerTravellerAmount(policy, computation.workingHours, mealTaken);
+  const requesterPerDiem = ownPerDiem(draft.dualWorkstation ? true : draft.officeMealTaken);
+
+  const teamPerDiemBreakdown = isTeam && (computation.perDiemAmount > 0 || computation.lunchAllowance > 0);
+  const breakdownLabel = computation.perDiemAmount > 0 ? "Per-Diem" : "Lunch allowance";
+  const breakdownTotal = computation.perDiemAmount > 0 ? computation.perDiemAmount : computation.lunchAllowance;
 
   const lines: [string, number][] = [
     // Rent-a-car and Flight are trips too now, so their cost is already
     // folded into Transportation — showing them again here would look like
     // it was charged twice.
     ["Transportation", computation.taAmount],
-    ...(isTeam ? [] : [["Per-Diem", computation.perDiemAmount] as [string, number]]),
-    ["Lunch allowance", computation.lunchAllowance],
+    ...(isTeam ? [] : [
+      ["Per-Diem", computation.perDiemAmount] as [string, number],
+      ["Lunch allowance", computation.lunchAllowance] as [string, number],
+    ]),
     ["Accommodation", computation.accommodationAmount],
     ["Other", computation.otherAmount],
   ];
-  const hasLines = lines.some(([, v]) => v > 0) || (isTeam && computation.perDiemAmount > 0);
+  const hasLines = lines.some(([, v]) => v > 0) || teamPerDiemBreakdown;
 
   const body = (
     <>
       <div className="space-y-2 px-4 py-4 text-sm sm:px-5">
-        {isTeam && computation.perDiemAmount > 0 && (
+        {teamPerDiemBreakdown && (
           <div>
-            <span className="mb-1 block text-slate-600">Per-Diem</span>
+            <span className="mb-1 block text-slate-600">{breakdownLabel}</span>
             <div className="space-y-1 border-l-2 border-slate-100 pl-3">
               <div className="flex justify-between gap-3 text-xs">
                 <span className="text-slate-500">{user.name} (you)</span>
-                <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                <span className="text-slate-700"><Money value={requesterPerDiem} currency={currency} /></span>
               </div>
               {draft.teamMembers.map((m, i) => (
                 <div key={m.employeeId || i} className="flex justify-between gap-3 text-xs">
                   <span className="text-slate-500">{m.name || `Team member ${i + 1}`}</span>
-                  <span className="text-slate-700"><Money value={perDiemPerHead} currency={currency} /></span>
+                  <span className="text-slate-700"><Money value={ownPerDiem(m.officeMealTaken)} currency={currency} /></span>
                 </div>
               ))}
             </div>
             <div className="mt-1.5 flex justify-between gap-3">
-              <span className="text-xs font-medium text-slate-500">Per-Diem total</span>
-              <span className="font-medium text-slate-800"><Money value={computation.perDiemAmount} currency={currency} /></span>
+              <span className="text-xs font-medium text-slate-500">{breakdownLabel} total</span>
+              <span className="font-medium text-slate-800"><Money value={breakdownTotal} currency={currency} /></span>
             </div>
           </div>
         )}

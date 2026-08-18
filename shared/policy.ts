@@ -288,6 +288,26 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
  */
 export const PER_TRAVELLER_MODES = new Set(["Bus", "Train", "Flight"]);
 
+/**
+ * One inside-city traveller's own Per-Diem (or, under the threshold, the
+ * short-hours lunch allowance) — never a team total divided evenly. Shared
+ * by computeRequest and by the client's live preview / claim-summary
+ * displays, so a per-traveller figure shown anywhere always means the same
+ * thing: what THIS person's own answer actually earned them.
+ */
+export function insidePerTravellerAmount(policy: Policy, hours: number, officeMealTaken: boolean): number {
+  const minHours = cfgNum(policy, "PER_DIEM_MIN_HOURS", 5);
+  if (hours >= minHours) {
+    const perHead = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
+    const mealDeduction = cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75);
+    return Math.max(0, money(perHead - (officeMealTaken ? mealDeduction : 0)));
+  }
+  if (hours > 0 && !officeMealTaken) {
+    return cfgNum(policy, "SHORT_HOUR_MEAL_ALLOWANCE", 150);
+  }
+  return 0;
+}
+
 export function computeRequest(policy: Policy, draft: RequestDraft, user: SessionUser): Computation {
   const notes: string[] = [];
   const errors: string[] = [];
@@ -379,7 +399,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       const perHead = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
       const mealDeduction = cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75);
       perDiemAmount = money(
-        travellerMeals.reduce((sum, mealTaken) => sum + Math.max(0, perHead - (mealTaken ? mealDeduction : 0)), 0),
+        travellerMeals.reduce((sum, mealTaken) => sum + insidePerTravellerAmount(policy, hours, mealTaken), 0),
       );
       const anyMeal = travellerMeals.some(Boolean);
       notes.push(
@@ -393,7 +413,9 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       // an office meal still had to cover their own lunch.
       const shortHourAllowance = cfgNum(policy, "SHORT_HOUR_MEAL_ALLOWANCE", 150);
       const withoutMeal = travellerMeals.filter((mealTaken) => !mealTaken).length;
-      lunchAllowance = money(withoutMeal * shortHourAllowance);
+      lunchAllowance = money(
+        travellerMeals.reduce((sum, mealTaken) => sum + insidePerTravellerAmount(policy, hours, mealTaken), 0),
+      );
       lunchEligible = lunchAllowance > 0;
       notes.push(
         `Worked ${hours} hours (< ${minHours}) — no Per-Diem.` +
