@@ -559,6 +559,26 @@ function StepTravelType({
         </div>
       </Card>
 
+      <Card title="Who is travelling?">
+        <ChoiceGrid
+          value={draft.travelType}
+          onChange={(travelType) => set({ travelType, teamMembers: travelType === "individual" ? [] : draft.teamMembers })}
+          options={[
+            { value: "individual", label: "Individual", description: `Just you — Band ${user.band}` },
+            { value: "team", label: "Team", description: "Add colleagues travelling with you" },
+          ]}
+        />
+        {draft.travelType === "team" && (
+          <div className="mt-5">
+            <TeamPicker
+              members={draft.teamMembers}
+              onChange={(teamMembers) => set({ teamMembers })}
+              excludeId={user.employeeId}
+            />
+          </div>
+        )}
+      </Card>
+
       {!outside && (
         <Card
           title="Working hours"
@@ -585,37 +605,44 @@ function StepTravelType({
               <input type="time" className="field" value={draft.endTime} onChange={(e) => set({ endTime: e.target.value })} />
             </Field>
           </div>
-          <div className="mt-4">
-            <Toggle
-              checked={draft.dualWorkstation ? true : draft.officeMealTaken}
-              disabled={draft.dualWorkstation}
-              onChange={(officeMealTaken) => set({ officeMealTaken })}
-              label="Office meal taken?"
-              hint={`If the office provided a meal, ${cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75)} ${cfgStr(policy, "CURRENCY", "BDT")} is deducted from your Per-Diem — otherwise the full amount is paid.`}
-            />
-          </div>
+          {draft.travelType === "team" && draft.teamMembers.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm font-medium text-slate-700">Office meal taken? — answer for each traveller</p>
+              <Toggle
+                checked={draft.dualWorkstation ? true : draft.officeMealTaken}
+                disabled={draft.dualWorkstation}
+                onChange={(officeMealTaken) => set({ officeMealTaken })}
+                label={`${user.name} (you)`}
+                hint={draft.dualWorkstation ? "Assumed taken on a dual-workstation day." : undefined}
+              />
+              {draft.teamMembers.map((m, i) => (
+                <Toggle
+                  key={m.employeeId || i}
+                  checked={m.officeMealTaken}
+                  onChange={(officeMealTaken) =>
+                    set({ teamMembers: draft.teamMembers.map((x, idx) => (idx === i ? { ...x, officeMealTaken } : x)) })
+                  }
+                  label={m.name || `Team member ${i + 1}`}
+                />
+              ))}
+              <p className="text-xs text-slate-500">
+                If someone's office meal was covered, {cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75)} {cfgStr(policy, "CURRENCY", "BDT")} comes
+                off their own Per-Diem — the claim is adjusted per person, not for the whole team at once.
+              </p>
+            </div>
+          ) : (
+            <div className="mt-4">
+              <Toggle
+                checked={draft.dualWorkstation ? true : draft.officeMealTaken}
+                disabled={draft.dualWorkstation}
+                onChange={(officeMealTaken) => set({ officeMealTaken })}
+                label="Office meal taken?"
+                hint={`If the office provided a meal, ${cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75)} ${cfgStr(policy, "CURRENCY", "BDT")} is deducted from your Per-Diem — otherwise the full amount is paid.`}
+              />
+            </div>
+          )}
         </Card>
       )}
-
-      <Card title="Who is travelling?">
-        <ChoiceGrid
-          value={draft.travelType}
-          onChange={(travelType) => set({ travelType, teamMembers: travelType === "individual" ? [] : draft.teamMembers })}
-          options={[
-            { value: "individual", label: "Individual", description: `Just you — Band ${user.band}` },
-            { value: "team", label: "Team", description: "Add colleagues travelling with you" },
-          ]}
-        />
-        {draft.travelType === "team" && (
-          <div className="mt-5">
-            <TeamPicker
-              members={draft.teamMembers}
-              onChange={(teamMembers) => set({ teamMembers })}
-              excludeId={user.employeeId}
-            />
-          </div>
-        )}
-      </Card>
     </>
   );
 }
@@ -662,6 +689,7 @@ function TeamPicker({
           // personal payout number just for typing their name is a wider leak
           // than this picker should cause. The claimant enters it by hand.
           bkashNumber: "",
+          officeMealTaken: false,
           companyTransportAmount: 0,
           companyAccommodationAmount: 0,
         })));

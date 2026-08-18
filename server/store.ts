@@ -227,7 +227,7 @@ function packTeam(members: TeamMember[]): string {
   return members
     .map((m) => [
       m.employeeId, m.name, m.department, m.designation, m.band, m.gender, m.bkashNumber,
-      m.companyTransportAmount || "", m.companyAccommodationAmount || "",
+      m.companyTransportAmount || "", m.companyAccommodationAmount || "", yn(m.officeMealTaken),
     ].join(" | "))
     .join("\n");
 }
@@ -236,12 +236,13 @@ function unpackTeam(cell: string | undefined): TeamMember[] {
   return lines(cell).map((line) => {
     const [
       employeeId = "", name = "", department = "", designation = "", band = "", gender = "", bkashNumber = "",
-      companyTransportAmount = "", companyAccommodationAmount = "",
+      companyTransportAmount = "", companyAccommodationAmount = "", officeMealTaken = "",
     ] = line.split("|").map((s) => s.trim());
     return {
       employeeId, name, department, designation, band, gender, bkashNumber,
       companyTransportAmount: num(companyTransportAmount),
       companyAccommodationAmount: num(companyAccommodationAmount),
+      officeMealTaken: bool(officeMealTaken),
     };
   });
 }

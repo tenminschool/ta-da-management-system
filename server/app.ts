@@ -495,6 +495,7 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
     return;
   }
 
+  const policy = await loadPolicy();
   const rows = await readTab("Requests");
   const byId = new Map(rows.map((r) => [r.request_id, toRequest(r)]));
   const hasChildren = new Set(rows.map((r) => r.linked_to).filter(Boolean));
@@ -517,7 +518,7 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
     }
     const isUnsplitTeam = record.travelType === "team" && record.teamMembers.length > 0 && !hasChildren.has(id);
     const rowsToPay = isUnsplitTeam
-      ? teamPayoutSplit(record)
+      ? teamPayoutSplit(record, policy)
       : [{
           employeeId: record.employeeId,
           name: record.employeeName,
@@ -967,7 +968,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
     // finalPayable/totalClaim are reduced — the children's shares must not
     // be derived from an already-reduced figure.
     const split = submit && draft.travelType === "team" && draft.teamMembers.length > 0
-      ? teamPayoutSplit(built)
+      ? teamPayoutSplit(built, policy)
       : null;
     if (split) {
       const requesterShare = split[0]?.amount ?? built.finalPayable;

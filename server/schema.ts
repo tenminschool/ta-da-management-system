@@ -154,6 +154,7 @@ export const TABS: TabSpec[] = [
       ["PER_DIEM_AMOUNT", 250, "Per-Diem amount (BDT) when working hours >= threshold", "2026-01-01"],
       ["PER_DIEM_MIN_HOURS", 5, "Minimum working hours to qualify for Per-Diem", "2026-01-01"],
       ["OFFICE_MEAL_DEDUCTION", 75, "Deducted from Per-Diem (BDT) when an office meal was taken", "2026-01-01"],
+      ["SHORT_HOUR_MEAL_ALLOWANCE", 150, "Added to the claim (BDT), per traveller, when working hours are under PER_DIEM_MIN_HOURS and no office meal was taken", "2026-01-01"],
       ["FUEL_RATE_BIKE", 3, "Reimbursement per KM for a personal bike (BDT/km)", "2026-01-01"],
       ["FUEL_RATE_CAR", 10, "Reimbursement per KM for a personal car (BDT/km)", "2026-01-01"],
       ["TEAM_CAR_MIN_MEMBERS", 3, "Minimum team size before Car becomes selectable for team travel", "2026-01-01"],

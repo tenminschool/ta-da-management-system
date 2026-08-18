@@ -141,6 +141,12 @@ export interface TeamMember {
   /** Where this person's share of the payment goes. */
   bkashNumber: string;
   /**
+   * Inside-city only: whether THIS person got a company-provided meal —
+   * asked per traveller on a team claim, since it is not always the same
+   * answer for everyone on the trip.
+   */
+  officeMealTaken: boolean;
+  /**
    * Company Arrangement only: what this person's own transport/accommodation
    * actually cost, logged by HR/Admin after the fact — e.g. one traveller
    * staying an extra night. Always 0 on a freshly-submitted claim; reporting

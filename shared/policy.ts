@@ -368,23 +368,39 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     }
   } else {
     const minHours = cfgNum(policy, "PER_DIEM_MIN_HOURS", 5);
+    // "Office meal taken?" is answered per traveller on a team claim — one
+    // person's lunch being covered says nothing about anyone else's — so
+    // each person's own cut is worked out from their own answer, not a
+    // single toggle applied to the whole party.
+    const travellerMeals = [officeMeal, ...draft.teamMembers.map((m) => m.officeMealTaken)];
     if (hours >= minHours) {
       perDiemEligible = true;
       perDiemDays = 1;
       const perHead = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
-      // A company-provided lunch is already covered, so it comes off the
-      // Per-Diem itself rather than being tracked as a separate allowance.
-      const mealDeduction = officeMeal ? cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75) : 0;
-      const netPerHead = money(perHead - mealDeduction);
-      perDiemAmount = money(netPerHead * teamSize);
+      const mealDeduction = cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75);
+      perDiemAmount = money(
+        travellerMeals.reduce((sum, mealTaken) => sum + Math.max(0, perHead - (mealTaken ? mealDeduction : 0)), 0),
+      );
+      const anyMeal = travellerMeals.some(Boolean);
       notes.push(
         `Worked ${hours} hours (≥ ${minHours}) — Per-Diem ${perHead} each` +
-        (mealDeduction > 0 ? ` minus ${mealDeduction} for the office meal = ${netPerHead} each` : "") +
-        (teamSize > 1 ? ` × ${teamSize} travellers = ${perDiemAmount}` : "") +
+        (anyMeal ? `, minus ${mealDeduction} for whoever had the office meal` : "") +
+        (teamSize > 1 ? ` — ${teamSize} travellers, ${perDiemAmount} total` : "") +
         " approved automatically.",
       );
     } else if (hours > 0) {
-      notes.push(`Worked ${hours} hours (< ${minHours}) — no Per-Diem.`);
+      // Under the threshold there's no Per-Diem, but anyone who didn't get
+      // an office meal still had to cover their own lunch.
+      const shortHourAllowance = cfgNum(policy, "SHORT_HOUR_MEAL_ALLOWANCE", 150);
+      const withoutMeal = travellerMeals.filter((mealTaken) => !mealTaken).length;
+      lunchAllowance = money(withoutMeal * shortHourAllowance);
+      lunchEligible = lunchAllowance > 0;
+      notes.push(
+        `Worked ${hours} hours (< ${minHours}) — no Per-Diem.` +
+        (lunchAllowance > 0
+          ? ` ${withoutMeal} of ${teamSize} traveller(s) had no office meal — ${shortHourAllowance} each = ${lunchAllowance}.`
+          : " Everyone had an office meal, so nothing further is added."),
+      );
     }
   }
 
@@ -744,7 +760,7 @@ export interface TeamPayout {
  * the requester's own share, and a Finance override (approvedAmount) scales
  * every share by the same proportion rather than being decided by guesswork.
  */
-export function teamPayoutSplit(record: RequestRecord): TeamPayout[] {
+export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayout[] {
   const teamSize = record.travelType === "team" ? record.teamMembers.length + 1 : 1;
   if (teamSize <= 1) {
     return [{ employeeId: record.employeeId, name: record.employeeName, bkashNumber: record.bkashNumber, amount: record.finalPayable }];
@@ -757,20 +773,38 @@ export function teamPayoutSplit(record: RequestRecord): TeamPayout[] {
     record.legs.reduce((s, l) => (PER_TRAVELLER_MODES.has(l.mode) ? s + (Number(l.amount) || 0) * teamSize : s), 0),
   );
   const sharedTa = money(record.taAmount - perTravellerTa);
-  const perHeadPool = money(record.perDiemAmount + perTravellerTa);
-  const perHead = money(perHeadPool / teamSize);
-  const sharedTotal = money(sharedTa + record.accommodationAmount + record.lunchAllowance + record.otherAmount);
+  const perHeadTa = money(perTravellerTa / teamSize);
 
-  const claimTotal = money(perHeadPool + sharedTotal);
+  // Inside-city Per-Diem — and the under-the-threshold lunch allowance — are
+  // answered per traveller (did THEY get an office meal?), so each person's
+  // own cut is worked out directly rather than pooled and divided evenly.
+  // Outside-city Per-Diem doesn't vary by traveller, so it stays pooled.
+  const perDiemRate = cfgNum(policy, "PER_DIEM_AMOUNT", 250);
+  const mealDeduction = cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75);
+  const shortHourAllowance = cfgNum(policy, "SHORT_HOUR_MEAL_ALLOWANCE", 150);
+  const insidePerDiemEligible = record.scope === "inside" && record.perDiemDays > 0;
+  const ownPerDiemAndLunch = (mealTaken: boolean) => record.scope !== "inside"
+    ? money((record.perDiemAmount + record.lunchAllowance) / teamSize)
+    : insidePerDiemEligible
+      ? Math.max(0, money(perDiemRate - (mealTaken ? mealDeduction : 0)))
+      : (mealTaken ? 0 : shortHourAllowance);
+
+  const sharedTotal = money(sharedTa + record.accommodationAmount + record.otherAmount);
+  const requesterMealTaken = record.dualWorkstation ? true : record.officeMealTaken;
+  const requesterOwn = money(perHeadTa + ownPerDiemAndLunch(requesterMealTaken));
+  const memberOwn = (m: (typeof record.teamMembers)[number]) => money(perHeadTa + ownPerDiemAndLunch(m.officeMealTaken));
+
+  const claimTotal = money(requesterOwn + record.teamMembers.reduce((s, m) => s + memberOwn(m), 0) + sharedTotal);
   const payableTotal = record.approvedAmount > 0 ? record.approvedAmount : record.totalClaim;
   const scale = claimTotal > 0 ? payableTotal / claimTotal : 1;
 
-  const requesterAmount = money((perHead + sharedTotal) * scale - record.advanceRequested);
-  const memberAmount = money(perHead * scale);
+  const requesterAmount = money((requesterOwn + sharedTotal) * scale - record.advanceRequested);
 
   return [
     { employeeId: record.employeeId, name: record.employeeName, bkashNumber: record.bkashNumber, amount: requesterAmount },
-    ...record.teamMembers.map((m) => ({ employeeId: m.employeeId, name: m.name, bkashNumber: m.bkashNumber, amount: memberAmount })),
+    ...record.teamMembers.map((m) => ({
+      employeeId: m.employeeId, name: m.name, bkashNumber: m.bkashNumber, amount: money(memberOwn(m) * scale),
+    })),
   ];
 }
 
