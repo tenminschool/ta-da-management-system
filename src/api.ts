@@ -1,7 +1,7 @@
 /** Typed fetch wrapper. Holds the session token and unwraps API errors. */
 
 import type {
-  ApprovalRow, Computation, Policy, RequestDraft, RequestRecord, SessionUser, VehicleRegistration,
+  ApprovalRow, Computation, Policy, RequestDraft, RequestRecord, SessionUser, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
 import type { ModeOption } from "../shared/policy.js";
 
@@ -264,6 +264,13 @@ export const api = {
 
   claimUnlock: (employeeId: string, from: string) =>
     post<{ ok: boolean; employeeId: string; from: string }>("/admin/claim-unlock", { employeeId, from }),
+
+  requestUnlock: (reason: string, requestedFrom: string) =>
+    post<{ request: UnlockRequest }>("/unlock-requests", { reason, requestedFrom }),
+  unlockRequests: (scope: "mine" | "pending" | "all" = "mine") =>
+    call<{ requests: UnlockRequest[] }>(`/unlock-requests?scope=${scope}`),
+  decideUnlock: (id: string, action: "approve" | "reject", remarks: string, unlockFrom?: string) =>
+    post<{ request: UnlockRequest }>(`/unlock-requests/${encodeURIComponent(id)}/decide`, { action, remarks, unlockFrom }),
 
   myVehicle: () => call<{ vehicle: VehicleRegistration | null }>("/vehicles/mine"),
   registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number; imageLink?: string }) =>

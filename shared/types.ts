@@ -127,6 +127,29 @@ export interface VehicleRegistration {
   reviewNote: string;
 }
 
+/**
+ * A claim window exception, asked for from the New Request form ("Contact
+ * HR") instead of the employee having to be told to go find someone —
+ * Admin/HR decide it, and approving writes straight to the same
+ * claimUnlockFrom the Configuration form sets by hand.
+ */
+export interface UnlockRequest {
+  requestId: string;
+  employeeId: string;
+  employeeName: string;
+  department: string;
+  reason: string;
+  /** The date they said they need — Admin/HR can grant a different one. */
+  requestedFrom: string;
+  submittedAt: string;
+  status: "pending" | "approved" | "rejected";
+  decidedBy: string;
+  decidedAt: string;
+  decisionRemarks: string;
+  /** Set once approved — the date actually granted. */
+  unlockFrom: string;
+}
+
 /** How an approved claim is paid out. */
 export type PayoutMethod = "bkash" | "bank";
 

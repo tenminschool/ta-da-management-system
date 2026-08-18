@@ -6,7 +6,7 @@ import {
 import { api, type RequestDetail as Detail } from "../api.js";
 import type { ApprovalRow, Policy, RequestDraft, SessionUser } from "../../shared/types.js";
 import { STATUS_PROGRESS, TRACK_STAGES } from "../../shared/types.js";
-import { cfgNum, cfgStr, insidePerTravellerAmount, money } from "../../shared/policy.js";
+import { cfgNum, cfgStr, insidePerTravellerAmount, money, todayISO } from "../../shared/policy.js";
 import { Card, Empty, Field, Modal, Money, Notice, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestDetail({
@@ -1019,7 +1019,7 @@ function PaymentModal({
   const [paymentMode, setPaymentMode] = useState(methods[0] || "Bank");
   const [transactionId, setTransactionId] = useState("");
   const [paid, setPaid] = useState(amount);
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(todayISO());
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

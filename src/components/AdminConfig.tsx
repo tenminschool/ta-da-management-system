@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { api, type EmployeeLite } from "../api.js";
+import type { UnlockRequest } from "../../shared/types.js";
 import { Card, Notice, Spinner } from "./ui.js";
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -71,6 +72,7 @@ export default function AdminConfig() {
         </p>
       </div>
 
+      <UnlockRequestsQueue />
       <ClaimUnlock />
 
       <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
@@ -194,6 +196,97 @@ export default function AdminConfig() {
  * Granted against the employee, not a claim: the claim they need to file does
  * not exist yet — the window is what is stopping them creating it.
  */
+/** "Contact HR" requests raised from the New Request form, waiting on a decision. */
+function UnlockRequestsQueue() {
+  const [requests, setRequests] = useState<UnlockRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const load = () => {
+    setLoading(true);
+    api.unlockRequests("pending")
+      .then((r) => setRequests(r.requests))
+      .catch((err) => setError((err as Error).message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <Spinner />;
+  // Nothing pending is the common case — no point taking up space for it.
+  if (!requests.length && !error) return null;
+
+  return (
+    <Card
+      title="Unlock requests"
+      subtitle="Raised from the claim form's “Contact HR” button — approving one unlocks the date the same as doing it below by hand."
+    >
+      {error && <Notice tone="error" items={[error]} />}
+      <div className="space-y-3">
+        {requests.map((r) => (
+          <UnlockRequestRow key={r.requestId} request={r} onDone={load} />
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function UnlockRequestRow({ request, onDone }: { request: UnlockRequest; onDone: () => void }) {
+  const [unlockFrom, setUnlockFrom] = useState(request.requestedFrom);
+  const [remarks, setRemarks] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function decide(action: "approve" | "reject") {
+    if (!remarks.trim()) {
+      setError("Add a remark explaining your decision.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await api.decideUnlock(request.requestId, action, remarks.trim(), action === "approve" ? unlockFrom : undefined);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-200 p-3.5">
+      <p className="text-sm font-semibold text-slate-800">
+        {request.employeeName} <span className="font-normal text-slate-400">{request.employeeId} · {request.department}</span>
+      </p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        Asked for {request.requestedFrom || "—"} · submitted {new Date(request.submittedAt).toLocaleString()}
+      </p>
+      <p className="mt-2 text-sm text-slate-700">{request.reason}</p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-[10rem_1fr]">
+        <div>
+          <label className="label">Unlock from</label>
+          <input type="date" className="field" value={unlockFrom} onChange={(e) => setUnlockFrom(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Remarks</label>
+          <input
+            className="field"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Why you're approving or declining this."
+          />
+        </div>
+      </div>
+      {error && <div className="mt-2"><Notice tone="error" items={[error]} /></div>}
+      <div className="mt-3 flex justify-end gap-2">
+        <button className="btn-danger" disabled={busy} onClick={() => decide("reject")}>Reject</button>
+        <button className="btn-primary" disabled={busy || !unlockFrom} onClick={() => decide("approve")}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : null} Approve & unlock
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ClaimUnlock() {
   const [q, setQ] = useState("");
   const [found, setFound] = useState<EmployeeLite[]>([]);

@@ -24,16 +24,18 @@ import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
 import {
-  allEmployees, deptHeadIdFor, fromRequest, fromVehicle, invalidateEmployees, invalidatePolicy, loadPolicy,
-  managesOthers, nextRequestId, nowISO, parseLinks, rememberAuthId, STAGE_COLUMN, toApprovalRow,
-  toRequest, toVehicle, upsertApproval,
+  allEmployees, deptHeadIdFor, fromRequest, fromUnlockRequest, fromVehicle, invalidateEmployees, invalidatePolicy,
+  loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId, nowISO, parseLinks, rememberAuthId, STAGE_COLUMN,
+  toApprovalRow, toRequest, toUnlockRequest, toVehicle, upsertApproval,
 } from "./store.js";
 import {
-  addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit,
+  addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit, todayISO,
 } from "../shared/policy.js";
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
-import type { RequestDraft, RequestRecord, SessionUser, Status, TeamMember, VehicleRegistration } from "../shared/types.js";
+import type {
+  RequestDraft, RequestRecord, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
+} from "../shared/types.js";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
@@ -1304,7 +1306,7 @@ app.post("/api/requests/:id/payment", requireAuth, handler(async (req, res) => {
   const paymentMode = String(req.body?.paymentMode || "");
   const transactionId = String(req.body?.transactionId || "").trim();
   const amount = Number(req.body?.amount);
-  const paymentDate = String(req.body?.paymentDate || "").trim() || new Date().toISOString().slice(0, 10);
+  const paymentDate = String(req.body?.paymentDate || "").trim() || todayISO();
   if (!paymentMode) {
     res.status(400).json({ error: "Choose a payment mode." });
     return;
@@ -1426,7 +1428,7 @@ app.post("/api/requests/payment-reconcile/confirm", requireAuth, handler(async (
     const requestId = String(m?.requestId || "");
     const receiptNo = String(m?.receiptNo || "").trim();
     const fileAmount = Number(m?.fileAmount);
-    const completionDate = String(m?.completionDate || "").trim() || new Date().toISOString().slice(0, 10);
+    const completionDate = String(m?.completionDate || "").trim() || todayISO();
     if (!requestId || !receiptNo || !Number.isFinite(fileAmount) || fileAmount <= 0) {
       results.push({ requestId: requestId || "(unknown row)", ok: false, error: "Malformed row — skipped." });
       continue;
@@ -1706,6 +1708,21 @@ app.get("/api/admin/tabs", requireAuth, handler(async (req, res) => {
  * need to file does not exist yet — the window is what is stopping them
  * creating it.
  */
+/**
+ * Opens (or closes, with an empty date) an employee's claim window back to a
+ * specific date. Shared by the direct Configuration form and by approving an
+ * unlock request — the same write either way.
+ */
+async function applyClaimUnlock(employeeId: string, from: string): Promise<boolean> {
+  const rows = await readTab("Employees");
+  const row = rows.find((r) => r.employee_id === employeeId);
+  if (!row) return false;
+  const { _row, ...rest } = row;
+  await updateRow("Employees", _row, { ...rest, claim_unlock_from: from });
+  invalidateEmployees();
+  return true;
+}
+
 app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
   if (!hasRole(req.session, "admin", "hr")) {
     res.status(403).json({ error: "Admin access required." });
@@ -1718,18 +1735,119 @@ app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
     res.status(400).json({ error: "Give the date to unlock from, as YYYY-MM-DD." });
     return;
   }
-  const rows = await readTab("Employees");
-  const row = rows.find((r) => r.employee_id === employeeId);
-  if (!row) {
+  const ok = await applyClaimUnlock(employeeId, from);
+  if (!ok) {
     res.status(404).json({ error: "No employee with that ID." });
     return;
   }
-  // updateRow replaces the whole row, so the record is carried over intact and
-  // only the one cell changed.
-  const { _row, ...rest } = row;
-  await updateRow("Employees", _row, { ...rest, claim_unlock_from: from });
-  invalidateEmployees();
   res.json({ ok: true, employeeId, from });
+}));
+
+// ── Unlock requests: "Contact HR" from the New Request form ─────────────────
+
+/** Raises a claim-window exception request — the "Contact HR" button. */
+app.post("/api/unlock-requests", requireAuth, handler(async (req, res) => {
+  const reason = String(req.body?.reason || "").trim();
+  const requestedFrom = String(req.body?.requestedFrom || "").trim();
+  if (!reason) {
+    res.status(400).json({ error: "Explain why you need an older date." });
+    return;
+  }
+  if (requestedFrom && !/^\d{4}-\d{2}-\d{2}$/.test(requestedFrom)) {
+    res.status(400).json({ error: "That date doesn't look right." });
+    return;
+  }
+  const record: UnlockRequest = {
+    requestId: await nextUnlockRequestId(),
+    employeeId: req.session.employeeId,
+    employeeName: req.session.name,
+    department: req.session.department,
+    reason,
+    requestedFrom,
+    submittedAt: nowISO(),
+    status: "pending",
+    decidedBy: "",
+    decidedAt: "",
+    decisionRemarks: "",
+    unlockFrom: "",
+  };
+  await appendRow("UnlockRequests", fromUnlockRequest(record));
+  res.json({ request: record });
+}));
+
+/** Your own past requests, or — for Admin/HR — the ones waiting on a decision (or every one, for the register). */
+app.get("/api/unlock-requests", requireAuth, handler(async (req, res) => {
+  const scope = String(req.query.scope || "mine");
+  const rows = (await readTab("UnlockRequests")).map(toUnlockRequest);
+  let filtered: (UnlockRequest & { _row: string })[];
+  if (scope === "mine") {
+    filtered = rows.filter((r) => r.employeeId === req.session.employeeId);
+  } else {
+    if (!hasRole(req.session, "admin", "hr")) {
+      res.status(403).json({ error: "Admin access required." });
+      return;
+    }
+    filtered = scope === "all" ? rows : rows.filter((r) => r.status === "pending");
+  }
+  const requests = filtered
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    .map(({ _row, ...r }) => r);
+  res.json({ requests });
+}));
+
+/** Admin/HR grants or declines a claim-window exception, with their own remark either way. */
+app.post("/api/unlock-requests/:id/decide", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const action = req.body?.action === "approve" ? "approved" : req.body?.action === "reject" ? "rejected" : "";
+  const remarks = String(req.body?.remarks || "").trim();
+  if (!action) {
+    res.status(400).json({ error: "Unknown action." });
+    return;
+  }
+  if (!remarks) {
+    res.status(400).json({ error: `Add a remark explaining why this was ${action}.` });
+    return;
+  }
+
+  const rows = await readTab("UnlockRequests");
+  const row = rows.find((r) => r.request_id === req.params.id);
+  if (!row) {
+    res.status(404).json({ error: "Request not found." });
+    return;
+  }
+  const { _row, ...current } = toUnlockRequest(row);
+  if (current.status !== "pending") {
+    res.status(400).json({ error: `This request was already ${current.status}.` });
+    return;
+  }
+
+  let unlockFrom = "";
+  if (action === "approved") {
+    unlockFrom = String(req.body?.unlockFrom || "").trim() || current.requestedFrom;
+    if (!unlockFrom || !/^\d{4}-\d{2}-\d{2}$/.test(unlockFrom)) {
+      res.status(400).json({ error: "Give the date to unlock from, as YYYY-MM-DD." });
+      return;
+    }
+    const ok = await applyClaimUnlock(current.employeeId, unlockFrom);
+    if (!ok) {
+      res.status(404).json({ error: "That employee no longer exists." });
+      return;
+    }
+  }
+
+  const updated: UnlockRequest = {
+    ...current,
+    status: action as "approved" | "rejected",
+    decidedBy: `${req.session.name} <${req.session.email}>`,
+    decidedAt: nowISO(),
+    decisionRemarks: remarks,
+    unlockFrom,
+  };
+  await updateRow("UnlockRequests", _row, fromUnlockRequest(updated));
+  res.json({ request: updated });
 }));
 
 // ── Vehicles: register, approve, claim against ──────────────────────────────

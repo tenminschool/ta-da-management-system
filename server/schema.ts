@@ -143,6 +143,18 @@ export const TABS: TabSpec[] = [
     ],
   },
 
+  // ── One row per "Contact HR" claim-window exception request ────────────────
+  {
+    title: "UnlockRequests",
+    color: AMBER,
+    widths: [140, 110, 170, 150, 260, 130, 160, 100, 170, 160, 260, 130],
+    headers: [
+      "request_id", "employee_id", "employee_name", "department", "reason",
+      "requested_from", "submitted_at", "status", "decided_by", "decided_at",
+      "decision_remarks", "unlock_from",
+    ],
+  },
+
 
   // ── Admin-configurable policy ─────────────────────────────────────────────
   {

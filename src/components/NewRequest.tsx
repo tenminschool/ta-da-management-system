@@ -7,7 +7,7 @@ import {
   addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
   impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, todayISO, type ModeOption,
 } from "../../shared/policy.js";
-import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, VehicleRegistration } from "../../shared/types.js";
+import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
 import { VehicleRegisterForm } from "./VehicleRegister.js";
 
@@ -267,6 +267,16 @@ function StepTravelType({
   );
   const outside = draft.scope === "outside";
   const route = policy.routes.find((r) => r.value === draft.route);
+
+  // "Contact HR" — a claim-window exception, asked for right where the date
+  // picker refuses an older date, instead of having to be told to go find
+  // someone. A pending or just-decided request for the same reason shouldn't
+  // let someone spam a fresh one every time they reopen the form.
+  const [myUnlocks, setMyUnlocks] = useState<UnlockRequest[]>([]);
+  const [contactHrOpen, setContactHrOpen] = useState(false);
+  const refreshMyUnlocks = () => api.unlockRequests("mine").then((r) => setMyUnlocks(r.requests)).catch(() => {});
+  useEffect(() => { refreshMyUnlocks(); }, []);
+  const latestUnlock = myUnlocks[0];
   const destination = destinationOptions.find((d) => d.value === draft.destinationType);
   const destinationNeeds = destination?.needs;
   const destinationLabel = destination?.label || "";
@@ -493,6 +503,39 @@ function StepTravelType({
             </Field>
           )}
 
+          {!claimWindowUnlocked && (
+            <div className="sm:col-span-2 space-y-2">
+              {latestUnlock?.status === "pending" && (
+                <Notice
+                  tone="info"
+                  items={[
+                    `Your request to unlock claims from ${fmtDate(latestUnlock.requestedFrom)} is with Administration — check back here once they decide.`,
+                  ]}
+                />
+              )}
+              {latestUnlock?.status === "rejected" && (
+                <Notice
+                  tone="warn"
+                  items={[
+                    `Your last request was declined${latestUnlock.decidedBy ? ` by ${latestUnlock.decidedBy.replace(/<.*>/, "").trim()}` : ""}: ${latestUnlock.decisionRemarks}`,
+                  ]}
+                />
+              )}
+              {latestUnlock?.status !== "pending" && (
+                <button type="button" className="btn-ghost text-xs" onClick={() => setContactHrOpen(true)}>
+                  Contact HR — ask to unlock an older date
+                </button>
+              )}
+            </div>
+          )}
+          {contactHrOpen && (
+            <ContactHrModal
+              defaultDate={draft.fromDate}
+              onClose={() => setContactHrOpen(false)}
+              onDone={() => { setContactHrOpen(false); refreshMyUnlocks(); }}
+            />
+          )}
+
           <div className="sm:col-span-2">
             <Notice
               tone="warn"
@@ -644,6 +687,67 @@ function StepTravelType({
         </Card>
       )}
     </>
+  );
+}
+
+/**
+ * "Contact HR" — raises a claim-window exception instead of leaving the
+ * employee to go find someone. Administration sees the reason, decides, and
+ * approving unlocks the date the same way the Configuration form does.
+ */
+function ContactHrModal({
+  defaultDate, onClose, onDone,
+}: { defaultDate: string; onClose: () => void; onDone: () => void }) {
+  const [requestedFrom, setRequestedFrom] = useState(defaultDate);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.requestUnlock(reason.trim(), requestedFrom);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Contact HR — ask for an older date" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-600">
+          Explain why this claim needs to be filed past the usual window. Administration reviews it and unlocks
+          the date for you if they approve.
+        </p>
+        <Field label="Date you need to claim from">
+          <input
+            type="date"
+            className="field"
+            value={requestedFrom}
+            onChange={(e) => setRequestedFrom(e.target.value)}
+          />
+        </Field>
+        <Field label="Why do you need this?" required>
+          <textarea
+            className="field min-h-24"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="What happened, and why the claim wasn't filed in time."
+          />
+        </Field>
+        {error && <Notice tone="error" items={[error]} />}
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" onClick={submit} disabled={busy || !reason.trim()}>
+            {busy ? "Sending…" : "Send to Administration"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

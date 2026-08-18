@@ -11,7 +11,7 @@
 import crypto from "crypto";
 import { appendRow, readTab, readTabs, updateRow, withSheetLock, type Row } from "./sheets.js";
 import type {
-  ApprovalRow, Leg, Policy, RequestRecord, Role, SessionUser, StageKey, Status, TeamMember, VehicleRegistration,
+  ApprovalRow, Leg, Policy, RequestRecord, Role, SessionUser, StageKey, Status, TeamMember, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
 
 const num = (v: string | undefined): number => {
@@ -509,6 +509,52 @@ export function fromVehicle(v: VehicleRegistration): Row {
     reviewed_at: v.reviewedAt,
     review_note: v.reviewNote,
   };
+}
+
+export function toUnlockRequest(r: Row & { _row: string }): UnlockRequest & { _row: string } {
+  return {
+    _row: r._row,
+    requestId: r.request_id,
+    employeeId: r.employee_id,
+    employeeName: r.employee_name,
+    department: r.department,
+    reason: r.reason,
+    requestedFrom: r.requested_from,
+    submittedAt: r.submitted_at,
+    status: (["pending", "approved", "rejected"].includes(r.status) ? r.status : "pending") as UnlockRequest["status"],
+    decidedBy: r.decided_by,
+    decidedAt: r.decided_at,
+    decisionRemarks: r.decision_remarks,
+    unlockFrom: r.unlock_from,
+  };
+}
+
+export function fromUnlockRequest(u: UnlockRequest): Row {
+  return {
+    request_id: u.requestId,
+    employee_id: u.employeeId,
+    employee_name: u.employeeName,
+    department: u.department,
+    reason: u.reason,
+    requested_from: u.requestedFrom,
+    submitted_at: u.submittedAt,
+    status: u.status,
+    decided_by: u.decidedBy,
+    decided_at: u.decidedAt,
+    decision_remarks: u.decisionRemarks,
+    unlock_from: u.unlockFrom,
+  };
+}
+
+/** UR-2026-000012 — same scheme as claim request IDs, its own counter. */
+export async function nextUnlockRequestId(): Promise<string> {
+  const rows = await readTab("UnlockRequests");
+  const year = new Date().getFullYear();
+  const used = rows
+    .map((r) => r.request_id)
+    .filter((rid) => rid?.startsWith(`UR-${year}-`))
+    .map((rid) => Number(rid.split("-")[2]) || 0);
+  return `UR-${year}-${String((used.length ? Math.max(...used) : 0) + 1).padStart(6, "0")}`;
 }
 
 /** Human-readable, sortable request number: TA-2026-000147. */

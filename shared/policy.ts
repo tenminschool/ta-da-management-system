@@ -46,7 +46,12 @@ export function isWeekend(date: string | Date): boolean {
 /** Inclusive day span between two ISO dates, split into weekday / weekend. */
 /** Today, as the plain date the sheet stores. */
 export function todayISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  // The organisation's own calendar day, not the server/browser's — a raw
+  // toISOString() reflects UTC, so a submission in the small hours of the
+  // morning in Bangladesh (UTC+6) would see "yesterday" and every date-window
+  // check (the 7-day claim window, notice periods, all of it) would be off by
+  // a day for as long as UTC hasn't rolled over yet.
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" });
 }
 
 /** Whole days from one plain date to another; negative when `to` is earlier. */
@@ -878,7 +883,7 @@ export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
 
 /** Fresh draft with every field defined, so React inputs stay controlled. */
 export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecialApproval: boolean } {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayISO();
   return {
     scope,
     city: scope === "inside" ? "Dhaka" : "",
