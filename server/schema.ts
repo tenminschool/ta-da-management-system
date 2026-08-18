@@ -244,7 +244,7 @@ export const TABS: TabSpec[] = [
       ["TransportMode", "RideSharing", "Ride Sharing (Uber / Pathao)", "Inside", "Yes", "Yes"],
       ["TransportMode", "Bus", "Bus", "Outside", "Yes", "Yes"],
       ["TransportMode", "Train", "Train", "Outside", "Yes", "Yes"],
-      ["TransportMode", "Launch", "Launch", "Outside", "Yes", "Yes"],
+      ["TransportMode", "Launch", "Launch", "Outside", "Yes", "No"],
       ["TransportMode", "Flight", "Flight", "Outside", "Yes", "Yes"],
       ["TransportMode", "RentACar", "Rent a Car", "Outside", "Yes", "Yes"],
 

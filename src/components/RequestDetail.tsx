@@ -329,6 +329,14 @@ export default function RequestDetail({
           {r.teamMembers.length > 0 && (
             <Card title={`Team (${r.teamMembers.length + 1} travellers)`}>
               <ul className="divide-y divide-slate-100 text-sm">
+                <li className="flex flex-wrap justify-between gap-2 py-2">
+                  <span>
+                    <span className="font-medium text-slate-800">{r.employeeName}</span>
+                    <span className="ml-2 text-xs text-slate-400">{r.employeeId} · {r.designation}</span>
+                    <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-semibold text-brand-700">Applicant</span>
+                  </span>
+                  <span className="text-xs font-semibold text-slate-500">Band {r.band} · {r.department}</span>
+                </li>
                 {r.teamMembers.map((m) => (
                   <li key={m.employeeId} className="flex flex-wrap justify-between gap-2 py-2">
                     <span>

@@ -703,6 +703,26 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       bkashOK("you", draft.bkashNumber);
       if (draft.travelType === "team") {
         draft.teamMembers.forEach((m) => bkashOK(m.name || "your teammate", m.bkashNumber));
+
+        // Each traveller is paid to their own wallet — the same number twice
+        // would send one person's teammate's share into their own, so this has
+        // to be caught before it becomes a real transfer, not sorted out after.
+        const entries = [
+          { label: "You", number: String(draft.bkashNumber || "").replace(/[\s-]/g, "") },
+          ...draft.teamMembers.map((m) => ({
+            label: m.name || "Your teammate",
+            number: String(m.bkashNumber || "").replace(/[\s-]/g, ""),
+          })),
+        ].filter((e) => e.number);
+        const seen = new Map<string, string>();
+        for (const e of entries) {
+          const clash = seen.get(e.number);
+          if (clash) {
+            errors.push(`${clash} and ${e.label} can't share the same bKash number — each traveller's number must be unique.`);
+          } else {
+            seen.set(e.number, e.label);
+          }
+        }
       }
     }
   }

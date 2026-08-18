@@ -191,6 +191,30 @@ app.post("/api/me/bkash", requireAuth, handler(async (req, res) => {
   res.json({ ok: true, bkashNumber });
 }));
 
+/**
+ * Saves a bKash number against a teammate's own record — used from the
+ * team-payout picker, so it's there next time without retyping it. Whoever
+ * it actually belongs to can still open their own claim form and correct it
+ * (myBkashField, the same control this endpoint's sibling above serves).
+ */
+app.post("/api/employees/:id/bkash", requireAuth, handler(async (req, res) => {
+  const bkashNumber = String(req.body?.bkashNumber || "").replace(/[\s-]/g, "");
+  if (!/^01[3-9]\d{8}$/.test(bkashNumber)) {
+    res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
+    return;
+  }
+  const rows = await readTab("Employees");
+  const row = rows.find((r) => r.employee_id === req.params.id);
+  if (!row) {
+    res.status(404).json({ error: "No employee with that ID." });
+    return;
+  }
+  const { _row, ...rest } = row;
+  await updateRow("Employees", _row, { ...rest, account_number: bkashNumber });
+  invalidateEmployees();
+  res.json({ ok: true, employeeId: req.params.id, bkashNumber });
+}));
+
 // ── Reference data ──────────────────────────────────────────────────────────
 
 app.get("/api/policy", requireAuth, handler(async (_req, res) => {
