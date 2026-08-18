@@ -570,11 +570,19 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const daysSince = endedOn ? daysBetween(endedOn, todayISO()) : 0;
   if (windowDays > 0 && daysSince > windowDays) {
     const unlockedFrom = user.claimUnlockFrom || "";
-    // An administrator can open the window back to a specific past date for
-    // someone who has a reason — this trip has to have ended on or after it.
+    const unlockedExact = user.claimUnlockExact || "";
+    // Two ways in: an administrator can open the window back to a specific
+    // past date, good for everything filed from there on (the Configuration
+    // form's own tool) — or a single "Contact HR" request can be approved,
+    // which only ever covers the one trip that was actually asked about, not
+    // whatever else gets filed after it.
     if (unlockedFrom && endedOn && endedOn >= unlockedFrom) {
       notes.push(
         `Filed ${daysSince} days after travel, past the ${windowDays}-day window — allowed because Administration unlocked claims from ${unlockedFrom} onward for you.`,
+      );
+    } else if (unlockedExact && endedOn && endedOn === unlockedExact) {
+      notes.push(
+        `Filed ${daysSince} days after travel, past the ${windowDays}-day window — allowed because Administration unlocked this specific trip (${unlockedExact}) for you.`,
       );
     } else {
       errors.push(

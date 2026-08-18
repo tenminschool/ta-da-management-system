@@ -41,7 +41,7 @@ export const TABS: TabSpec[] = [
   {
     title: "Employees",
     color: BLUE,
-    widths: [230, 110, 170, 240, 100, 90, 70, 150, 180, 130, 210, 130, 150, 90],
+    widths: [230, 110, 170, 240, 100, 90, 70, 150, 180, 130, 210, 130, 150, 90, 150],
     headers: [
       // Written on first SSO sign-in: the identity provider's stable subject id.
       "auth_id",
@@ -49,8 +49,13 @@ export const TABS: TabSpec[] = [
       "department", "designation", "line_manager_id", "roles",
       "payment_method", "account_number", "status",
       // Set by an administrator to let this person file a late claim: the
-      // earliest travel date they may now submit a claim for.
+      // earliest travel date they may now submit a claim for. Open-ended —
+      // everything from here on is unlocked, the manual Configuration tool.
       "claim_unlock_from",
+      // Set by approving a "Contact HR" request: unlocks exactly the one trip
+      // that was asked about, and nothing filed for any other date — unlike
+      // claim_unlock_from, this does not stay open going forward.
+      "claim_unlock_exact",
     ],
     seed: [
       ["", "EMP-1001", "Ariful Islam", "ariful@10ms.com", "1234", "Male", "G", "Sales", "Sales Executive", "EMP-1005", "user", "bKash", "01700000001", "Active"],

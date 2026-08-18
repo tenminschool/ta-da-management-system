@@ -286,8 +286,16 @@ function StepTravelType({
   // Administration can lift this per person from Configuration, which is
   // exactly what unlocks the calendar back open here too.
   const claimWindowDays = cfgNum(policy, "CLAIM_WINDOW_DAYS", 7);
-  const claimWindowUnlocked = !!user.claimUnlockFrom;
-  const earliestClaimableDate = user.claimUnlockFrom || addDays(todayISO(), -claimWindowDays);
+  // claimUnlockFrom (Configuration's own tool) opens the window from a date
+  // onward; claimUnlockExact (an approved "Contact HR" request) only ever
+  // covers the one trip that was actually asked about.
+  const claimWindowUnlocked = !!user.claimUnlockFrom || !!user.claimUnlockExact;
+  const earliestClaimableDate = user.claimUnlockFrom || user.claimUnlockExact || addDays(todayISO(), -claimWindowDays);
+  const unlockHint = user.claimUnlockFrom
+    ? `Administration has unlocked late filing for you back to ${fmtDate(user.claimUnlockFrom)}.`
+    : user.claimUnlockExact
+      ? `Administration has unlocked exactly ${fmtDate(user.claimUnlockExact)} for you — no other older date.`
+      : "";
 
   // Company Arrangement chosen against one date can go stale if the date is
   // pushed closer — dropped back to Self rather than left selected behind a
@@ -470,7 +478,7 @@ function StepTravelType({
             hint={
               !outside
                 ? claimWindowUnlocked
-                  ? `Administration has unlocked late filing for you back to ${fmtDate(user.claimUnlockFrom)}.`
+                  ? unlockHint
                   : `Claims must be filed within ${claimWindowDays} days of travel, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
                 : undefined
             }
@@ -489,7 +497,7 @@ function StepTravelType({
               required
               hint={
                 claimWindowUnlocked
-                  ? `Administration has unlocked late filing for you back to ${fmtDate(user.claimUnlockFrom)}.`
+                  ? unlockHint
                   : `Claims must be filed within ${claimWindowDays} days of your return, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
               }
             >
@@ -509,7 +517,7 @@ function StepTravelType({
                 <Notice
                   tone="info"
                   items={[
-                    `Your request to unlock claims from ${fmtDate(latestUnlock.requestedFrom)} is with Administration — check back here once they decide.`,
+                    `Your request to unlock ${fmtDate(latestUnlock.requestedFrom)} is with Administration — check back here once they decide.`,
                   ]}
                 />
               )}
@@ -693,7 +701,8 @@ function StepTravelType({
 /**
  * "Contact HR" — raises a claim-window exception instead of leaving the
  * employee to go find someone. Administration sees the reason, decides, and
- * approving unlocks the date the same way the Configuration form does.
+ * approving unlocks exactly this one trip's date — not an open window for
+ * whatever gets filed after it.
  */
 function ContactHrModal({
   defaultDate, onClose, onDone,
@@ -720,10 +729,10 @@ function ContactHrModal({
     <Modal title="Contact HR — ask for an older date" onClose={onClose}>
       <div className="space-y-4">
         <p className="text-sm text-slate-600">
-          Explain why this claim needs to be filed past the usual window. Administration reviews it and unlocks
-          the date for you if they approve.
+          Explain why this claim needs to be filed past the usual window. Administration reviews it and, if they
+          approve, unlocks exactly this travel date for you — not the days after it.
         </p>
-        <Field label="Date you need to claim from">
+        <Field label="The travel date this claim is for">
           <input
             type="date"
             className="field"

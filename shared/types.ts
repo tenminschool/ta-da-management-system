@@ -95,6 +95,8 @@ export interface SessionUser {
   accountNumber: string;
   /** Set by an administrator: the earliest travel date this person may now file a late claim for. */
   claimUnlockFrom?: string;
+  /** Set by approving a "Contact HR" request: unlocks exactly this one travel date, and only this one. */
+  claimUnlockExact?: string;
   /**
    * Derived, not stored: true when at least one active employee lists this
    * person as their line manager. Recomputed on every sign-in and /me, so
@@ -130,8 +132,9 @@ export interface VehicleRegistration {
 /**
  * A claim window exception, asked for from the New Request form ("Contact
  * HR") instead of the employee having to be told to go find someone —
- * Admin/HR decide it, and approving writes straight to the same
- * claimUnlockFrom the Configuration form sets by hand.
+ * Admin/HR decide it, and approving writes to claimUnlockExact: unlike the
+ * Configuration form's own claimUnlockFrom (deliberately open-ended), this
+ * only ever covers the one trip that was actually asked about.
  */
 export interface UnlockRequest {
   requestId: string;

@@ -218,7 +218,7 @@ function UnlockRequestsQueue() {
   return (
     <Card
       title="Unlock requests"
-      subtitle="Raised from the claim form's “Contact HR” button — approving one unlocks the date the same as doing it below by hand."
+      subtitle="Raised from the claim form's “Contact HR” button — approving one unlocks just that trip, not an open window like the tool below."
     >
       {error && <Notice tone="error" items={[error]} />}
       <div className="space-y-3">
@@ -263,8 +263,9 @@ function UnlockRequestRow({ request, onDone }: { request: UnlockRequest; onDone:
       <p className="mt-2 text-sm text-slate-700">{request.reason}</p>
       <div className="mt-3 grid gap-3 sm:grid-cols-[10rem_1fr]">
         <div>
-          <label className="label">Unlock from</label>
+          <label className="label">Unlock exactly this date</label>
           <input type="date" className="field" value={unlockFrom} onChange={(e) => setUnlockFrom(e.target.value)} />
+          <p className="mt-1 text-[11px] text-slate-400">Only this one trip — not an open window for anything filed after it.</p>
         </div>
         <div>
           <label className="label">Remarks</label>

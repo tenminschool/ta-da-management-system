@@ -859,6 +859,7 @@ async function currentSession(session: Session): Promise<Session> {
       paymentMethod: row.paymentMethod,
       accountNumber: row.accountNumber,
       claimUnlockFrom: row.claimUnlockFrom || "",
+      claimUnlockExact: row.claimUnlockExact || "",
     }),
     registeredVehicle: await approvedVehicleFor(session.employeeId),
   };
@@ -1723,6 +1724,22 @@ async function applyClaimUnlock(employeeId: string, from: string): Promise<boole
   return true;
 }
 
+/**
+ * Grants (or, with an empty date, revokes) a one-trip exception: unlike
+ * applyClaimUnlock's open-ended "from this date on", this only ever covers
+ * the exact travel date it names — approving a "Contact HR" request should
+ * not leave every other late claim that person might file afterward open too.
+ */
+async function applyClaimUnlockExact(employeeId: string, exact: string): Promise<boolean> {
+  const rows = await readTab("Employees");
+  const row = rows.find((r) => r.employee_id === employeeId);
+  if (!row) return false;
+  const { _row, ...rest } = row;
+  await updateRow("Employees", _row, { ...rest, claim_unlock_exact: exact });
+  invalidateEmployees();
+  return true;
+}
+
 app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
   if (!hasRole(req.session, "admin", "hr")) {
     res.status(403).json({ error: "Admin access required." });
@@ -1831,7 +1848,7 @@ app.post("/api/unlock-requests/:id/decide", requireAuth, handler(async (req, res
       res.status(400).json({ error: "Give the date to unlock from, as YYYY-MM-DD." });
       return;
     }
-    const ok = await applyClaimUnlock(current.employeeId, unlockFrom);
+    const ok = await applyClaimUnlockExact(current.employeeId, unlockFrom);
     if (!ok) {
       res.status(404).json({ error: "That employee no longer exists." });
       return;
