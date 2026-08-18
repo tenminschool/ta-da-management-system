@@ -652,7 +652,22 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
 
   if (draft.travelType === "team") {
     if (draft.teamMembers.length < 1) errors.push("Add at least one team member, or switch back to Individual travel.");
-    else notes.push(`Team travel with ${teamSize} travellers.`);
+    else {
+      notes.push(`Team travel with ${teamSize} travellers.`);
+      // Inside city, a pooled fare (CNG, rickshaw, car) is paid entirely to
+      // whoever is filing the claim — it's their trip to reclaim. Outside
+      // city, that same kind of pooled fare (rent-a-car, a shared vehicle)
+      // is split evenly across the whole group when it's paid out instead,
+      // so this needs to be said up front rather than discovered on payday.
+      const pooledTransport = draft.legs.some(
+        (l) => l.mode && l.mode !== "CompanyVehicle" && !PER_TRAVELLER_MODES.has(l.mode) && Number(l.amount) > 0,
+      );
+      if (draft.scope === "outside" && pooledTransport) {
+        notes.push(
+          `Transportation is a pooled cost for the group and will be split equally across all ${teamSize} travellers when paid out.`,
+        );
+      }
+    }
   }
 
   // ── Where the money goes ──────────────────────────────────────────────────
@@ -789,10 +804,14 @@ export interface TeamPayout {
  * files the whole claim but everyone still gets paid to their own number.
  *
  * Per-Diem and any per-traveller fare (Bus/Train/Flight — already priced ×
- * headcount) divide evenly per person. A shared cost — accommodation,
- * rent-a-car, a pooled leg — goes entirely to the requester, since that is
- * who actually booked and paid it. An advance already disbursed comes off
- * the requester's own share, and a Finance override (approvedAmount) scales
+ * headcount) divide evenly per person. Accommodation and any other shared
+ * cost always go entirely to the requester, since that is who actually
+ * booked and paid them. A pooled transportation leg (a rickshaw, CNG, a
+ * pooled car) does the same inside city — it is that traveller's own trip to
+ * reclaim. Outside city, that same pooled fare (rent-a-car, a shared
+ * vehicle) is genuinely shared travel, so it is split evenly across the
+ * whole group instead. An advance already disbursed comes off the
+ * requester's own share, and a Finance override (approvedAmount) scales
  * every share by the same proportion rather than being decided by guesswork.
  */
 export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayout[] {
@@ -810,6 +829,12 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
   const sharedTa = money(record.taAmount - perTravellerTa);
   const perHeadTa = money(perTravellerTa / teamSize);
 
+  // Outside city, the pooled fare is split evenly; inside city it stays with
+  // whoever filed the claim.
+  const splitSharedTa = record.scope === "outside";
+  const perHeadSharedTa = splitSharedTa ? money(sharedTa / teamSize) : 0;
+  const requesterSharedTa = splitSharedTa ? perHeadSharedTa : sharedTa;
+
   // Inside-city Per-Diem — and the under-the-threshold lunch allowance — are
   // answered per traveller (did THEY get an office meal?), so each person's
   // own cut is worked out directly rather than pooled and divided evenly.
@@ -824,16 +849,16 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
       ? Math.max(0, money(perDiemRate - (mealTaken ? mealDeduction : 0)))
       : (mealTaken ? 0 : shortHourAllowance);
 
-  const sharedTotal = money(sharedTa + record.accommodationAmount + record.otherAmount);
+  const requesterOnlyShared = money(record.accommodationAmount + record.otherAmount);
   const requesterMealTaken = record.dualWorkstation ? true : record.officeMealTaken;
-  const requesterOwn = money(perHeadTa + ownPerDiemAndLunch(requesterMealTaken));
-  const memberOwn = (m: (typeof record.teamMembers)[number]) => money(perHeadTa + ownPerDiemAndLunch(m.officeMealTaken));
+  const requesterOwn = money(perHeadTa + requesterSharedTa + ownPerDiemAndLunch(requesterMealTaken));
+  const memberOwn = (m: (typeof record.teamMembers)[number]) => money(perHeadTa + perHeadSharedTa + ownPerDiemAndLunch(m.officeMealTaken));
 
-  const claimTotal = money(requesterOwn + record.teamMembers.reduce((s, m) => s + memberOwn(m), 0) + sharedTotal);
+  const claimTotal = money(requesterOwn + record.teamMembers.reduce((s, m) => s + memberOwn(m), 0) + requesterOnlyShared);
   const payableTotal = record.approvedAmount > 0 ? record.approvedAmount : record.totalClaim;
   const scale = claimTotal > 0 ? payableTotal / claimTotal : 1;
 
-  const requesterAmount = money((requesterOwn + sharedTotal) * scale - record.advanceRequested);
+  const requesterAmount = money((requesterOwn + requesterOnlyShared) * scale - record.advanceRequested);
 
   return [
     { employeeId: record.employeeId, name: record.employeeName, bkashNumber: record.bkashNumber, amount: requesterAmount },
