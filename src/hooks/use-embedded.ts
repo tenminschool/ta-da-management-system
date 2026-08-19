@@ -1,15 +1,13 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { HOST_OWNS_SESSION } from '@/lib/embed';
 
 /**
- * True when this app runs inside a host shell — the 10MS HQ iframe, or any
- * launcher that appends `?source=hq`. The host supplies its own account chrome,
- * so the app hides its own user menus instead of stacking two.
+ * True when the host (10MS HQ, or any `?source=hq` launcher) owns the sign-in
+ * session, so this app's own account chrome — sign-out in particular — must
+ * stay hidden. See `lib/embed.ts` for why mere framing isn't enough on its
+ * own to decide this.
  */
 export function useIsEmbedded(): boolean {
-  const searchParams = useSearchParams();
-
-  if (searchParams.get('source') === 'hq') return true;
-  return typeof window !== 'undefined' && window.self !== window.top;
+  return HOST_OWNS_SESSION;
 }

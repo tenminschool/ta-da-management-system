@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint && tsc --noEmit",
-    "setup": "tsx scripts/setup-sheets.ts",
+    "setup": "tsx --env-file=.env scripts/setup-sheets.ts",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"*.{ts,json,mjs}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\" \"*.{ts,json,mjs}\"",
     "prepare": "husky"
