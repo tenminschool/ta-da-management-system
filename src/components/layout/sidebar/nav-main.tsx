@@ -162,13 +162,20 @@ export function NavMain({
 
               // Same element in both modes so the icon never moves — only the label toggles via CSS.
               if (!hasChildren) {
+                // Stands out as a solid CTA against the always-dark rail surface, not just another nav row.
+                const isNewRequest = item.href === '/new-request';
+
                 return (
                   <SidebarMenuItem key={item.label}>
                     <SidebarMenuButton
                       asChild
                       tooltip={item.label}
                       isActive={isActive(item.href)}
-                      className="[&>svg]:size-[18px]!"
+                      className={cn(
+                        '[&>svg]:size-[18px]!',
+                        isNewRequest &&
+                          'bg-white! font-medium text-neutral-900! hover:bg-neutral-100! focus-visible:bg-neutral-100! active:bg-neutral-200! data-[active=true]:bg-white! data-[active=true]:text-neutral-900!',
+                      )}
                     >
                       <Link
                         href={item.href}

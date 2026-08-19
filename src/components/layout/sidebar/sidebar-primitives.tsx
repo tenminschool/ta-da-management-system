@@ -43,7 +43,7 @@ const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
 /** Pinned open, pinned closed (icon rail, no peek), or icon rail that expands on hover. */
 type SidebarMode = 'expanded' | 'collapsed' | 'hover';
-const SIDEBAR_DEFAULT_MODE: SidebarMode = 'hover';
+const SIDEBAR_DEFAULT_MODE: SidebarMode = 'expanded';
 
 type SidebarContextProps = {
   state: 'expanded' | 'collapsed';

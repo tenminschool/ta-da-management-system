@@ -58,10 +58,15 @@ export function getNav(user: SessionUser, inbox: number): NavCategory[] {
   const isApprover = isAdmin || isFinance || !!user.managesOthers;
   const reviewsAdvances = isAdmin || isFinance || !!user.managesOthers;
 
+  const quickActions: NavCategory = {
+    category: 'Quick Actions',
+    hideLabel: true,
+    items: [{ label: 'New Request', href: '/new-request', icon: Plus }],
+  };
+
   const my: NavCategory = {
     category: 'My Claims',
     items: [
-      { label: 'New Request', href: '/new-request', icon: Plus },
       { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
       { label: 'My Requests', href: '/my-requests', icon: FileText },
       { label: 'My Advance', href: '/my-advance', icon: HandCoins },
@@ -70,7 +75,7 @@ export function getNav(user: SessionUser, inbox: number): NavCategory[] {
     ],
   };
 
-  if (!isApprover) return [my];
+  if (!isApprover) return [quickActions, my];
 
   const desk: NavCategory = {
     category: 'Approval Desk',
@@ -112,7 +117,7 @@ export function getNav(user: SessionUser, inbox: number): NavCategory[] {
     ],
   };
 
-  return [my, desk];
+  return [quickActions, my, desk];
 }
 
 export function isNavItemActive(pathname: string, href: string): boolean {
