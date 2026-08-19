@@ -1,6 +1,7 @@
 'use client';
 
-import { NAV } from '@/lib/nav';
+import { getNav } from '@/lib/nav';
+import { useSession } from '@/hooks/use-session';
 import { RAIL_SURFACE_CLASS } from '@/components/layout/dark-rail-theme';
 import { NavMain } from '@/components/layout/sidebar/nav-main';
 import { SidebarSettings } from '@/components/layout/sidebar/sidebar-settings';
@@ -16,6 +17,7 @@ import { cn } from '@/lib/utils';
 // footer only carries its own display settings.
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { isLarge, setOpenMobile } = useSidebar();
+  const { user, inbox } = useSession();
 
   return (
     <Sidebar
@@ -28,12 +30,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       {...props}
     >
       <SidebarContent className="scrollbar-hide gap-1 py-1 group-data-[collapsible=icon]:overflow-y-auto!">
-        <NavMain
-          categories={NAV}
-          onNavigate={() => {
-            if (!isLarge) setOpenMobile(false);
-          }}
-        />
+        {user && (
+          <NavMain
+            categories={getNav(user, inbox)}
+            onNavigate={() => {
+              if (!isLarge) setOpenMobile(false);
+            }}
+          />
+        )}
       </SidebarContent>
       <SidebarFooter className="gap-0 p-2 pt-0">
         <SidebarSettings />

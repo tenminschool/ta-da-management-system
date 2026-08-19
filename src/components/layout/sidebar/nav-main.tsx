@@ -176,9 +176,14 @@ export function NavMain({
                         onClick={onNavigate}
                       >
                         <Icon size={18} />
-                        <span className="group-data-[collapsible=icon]:hidden">
+                        <span className="flex-1 truncate group-data-[collapsible=icon]:hidden">
                           {item.label}
                         </span>
+                        {!!item.badge && (
+                          <span className="ml-auto flex size-5 shrink-0 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white group-data-[collapsible=icon]:hidden">
+                            {item.badge}
+                          </span>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

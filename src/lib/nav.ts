@@ -1,5 +1,17 @@
 import type { LucideIcon } from 'lucide-react';
-import { LayoutDashboard } from 'lucide-react';
+import {
+  Banknote,
+  Car,
+  FileText,
+  HandCoins,
+  Inbox,
+  LayoutDashboard,
+  ListChecks,
+  Plus,
+  Settings,
+  Wallet,
+} from 'lucide-react';
+import type { SessionUser } from '@/shared/types';
 
 export interface NavItem {
   label: string;
@@ -7,6 +19,7 @@ export interface NavItem {
   icon: LucideIcon;
   /** Sub-items render as a collapsible group (a hover flyout on the icon rail). */
   items?: NavItem[];
+  badge?: number;
 }
 
 export interface NavCategory {
@@ -16,45 +29,107 @@ export interface NavCategory {
   items: NavItem[];
 }
 
-/**
- * Sidebar navigation — single source of truth.
- *
- * ```ts
- * {
- *   category: 'Administrator',
- *   items: [
- *     { label: 'Users', href: '/users', icon: Users },
- *     {
- *       label: 'Settings',
- *       href: '/settings',
- *       icon: Settings,
- *       items: [{ label: 'Teams', href: '/settings/teams', icon: Network }],
- *     },
- *   ],
- * }
- * ```
- */
-export const NAV: NavCategory[] = [
-  {
-    category: 'Main',
-    hideLabel: true,
-    items: [{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
-  },
+/** Every item that can appear in the sidebar, regardless of role — used for title lookup. */
+const ALL_ITEMS: NavItem[] = [
+  { label: 'New Request', href: '/new-request', icon: Plus },
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'My Requests', href: '/my-requests', icon: FileText },
+  { label: 'My Advance', href: '/my-advance', icon: HandCoins },
+  { label: 'My Payments', href: '/my-payments', icon: Wallet },
+  { label: 'Register your Vehicle', href: '/my-vehicle', icon: Car },
+  { label: 'Dashboard', href: '/desk', icon: LayoutDashboard },
+  { label: 'All Claims', href: '/desk/all', icon: ListChecks },
+  { label: 'Pending Approvals', href: '/desk/pending', icon: Inbox },
+  { label: 'Advance Approvals', href: '/desk/advances', icon: HandCoins },
+  { label: 'Vehicle Registrations', href: '/desk/vehicles', icon: Car },
+  { label: 'Payments', href: '/desk/payments', icon: Banknote },
+  { label: 'Configuration', href: '/admin', icon: Settings },
 ];
+
+/**
+ * The sidebar's nav, role-gated — "My Claims" is everyone's; "Approval Desk"
+ * only exists for people who approve something. Mirrors the old SPA's
+ * selfNav/deskNav split, just as two always-visible categories instead of a
+ * workspace switcher: either can be jumped into directly.
+ */
+export function getNav(user: SessionUser, inbox: number): NavCategory[] {
+  const isAdmin = user.roles.some((r) => ['admin', 'hr'].includes(r));
+  const isFinance = user.roles.includes('finance');
+  const isApprover = isAdmin || isFinance || !!user.managesOthers;
+  const reviewsAdvances = isAdmin || isFinance || !!user.managesOthers;
+
+  const my: NavCategory = {
+    category: 'My Claims',
+    items: [
+      { label: 'New Request', href: '/new-request', icon: Plus },
+      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+      { label: 'My Requests', href: '/my-requests', icon: FileText },
+      { label: 'My Advance', href: '/my-advance', icon: HandCoins },
+      { label: 'My Payments', href: '/my-payments', icon: Wallet },
+      { label: 'Register your Vehicle', href: '/my-vehicle', icon: Car },
+    ],
+  };
+
+  if (!isApprover) return [my];
+
+  const desk: NavCategory = {
+    category: 'Approval Desk',
+    items: [
+      ...(isAdmin || isFinance
+        ? [{ label: 'Dashboard', href: '/desk', icon: LayoutDashboard }]
+        : []),
+      { label: 'All Claims', href: '/desk/all', icon: ListChecks },
+      {
+        label: 'Pending Approvals',
+        href: '/desk/pending',
+        icon: Inbox,
+        badge: inbox || undefined,
+      },
+      ...(reviewsAdvances
+        ? [
+            {
+              label: 'Advance Approvals',
+              href: '/desk/advances',
+              icon: HandCoins,
+            },
+          ]
+        : []),
+      ...(isAdmin
+        ? [
+            {
+              label: 'Vehicle Registrations',
+              href: '/desk/vehicles',
+              icon: Car,
+            },
+          ]
+        : []),
+      ...(isFinance || isAdmin
+        ? [{ label: 'Payments', href: '/desk/payments', icon: Banknote }]
+        : []),
+      ...(isAdmin
+        ? [{ label: 'Configuration', href: '/admin', icon: Settings }]
+        : []),
+    ],
+  };
+
+  return [my, desk];
+}
 
 export function isNavItemActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 export function getNavTitle(pathname: string): string {
-  for (const category of NAV) {
-    for (const item of category.items) {
-      const child = item.items?.find((child) =>
-        isNavItemActive(pathname, child.href),
-      );
-      if (child) return child.label;
-      if (isNavItemActive(pathname, item.href)) return item.label;
+  // Longest-matching href wins — "/desk" and "/desk/pending" both match
+  // "/desk/pending", and only the more specific one is the right title.
+  let best: NavItem | null = null;
+  for (const item of ALL_ITEMS) {
+    if (
+      isNavItemActive(pathname, item.href) &&
+      (!best || item.href.length > best.href.length)
+    ) {
+      best = item;
     }
   }
-  return 'Dashboard';
+  return best?.label ?? 'Dashboard';
 }

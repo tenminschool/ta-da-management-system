@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardShell } from '@/components/layout/dashboard-shell';
 import { LoadingSpinner } from '@tenminuteschool/design-system';
-import { useAuth } from '@/hooks/use-auth';
+import { useSession } from '@/hooks/use-session';
 import { LOGIN_PATH } from '@/lib/auth';
 
 export default function DashboardLayout({
@@ -13,18 +13,26 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { user, hydrated } = useAuth();
+  const { user, policy, booting } = useSession();
 
   useEffect(() => {
-    if (hydrated && !user) {
+    if (!booting && !user) {
       router.replace(LOGIN_PATH);
     }
-  }, [hydrated, user, router]);
+  }, [booting, user, router]);
 
-  if (!hydrated || !user) {
+  if (booting) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <LoadingSpinner size="md" className="text-muted-foreground" />
+        <LoadingSpinner size="md" message="Starting up…" />
+      </div>
+    );
+  }
+  if (!user) return null;
+  if (!policy) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <LoadingSpinner size="md" message="Loading policy…" />
       </div>
     );
   }

@@ -35,11 +35,11 @@ export function BrandPanel() {
           Internal access only
         </div>
         <h2 className="text-3xl font-semibold leading-[1.15] tracking-tight md:text-4xl">
-          The control center for your operations.
+          Travel claims, per-diem and approvals in one place.
         </h2>
         <p className="text-sm leading-relaxed text-zinc-400">
-          Manage your application, monitor activity, and ship faster from one
-          focused workspace.
+          File a claim, track it through Manager, Admin and Finance review, and
+          see payments through to completion — all from one workspace.
         </p>
       </div>
 

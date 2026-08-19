@@ -18,11 +18,10 @@ export default function LoginPage() {
       </div>
 
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Sign in to your account
-        </h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
         <p className="text-sm text-muted-foreground">
-          Welcome back. Continue with your 10 Minute School admin account.
+          Sign in with your 10 Minute School account to access travel claims and
+          approvals.
         </p>
       </div>
 

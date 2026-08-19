@@ -1,11 +1,11 @@
 'use client';
 
 import { ChevronsUpDown, LogOut, UserRound } from 'lucide-react';
-import { useAuth } from '@/hooks/use-auth';
+import { useSession } from '@/hooks/use-session';
+import { HOST_OWNS_SESSION } from '@/lib/embed';
 import {
   Avatar,
   AvatarFallback,
-  AvatarImage,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -43,8 +43,18 @@ function HeaderUserSkeleton() {
   );
 }
 
+function AvatarGlyph() {
+  return (
+    <Avatar className="size-8">
+      <AvatarFallback className="bg-muted text-muted-foreground">
+        <UserRound className="size-4" />
+      </AvatarFallback>
+    </Avatar>
+  );
+}
+
 export function HeaderUser() {
-  const { user, hydrated, logout, isLoggingOut } = useAuth();
+  const { user, booting, signOut, isLoggingOut } = useSession();
 
   if (isLoggingOut) {
     return (
@@ -55,7 +65,9 @@ export function HeaderUser() {
     );
   }
 
-  if (!hydrated || !user) return <HeaderUserSkeleton />;
+  if (booting || !user) return <HeaderUserSkeleton />;
+
+  const subtitle = `Band ${user.band} · ${user.department}`;
 
   return (
     <DropdownMenu>
@@ -65,18 +77,11 @@ export function HeaderUser() {
           aria-label="Open user menu"
           className="flex max-w-56 items-center gap-2 rounded-lg p-1 text-left outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
         >
-          <Avatar className="size-8">
-            {user.picture && (
-              <AvatarImage src={user.picture} alt={user.name ?? ''} />
-            )}
-            <AvatarFallback className="bg-muted text-muted-foreground">
-              <UserRound className="size-4" />
-            </AvatarFallback>
-          </Avatar>
+          <AvatarGlyph />
           <div className="hidden min-w-0 flex-1 text-sm leading-tight sm:grid">
             <span className="truncate font-semibold">{user.name}</span>
             <span className="truncate text-xs text-muted-foreground">
-              {user.email}
+              {subtitle}
             </span>
           </div>
           <ChevronsUpDown className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
@@ -90,14 +95,7 @@ export function HeaderUser() {
       >
         <DropdownMenuLabel className="p-0 font-normal">
           <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-            <Avatar className="size-8">
-              {user.picture && (
-                <AvatarImage src={user.picture} alt={user.name ?? ''} />
-              )}
-              <AvatarFallback className="bg-muted text-muted-foreground">
-                <UserRound className="size-4" />
-              </AvatarFallback>
-            </Avatar>
+            <AvatarGlyph />
             <div className="grid flex-1 text-left text-sm leading-tight">
               <span className="truncate font-semibold">{user.name}</span>
               <span className="truncate text-xs text-muted-foreground">
@@ -106,11 +104,20 @@ export function HeaderUser() {
             </div>
           </div>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onSelect={() => logout()}>
-          <LogOut />
-          Sign out
-        </DropdownMenuItem>
+        {/* The host owns the session when this panel is embedded — signing
+            out here would strand the two out of step. */}
+        {!HOST_OWNS_SESSION && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onSelect={() => void signOut()}
+            >
+              <LogOut />
+              Sign out
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
