@@ -1,26 +1,21 @@
-/**
- * The single TenMSAuth instance for the app.
- *
- * The README for this SDK is written for Next.js; this project is Vite, so the
- * client ID comes from `import.meta.env.VITE_*` rather than `NEXT_PUBLIC_*`.
- * It is still never hard-coded. Storage stays 'localStorage' as the SDK
- * requires.
- *
- * `redirectUri` has no default in the SDK and the popup flow requires it to be
- * same-origin as the opener, so it is derived from the current origin. That
- * exact origin must be registered against the client ID with the provider.
- */
+import { TenMSAuth } from '@tenminuteschool/auth-admin-react';
 
-import { TenMSAuth } from "@tenminuteschool/auth-admin-react";
+export const CLIENT_ID = process.env.NEXT_PUBLIC_TENMS_CLIENT_ID ?? '';
 
-export const CLIENT_ID = import.meta.env.VITE_TENMS_CLIENT_ID as string;
+if (!CLIENT_ID && typeof window !== 'undefined') {
+  console.warn(
+    'NEXT_PUBLIC_TENMS_CLIENT_ID is not set — "Login with 10MS Admin" will not work until it is configured.',
+  );
+}
 
-export const REDIRECT_URI =
-  (import.meta.env.VITE_TENMS_REDIRECT_URI as string | undefined) ||
-  (typeof window !== "undefined" ? window.location.origin : "");
-
+// TenMSAuth requires a non-empty clientId at construction time. Falling back
+// to a placeholder here (instead of letting it throw) keeps the app
+// rendering when the env var is unset — login attempts fail normally instead
+// of crashing every page via the root Providers tree.
 export const auth = new TenMSAuth({
-  clientId: CLIENT_ID,
-  redirectUri: REDIRECT_URI,
-  storage: "localStorage",
+  clientId: CLIENT_ID || 'unconfigured',
+  storage: 'localStorage',
 });
+
+export const LOGIN_PATH = '/login';
+export const POST_LOGIN_REDIRECT = '/dashboard';
