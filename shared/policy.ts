@@ -62,10 +62,18 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86400000);
 }
 
-/** Shifts a plain ISO date by a number of calendar days — negative moves it earlier. */
+/**
+ * Shifts a plain ISO date by a number of calendar days — negative moves it
+ * earlier. Done entirely in UTC (construct with a trailing Z, shift with
+ * setUTCDate, read back with toISOString) rather than the browser's local
+ * timezone — a local midnight in Bangladesh (UTC+6) re-serialised through
+ * toISOString() lands on the previous UTC day, quietly shifting every date
+ * this feeds (the claim-window calendar's earliest pickable date, among
+ * others) a day too early for anyone browsing from a positive UTC offset.
+ */
 export function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00`);
-  d.setDate(d.getDate() + days);
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
