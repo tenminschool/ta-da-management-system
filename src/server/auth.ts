@@ -7,7 +7,7 @@
  */
 
 import crypto from 'crypto';
-import type { Role, SessionUser } from '../shared/types.js';
+import type { Role, SessionUser } from '../shared/types';
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 

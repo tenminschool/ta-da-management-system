@@ -20,7 +20,7 @@ import type {
   RequestRecord,
   Scope,
   SessionUser,
-} from './types.js';
+} from './types';
 
 // ── small helpers ───────────────────────────────────────────────────────────
 

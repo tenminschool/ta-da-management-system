@@ -10,12 +10,8 @@
  *   npm run setup
  */
 
-import { OBSOLETE_TABS, TABS } from '../src/server/schema.js';
-import {
-  sheetsClient,
-  spreadsheetId,
-  colLetter,
-} from '../src/server/sheets.js';
+import { OBSOLETE_TABS, TABS } from '../src/server/schema';
+import { sheetsClient, spreadsheetId, colLetter } from '../src/server/sheets';
 
 type Rec = Record<string, string>;
 

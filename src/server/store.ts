@@ -16,7 +16,7 @@ import {
   updateRow,
   withSheetLock,
   type Row,
-} from './sheets.js';
+} from './sheets';
 import type {
   ApprovalRow,
   InsideCityBlockEntry,
@@ -30,7 +30,7 @@ import type {
   TeamMember,
   UnlockRequest,
   VehicleRegistration,
-} from '../shared/types.js';
+} from '../shared/types';
 
 const num = (v: string | undefined): number => {
   const n = Number(v);
