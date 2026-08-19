@@ -15,7 +15,7 @@ import express, { type NextFunction, type Request, type Response } from "express
 import ExcelJS from "exceljs";
 
 import {
-  apiCalls, appendRow, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls, updateRow,
+  apiCalls, appendRow, clearRow, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls, updateRow,
   withSheetLock, type Row,
 } from "./sheets.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
@@ -24,9 +24,10 @@ import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
 import {
-  allEmployees, deptHeadIdFor, fromRequest, fromUnlockRequest, fromVehicle, invalidateEmployees, invalidatePolicy,
-  loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId, nowISO, parseLinks, rememberAuthId, STAGE_COLUMN,
-  toApprovalRow, toRequest, toUnlockRequest, toVehicle, upsertApproval,
+  allEmployees, deptHeadIdFor, fromInsideCityBlockEntry, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
+  invalidateEmployees, invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId,
+  nowISO, parseLinks, rememberAuthId, STAGE_COLUMN, toApprovalRow, toInsideCityBlockEntry, toRequest, toUnlockRequest, toVehicle,
+  upsertApproval,
 } from "./store.js";
 import {
   addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit, todayISO,
@@ -34,7 +35,7 @@ import {
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
 import type {
-  RequestDraft, RequestRecord, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
+  InsideCityBlockEntry, RequestDraft, RequestRecord, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
 
 const app = express();
@@ -866,6 +867,7 @@ async function approvedVehicleFor(employeeId: string): Promise<SessionUser["regi
 
 async function currentSession(session: Session): Promise<Session> {
   const row = (await allEmployees()).find((e) => e.employeeId === session.employeeId);
+  const blocked = await insideCityBlockedEmails();
   return {
     ...session,
     // Whatever HR/Admin can edit on this person's row, or the person
@@ -885,6 +887,7 @@ async function currentSession(session: Session): Promise<Session> {
       claimUnlockFrom: row.claimUnlockFrom || "",
       claimUnlockExact: row.claimUnlockExact || "",
     }),
+    insideCityBlocked: blocked.has((row?.email || session.email || "").toLowerCase()),
     registeredVehicle: await approvedVehicleFor(session.employeeId),
   };
 }
@@ -1889,6 +1892,93 @@ app.post("/api/unlock-requests/:id/decide", requireAuth, handler(async (req, res
   };
   await updateRow("UnlockRequests", _row, fromUnlockRequest(updated));
   res.json({ request: updated });
+}));
+
+// ── Inside-city restrictions: admin can block an email from raising a new
+//    inside-city request — they still see everything and can still claim
+//    outside city ────────────────────────────────────────────────────────────
+
+const BLOCK_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+app.get("/api/admin/inside-city-block", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const rows = (await readTab("InsideCityBlock")).map(toInsideCityBlockEntry);
+  const entries = rows.sort((a, b) => b.addedAt.localeCompare(a.addedAt)).map(({ _row, ...e }) => e);
+  res.json({ entries });
+}));
+
+app.post("/api/admin/inside-city-block", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const note = String(req.body?.note || "").trim();
+  if (!BLOCK_EMAIL_RE.test(email)) {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+  const rows = (await readTab("InsideCityBlock")).map(toInsideCityBlockEntry);
+  if (rows.some((r) => r.email.toLowerCase() === email)) {
+    res.status(400).json({ error: "That email is already restricted." });
+    return;
+  }
+  const entry: InsideCityBlockEntry = {
+    email, note, addedBy: `${req.session.name} <${req.session.email}>`, addedAt: nowISO(),
+  };
+  await appendRow("InsideCityBlock", fromInsideCityBlockEntry(entry));
+  invalidateInsideCityBlock();
+  res.json({ entry });
+}));
+
+/** Corrects an entry's email or note in place — same row, so "added by/at" stays put. */
+app.put("/api/admin/inside-city-block/:email", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const note = String(req.body?.note || "").trim();
+  if (!BLOCK_EMAIL_RE.test(email)) {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+  const rows = await readTab("InsideCityBlock");
+  const target = String(req.params.email || "").trim().toLowerCase();
+  const row = rows.find((r) => String(r.email || "").trim().toLowerCase() === target);
+  if (!row) {
+    res.status(404).json({ error: "No such restriction." });
+    return;
+  }
+  const { _row, ...current } = toInsideCityBlockEntry(row as Row & { _row: string });
+  if (email !== target && rows.some((r) => String(r.email || "").trim().toLowerCase() === email)) {
+    res.status(400).json({ error: "That email is already restricted." });
+    return;
+  }
+  const updated: InsideCityBlockEntry = { ...current, email, note };
+  await updateRow("InsideCityBlock", _row, fromInsideCityBlockEntry(updated));
+  invalidateInsideCityBlock();
+  res.json({ entry: updated });
+}));
+
+app.delete("/api/admin/inside-city-block/:email", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Admin access required." });
+    return;
+  }
+  const target = String(req.params.email || "").trim().toLowerCase();
+  const rows = await readTab("InsideCityBlock");
+  const row = rows.find((r) => String(r.email || "").trim().toLowerCase() === target);
+  if (!row) {
+    res.status(404).json({ error: "No such restriction." });
+    return;
+  }
+  await clearRow("InsideCityBlock", row._row);
+  invalidateInsideCityBlock();
+  res.json({ ok: true });
 }));
 
 // ── Vehicles: register, approve, claim against ──────────────────────────────

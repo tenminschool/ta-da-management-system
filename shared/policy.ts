@@ -329,6 +329,13 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const band = bandPolicy(policy, user.band);
   if (!band) errors.push(`No policy is configured for Band "${user.band}". Contact Administration.`);
 
+  // An administrator can restrict one person from raising new inside-city
+  // claims specifically — they can still see every claim as normal, and
+  // outside-city travel is untouched.
+  if (draft.scope === "inside" && user.insideCityBlocked) {
+    errors.push("You can't apply for inside-city travel. Contact Administration if this needs to change.");
+  }
+
   const span = daySpan(draft.fromDate, draft.toDate || draft.fromDate);
   const tripDays = span.total;
   const hours = workingHours(draft.startTime, draft.endTime);

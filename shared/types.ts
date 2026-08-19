@@ -110,6 +110,21 @@ export interface SessionUser {
    * approval takes effect without signing in again.
    */
   registeredVehicle?: { vehicleType: "Bike" | "Car"; model: string; fuelType: string; mileageKmPerLitre: number };
+  /**
+   * Set by an administrator (InsideCityBlock): this person can view every
+   * claim as usual and still raise an outside-city one, just not a new
+   * inside-city request. Read fresh at every sign-in/`/me`, the same as
+   * claimUnlockFrom, so adding or removing someone takes effect immediately.
+   */
+  insideCityBlocked?: boolean;
+}
+
+/** One email an administrator has restricted from inside-city claims. */
+export interface InsideCityBlockEntry {
+  email: string;
+  note: string;
+  addedBy: string;
+  addedAt: string;
 }
 
 /** One employee's vehicle, submitted for HR/Admin approval before it can be claimed against. */

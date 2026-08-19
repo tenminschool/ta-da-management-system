@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { api, type EmployeeLite } from "../api.js";
-import type { UnlockRequest } from "../../shared/types.js";
+import type { InsideCityBlockEntry, UnlockRequest } from "../../shared/types.js";
 import { Card, Notice, Spinner } from "./ui.js";
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -74,6 +74,7 @@ export default function AdminConfig() {
 
       <UnlockRequestsQueue />
       <ClaimUnlock />
+      <InsideCityBlockManager />
 
       <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {tabs.map((t) => (
@@ -392,6 +393,156 @@ function ClaimUnlock() {
 
       {message && <div className="mt-4"><Notice tone="info" items={[message]} /></div>}
       {error && <div className="mt-4"><Notice tone="error" items={[error]} /></div>}
+    </Card>
+  );
+}
+
+function InsideCityBlockManager() {
+  const [entries, setEntries] = useState<InsideCityBlockEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [editing, setEditing] = useState<string>(""); // original email being edited, if any
+  const [editEmail, setEditEmail] = useState("");
+  const [editNote, setEditNote] = useState("");
+  const [busyEmail, setBusyEmail] = useState("");
+  const [rowError, setRowError] = useState<Record<string, string>>({});
+
+  const load = () => {
+    setLoading(true);
+    api.insideCityBlock()
+      .then((r) => setEntries(r.entries))
+      .catch((err) => setError((err as Error).message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  async function add() {
+    setAdding(true);
+    setAddError("");
+    try {
+      await api.addInsideCityBlock(newEmail.trim(), newNote.trim());
+      setNewEmail("");
+      setNewNote("");
+      load();
+    } catch (err) {
+      setAddError((err as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  function startEdit(e: InsideCityBlockEntry) {
+    setEditing(e.email);
+    setEditEmail(e.email);
+    setEditNote(e.note);
+  }
+
+  async function saveEdit(originalEmail: string) {
+    setBusyEmail(originalEmail);
+    setRowError((r) => ({ ...r, [originalEmail]: "" }));
+    try {
+      await api.updateInsideCityBlock(originalEmail, editEmail.trim(), editNote.trim());
+      setEditing("");
+      load();
+    } catch (err) {
+      setRowError((r) => ({ ...r, [originalEmail]: (err as Error).message }));
+    } finally {
+      setBusyEmail("");
+    }
+  }
+
+  async function remove(email: string) {
+    setBusyEmail(email);
+    setRowError((r) => ({ ...r, [email]: "" }));
+    try {
+      await api.removeInsideCityBlock(email);
+      load();
+    } catch (err) {
+      setRowError((r) => ({ ...r, [email]: (err as Error).message }));
+    } finally {
+      setBusyEmail("");
+    }
+  }
+
+  return (
+    <Card
+      title="Inside-city restrictions"
+      subtitle="Someone here can still see every claim as usual and still raise an outside-city one — just not a new inside-city request."
+    >
+      {loading ? <Spinner /> : (
+        <>
+          {entries.length > 0 && (
+            <ul className="mb-4 divide-y divide-slate-100 text-sm">
+              {entries.map((e) => (
+                <li key={e.email} className="py-2.5">
+                  {editing === e.email ? (
+                    <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                      <input className="field" value={editEmail} onChange={(ev) => setEditEmail(ev.target.value)} />
+                      <input className="field" placeholder="Note (optional)" value={editNote} onChange={(ev) => setEditNote(ev.target.value)} />
+                      <div className="flex gap-2">
+                        <button
+                          className="btn-primary shrink-0"
+                          disabled={busyEmail === e.email || !editEmail.trim()}
+                          onClick={() => saveEdit(e.email)}
+                        >
+                          {busyEmail === e.email ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        </button>
+                        <button className="btn-ghost shrink-0" onClick={() => setEditing("")}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="font-medium text-slate-800">{e.email}</span>
+                        {e.note && <span className="ml-2 text-xs text-slate-500">{e.note}</span>}
+                        <span className="ml-2 block text-xs text-slate-400 sm:inline">Added by {e.addedBy.replace(/<.*>/, "").trim()}</span>
+                      </span>
+                      <div className="flex shrink-0 gap-1">
+                        <button
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                          onClick={() => startEdit(e)}
+                          aria-label={`Edit ${e.email}`}
+                        >
+                          <Save size={14} />
+                        </button>
+                        <button
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                          disabled={busyEmail === e.email}
+                          onClick={() => remove(e.email)}
+                          aria-label={`Remove ${e.email}`}
+                        >
+                          {busyEmail === e.email ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {rowError[e.email] && <p className="mt-1 text-xs text-rose-600">{rowError[e.email]}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-start">
+            <input
+              className="field"
+              type="email"
+              placeholder="name@10minuteschool.com"
+              value={newEmail}
+              onChange={(e) => setNewEmail(e.target.value)}
+            />
+            <input className="field" placeholder="Note (optional)" value={newNote} onChange={(e) => setNewNote(e.target.value)} />
+            <button className="btn-primary shrink-0" disabled={adding || !newEmail.trim()} onClick={add}>
+              {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Restrict
+            </button>
+          </div>
+          {addError && <div className="mt-3"><Notice tone="error" items={[addError]} /></div>}
+          {error && <div className="mt-3"><Notice tone="error" items={[error]} /></div>}
+        </>
+      )}
     </Card>
   );
 }

@@ -39,8 +39,10 @@ export default function NewRequest({
   const [draft, setDraft] = useState<RequestDraft>(() => {
     if (editing?.draft) return editing.draft;
     // Pre-fill the payout number from the Employees sheet so most people only
-    // have to confirm it.
-    const start = emptyDraft("inside");
+    // have to confirm it. Someone restricted from inside-city claims starts
+    // on outside-city instead, rather than opening straight onto a tile
+    // they're not allowed to pick.
+    const start = emptyDraft(user.insideCityBlocked ? "outside" : "inside");
     return { ...start, bkashNumber: user.accountNumber || "" };
   });
   const [busy, setBusy] = useState(false);
@@ -326,7 +328,13 @@ function StepTravelType({
             })
           }
           options={[
-            { value: "inside", label: "Inside City", description: `Same-city travel — ${insideCities.join(", ")}` },
+            {
+              value: "inside",
+              label: "Inside City",
+              description: `Same-city travel — ${insideCities.join(", ")}`,
+              disabled: user.insideCityBlocked,
+              reason: user.insideCityBlocked ? "Administration has restricted inside-city claims for you. Contact them if this needs to change." : undefined,
+            },
             { value: "outside", label: "Outside City", description: "Travel to another district, with per-diem and accommodation" },
           ]}
         />

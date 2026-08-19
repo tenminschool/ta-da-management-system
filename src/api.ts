@@ -1,7 +1,8 @@
 /** Typed fetch wrapper. Holds the session token and unwraps API errors. */
 
 import type {
-  ApprovalRow, Computation, Policy, RequestDraft, RequestRecord, SessionUser, UnlockRequest, VehicleRegistration,
+  ApprovalRow, Computation, InsideCityBlockEntry, Policy, RequestDraft, RequestRecord, SessionUser, UnlockRequest,
+  VehicleRegistration,
 } from "../shared/types.js";
 import type { ModeOption } from "../shared/policy.js";
 
@@ -227,6 +228,16 @@ export const api = {
   saveTeammateBkash: (employeeId: string, bkashNumber: string) =>
     post<{ ok: boolean; employeeId: string; bkashNumber: string }>(`/employees/${encodeURIComponent(employeeId)}/bkash`, { bkashNumber }),
   policy: () => call<Policy>("/policy"),
+  insideCityBlock: () => call<{ entries: InsideCityBlockEntry[] }>("/admin/inside-city-block"),
+  addInsideCityBlock: (email: string, note: string) =>
+    post<{ entry: InsideCityBlockEntry }>("/admin/inside-city-block", { email, note }),
+  updateInsideCityBlock: (currentEmail: string, email: string, note: string) =>
+    call<{ entry: InsideCityBlockEntry }>(`/admin/inside-city-block/${encodeURIComponent(currentEmail)}`, {
+      method: "PUT",
+      body: JSON.stringify({ email, note }),
+    }),
+  removeInsideCityBlock: (email: string) =>
+    call<{ ok: boolean }>(`/admin/inside-city-block/${encodeURIComponent(email)}`, { method: "DELETE" }),
   employees: (q: string) => call<{ employees: EmployeeLite[] }>(`/employees?q=${encodeURIComponent(q)}`),
 
   requests: (scope: string) =>

@@ -11,7 +11,8 @@
 import crypto from "crypto";
 import { appendRow, readTab, readTabs, updateRow, withSheetLock, type Row } from "./sheets.js";
 import type {
-  ApprovalRow, Leg, Policy, RequestRecord, Role, SessionUser, StageKey, Status, TeamMember, UnlockRequest, VehicleRegistration,
+  ApprovalRow, InsideCityBlockEntry, Leg, Policy, RequestRecord, Role, SessionUser, StageKey, Status, TeamMember, UnlockRequest,
+  VehicleRegistration,
 } from "../shared/types.js";
 
 const num = (v: string | undefined): number => {
@@ -545,6 +546,41 @@ export function fromUnlockRequest(u: UnlockRequest): Row {
     decision_remarks: u.decisionRemarks,
     unlock_from: u.unlockFrom,
   };
+}
+
+export function toInsideCityBlockEntry(r: Row & { _row: string }): InsideCityBlockEntry & { _row: string } {
+  return {
+    _row: r._row,
+    email: r.email,
+    note: r.note,
+    addedBy: r.added_by,
+    addedAt: r.added_at,
+  };
+}
+
+export function fromInsideCityBlockEntry(e: InsideCityBlockEntry): Row {
+  return { email: e.email, note: e.note, added_by: e.addedBy, added_at: e.addedAt };
+}
+
+/**
+ * Who's currently restricted from inside-city claims, as lowercased emails —
+ * cheap to check on every session refresh. Short cache, same idea as the
+ * employee roster: an admin edit invalidates it immediately, a row added
+ * straight into the sheet is picked up within the TTL.
+ */
+let insideCityBlockCache: { emails: Set<string>; at: number } | null = null;
+const INSIDE_CITY_BLOCK_TTL_MS = 30_000;
+
+export function invalidateInsideCityBlock(): void {
+  insideCityBlockCache = null;
+}
+
+export async function insideCityBlockedEmails(): Promise<Set<string>> {
+  if (insideCityBlockCache && Date.now() - insideCityBlockCache.at < INSIDE_CITY_BLOCK_TTL_MS) return insideCityBlockCache.emails;
+  const rows = await readTab("InsideCityBlock");
+  const emails = new Set(rows.map((r) => String(r.email || "").trim().toLowerCase()).filter(Boolean));
+  insideCityBlockCache = { emails, at: Date.now() };
+  return emails;
 }
 
 /** UR-2026-000012 — same scheme as claim request IDs, its own counter. */

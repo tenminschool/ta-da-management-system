@@ -160,6 +160,16 @@ export const TABS: TabSpec[] = [
     ],
   },
 
+  // ── One row per email an administrator has restricted from inside-city
+  //    claims — they can still see everything and still claim outside city,
+  //    just not raise a new inside-city request ──────────────────────────────
+  {
+    title: "InsideCityBlock",
+    color: AMBER,
+    widths: [240, 260, 170, 170],
+    headers: ["email", "note", "added_by", "added_at"],
+  },
+
 
   // ── Admin-configurable policy ─────────────────────────────────────────────
   {
