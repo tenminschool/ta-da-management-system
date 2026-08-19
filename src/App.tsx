@@ -148,8 +148,8 @@ export default function App() {
   const reviewsAdvances = isAdmin || isFinance || !!user.managesOthers;
 
   const selfNav: NavItem[] = [
-    { key: "dashboard", label: "Dashboard", short: "Home", icon: LayoutDashboard },
     { key: "new", label: "New Request", short: "New", icon: Plus },
+    { key: "dashboard", label: "Dashboard", short: "Home", icon: LayoutDashboard },
     { key: "my-requests", label: "My Requests", short: "Claims", icon: FileText },
     { key: "my-advance", label: "My Advance", short: "Advance", icon: HandCoins },
     { key: "my-payments", label: "My Payments", short: "Paid", icon: Wallet },
@@ -296,7 +296,9 @@ export default function App() {
               key={key}
               onClick={() => go(key)}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
-                view.name === key ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"
+                key === "new"
+                  ? "mb-2 bg-slate-900 text-white shadow-sm hover:bg-slate-800"
+                  : view.name === key ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"
               }`}
             >
               <Icon size={16} />
