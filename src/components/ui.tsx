@@ -121,7 +121,8 @@ export function Card({
           {actions}
         </CardHeader>
       )}
-      <CardContent>{children}</CardContent>
+      {/* CardContent is `p-4 pt-0` in the design system — it assumes a CardHeader's own padding is enough breathing room, but our CardHeader adds a hard border-b, so content needs its own top padding whether or not a header is present. */}
+      <CardContent className="pt-4">{children}</CardContent>
     </DsCard>
   );
 }

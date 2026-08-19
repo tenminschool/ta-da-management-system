@@ -26,12 +26,6 @@ pnpm dev
 ## Environment variables
 
 ```bash
-# prod  → NEXT_PUBLIC_API_PREFIX=,        NEXT_PUBLIC_DOMAIN=.com
-# stage → NEXT_PUBLIC_API_PREFIX=stage-,  NEXT_PUBLIC_DOMAIN=.net
-# local → NEXT_PUBLIC_API_PREFIX=local-,  NEXT_PUBLIC_DOMAIN=.net
-NEXT_PUBLIC_API_PREFIX=local-
-NEXT_PUBLIC_ENVIRONMENT=local
-NEXT_PUBLIC_DOMAIN=.net
 
 NEXT_PUBLIC_APP_NAME=10MS APP
 NEXT_PUBLIC_TENMS_CLIENT_ID=          # required — client ID for "Login with 10MS Admin"
