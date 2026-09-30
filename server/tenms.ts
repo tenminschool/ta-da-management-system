@@ -106,8 +106,9 @@ export async function fetchProfile(accessToken: string, id: string): Promise<Ten
   try {
     const res = await ask(`/v1/admin/profile/${encodeURIComponent(id)}`, accessToken);
     if (!res.ok) return {};
-    const body = (await res.json()) as { data?: Record<string, unknown> } & Record<string, unknown>;
-    const raw = (body.data && typeof body.data === "object" ? body.data : body) as Record<string, unknown>;
+    // The record sits at `data.user`, the same place the SDK's getMyProfile() reads it.
+    const body = (await res.json()) as { data?: { user?: Record<string, unknown> } };
+    const raw = body?.data?.user ?? {};
     return Object.fromEntries(
       Object.entries(raw).filter(([, v]) => v !== "(missing in get)" && v !== null && v !== undefined),
     ) as TenMSProfile;
