@@ -82,3 +82,36 @@ export async function verifyAccessToken(accessToken: string): Promise<TenMSUser>
 
   throw new TenMSVerifyError(`The sign-in service rejected the token (${userinfo.status}).`, 401);
 }
+
+/** The slice of the SDK's `AdminProfile` (`/v1/admin/profile/{id}`) this app reads. */
+export interface TenMSProfile {
+  employee_code?: string;
+  employee_id?: string;
+  gender?: string;
+  band?: string;
+  designation?: string;
+  current_department?: string;
+  supervisor_employee_id?: string;
+  supervisor_email?: string;
+  groups?: string[];
+}
+
+/**
+ * The HR record behind an account — what the SDK's `getMyProfile()` reads, done
+ * here with the token we just verified. The API returns unset fields as the
+ * literal string "(missing in get)"; those are dropped so they never read as data.
+ * A failure yields an empty profile: sign-in has already succeeded.
+ */
+export async function fetchProfile(accessToken: string, id: string): Promise<TenMSProfile> {
+  try {
+    const res = await ask(`/v1/admin/profile/${encodeURIComponent(id)}`, accessToken);
+    if (!res.ok) return {};
+    const body = (await res.json()) as { data?: Record<string, unknown> } & Record<string, unknown>;
+    const raw = (body.data && typeof body.data === "object" ? body.data : body) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(raw).filter(([, v]) => v !== "(missing in get)" && v !== null && v !== undefined),
+    ) as TenMSProfile;
+  } catch {
+    return {};
+  }
+}

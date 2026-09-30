@@ -51,7 +51,7 @@ export default function Dashboard({
           Hello, {user.name.split(" ")[0]}
         </h1>
         <p className="mt-1 text-sm text-slate-500">
-          Band {user.band} · {user.designation} · {user.department}
+          {[user.band && `Band ${user.band}`, user.designation, user.department].filter(Boolean).join(" · ")}
         </p>
       </div>
 

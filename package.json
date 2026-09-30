@@ -12,7 +12,7 @@
     "vercel-build": "vite build"
   },
   "dependencies": {
-    "@tenminuteschool/auth-admin-react": "^0.4.0",
+    "@tenminuteschool/auth-admin-react": "^0.8.0",
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",

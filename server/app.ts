@@ -19,7 +19,7 @@ import {
   withSheetLock, type Row,
 } from "./sheets.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { fetchProfile, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
@@ -117,18 +117,18 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     return;
   }
 
-  // The provider already knows who this is and what they can do, so the
-  // Employees sheet is not consulted here.
+  // Everything about the person comes from the provider's own HR record.
+  const hr = await fetchProfile(accessToken, profile.sub);
   const user: SessionUser = {
-    employeeId: profile.sub,
+    employeeId: hr.employee_code || hr.employee_id || profile.sub,
     name: profile.name || email,
     email,
-    gender: "",
-    band: "",
-    department: "",
-    designation: "",
-    lineManagerId: "",
-    roles: rolesFrom(profile),
+    gender: hr.gender || "",
+    band: hr.band || "",
+    department: hr.current_department || "",
+    designation: hr.designation || "",
+    lineManagerId: hr.supervisor_employee_id || "",
+    roles: rolesFrom({ roles: hr.groups ?? profile.roles, role: profile.role }),
     paymentMethod: "",
     accountNumber: "",
   };
