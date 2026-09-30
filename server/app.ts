@@ -119,6 +119,9 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
 
   // Everything about the person comes from the provider's own HR record.
   const hr = await fetchProfile(accessToken, profile.sub);
+  // The official phone number doubles as the bKash number: "+8801805980148" -> "01805980148".
+  const digits = String(hr.work_phone || hr.phone_number || profile.phone || "").replace(/\D/g, "");
+  const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
   const user: SessionUser = {
     employeeId: hr.employee_code || hr.employee_id || profile.sub,
     name: profile.name || email,
@@ -127,10 +130,10 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     band: hr.band || "",
     department: hr.current_department || "",
     designation: hr.designation || "",
-    lineManagerId: hr.supervisor_employee_id || "",
+    lineManagerId: hr.supervisor_employee_id || hr.line_manager || "",
     roles: rolesFrom({ roles: hr.groups ?? profile.roles, role: profile.role }),
-    paymentMethod: "",
-    accountNumber: "",
+    paymentMethod: officialPhone ? "bKash" : "",
+    accountNumber: officialPhone,
   };
   res.json({
     token: signToken(user),

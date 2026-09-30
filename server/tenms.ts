@@ -15,6 +15,7 @@ export interface TenMSUser {
   email?: string;
   name?: string;
   picture?: string;
+  phone?: string;
   email_verified?: boolean;
   /** Roles the provider already holds for this account, in whatever shape it sends them. */
   roles?: unknown;
@@ -70,6 +71,7 @@ export async function verifyAccessToken(accessToken: string): Promise<TenMSUser>
           sub: u.id,
           email: typeof u.username === "string" ? u.username : undefined,
           name: typeof u.name === "string" ? u.name : undefined,
+          phone: typeof u.phone_number === "string" ? u.phone_number : undefined,
           picture: typeof u.profile_img === "string" ? u.profile_img : undefined,
           roles: u.roles,
           role: u.role,
@@ -93,6 +95,9 @@ export interface TenMSProfile {
   current_department?: string;
   supervisor_employee_id?: string;
   supervisor_email?: string;
+  line_manager?: string;
+  work_phone?: string;
+  phone_number?: string;
   groups?: string[];
 }
 
