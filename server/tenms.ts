@@ -5,7 +5,7 @@
  * then sends that token here — never an email address. Trusting an email from
  * the browser would let anyone sign in as anyone, so the token is exchanged
  * for a profile at the provider's own userinfo endpoint, and only the email
- * that comes back is used to look the person up in the Employees sheet.
+ * that comes back is used to identify the person.
  */
 
 const BASE_URL = (process.env.TENMS_AUTH_BASE_URL || "https://api.10minuteschool.com/auth").replace(/\/$/, "");
@@ -16,6 +16,9 @@ export interface TenMSUser {
   name?: string;
   picture?: string;
   email_verified?: boolean;
+  /** Roles the provider already holds for this account, in whatever shape it sends them. */
+  roles?: unknown;
+  role?: unknown;
 }
 
 export class TenMSVerifyError extends Error {
@@ -68,6 +71,8 @@ export async function verifyAccessToken(accessToken: string): Promise<TenMSUser>
           email: typeof u.username === "string" ? u.username : undefined,
           name: typeof u.name === "string" ? u.name : undefined,
           picture: typeof u.profile_img === "string" ? u.profile_img : undefined,
+          roles: u.roles,
+          role: u.role,
         };
       }
       throw new TenMSVerifyError("The sign-in service returned an incomplete profile.", 502);

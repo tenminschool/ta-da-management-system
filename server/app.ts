@@ -26,14 +26,14 @@ import {
 import {
   allEmployees, deptHeadIdFor, fromInsideCityBlockEntry, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateEmployees, invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId,
-  nowISO, parseLinks, rememberAuthId, STAGE_COLUMN, toApprovalRow, toInsideCityBlockEntry, toRequest, toUnlockRequest, toVehicle,
+  nowISO, parseLinks, STAGE_COLUMN, toApprovalRow, toInsideCityBlockEntry, toRequest, toUnlockRequest, toVehicle,
   upsertApproval,
 } from "./store.js";
 import {
   addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit, todayISO,
 } from "../shared/policy.js";
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
-import { STATUS_GROUPS, type StatusGroup } from "../shared/types.js";
+import { STATUS_GROUPS, type StatusGroup, type Role } from "../shared/types.js";
 import type {
   InsideCityBlockEntry, RequestDraft, RequestRecord, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
@@ -88,6 +88,17 @@ app.get("/api/auth/methods", handler(async (_req, res) => {
  * Everything about the person — band, department, roles, line manager — comes
  * from the sheet, never from the identity provider.
  */
+const KNOWN_ROLES: Role[] = ["user", "admin", "hr", "finance"];
+
+/** The provider's own roles, narrowed to the ones this app understands; everyone is at least a "user". */
+function rolesFrom(profile: { roles?: unknown; role?: unknown }): Role[] {
+  const raw = [profile.roles, profile.role].flat().flatMap((r) =>
+    typeof r === "string" ? r.split(",") : r && typeof r === "object" && "name" in r ? [String((r as { name: unknown }).name)] : [],
+  );
+  const roles = raw.map((r) => r.trim().toLowerCase()).filter((r): r is Role => (KNOWN_ROLES as string[]).includes(r));
+  return roles.length ? [...new Set(roles)] : ["user"];
+}
+
 app.post("/api/auth/tenms", handler(async (req, res) => {
   const accessToken = String(req.body?.accessToken || "");
 
@@ -106,22 +117,21 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     return;
   }
 
-  const employee = (await allEmployees()).find((e) => e.email.toLowerCase() === email);
-  if (!employee) {
-    res.status(403).json({
-      error: `${email} is not in the Employees sheet. Ask PeopleOps to add you before signing in.`,
-    });
-    return;
-  }
-  if (employee.status !== "Active") {
-    res.status(403).json({ error: "This account is marked inactive. Contact PeopleOps." });
-    return;
-  }
-
-  // Record which provider account this person signs in with.
-  await rememberAuthId(employee._row, profile.sub);
-
-  const { password: _pw, status: _st, authId: _aid, _row, ...user } = employee;
+  // The provider already knows who this is and what they can do, so the
+  // Employees sheet is not consulted here.
+  const user: SessionUser = {
+    employeeId: profile.sub,
+    name: profile.name || email,
+    email,
+    gender: "",
+    band: "",
+    department: "",
+    designation: "",
+    lineManagerId: "",
+    roles: rolesFrom(profile),
+    paymentMethod: "",
+    accountNumber: "",
+  };
   res.json({
     token: signToken(user),
     user: { ...user, managesOthers: await managesOthers(user.employeeId) },
