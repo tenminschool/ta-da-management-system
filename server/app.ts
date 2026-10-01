@@ -19,7 +19,7 @@ import {
   withSheetLock, type Row,
 } from "./sheets.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { fetchProfile, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
@@ -85,16 +85,14 @@ app.get("/api/auth/methods", handler(async (_req, res) => {
  *
  * The browser sends the access token it just obtained; we ask the provider who
  * that token belongs to, then match the email against the Employees sheet.
- * Everything about the person — band, department, roles, line manager — comes
- * from the sheet, never from the identity provider.
+ * Everything about the person comes from the provider's `/v1/admin/me` record;
+ * the Employees sheet is not consulted.
  */
 const KNOWN_ROLES: Role[] = ["user", "admin", "hr", "finance"];
 
 /** The provider's own roles, narrowed to the ones this app understands; everyone is at least a "user". */
-function rolesFrom(profile: { roles?: unknown; role?: unknown }): Role[] {
-  const raw = [profile.roles, profile.role].flat().flatMap((r) =>
-    typeof r === "string" ? r.split(",") : r && typeof r === "object" && "name" in r ? [String((r as { name: unknown }).name)] : [],
-  );
+function rolesFrom(groups: unknown): Role[] {
+  const raw = Array.isArray(groups) ? groups.filter((g): g is string => typeof g === "string") : [];
   const roles = raw.map((r) => r.trim().toLowerCase()).filter((r): r is Role => (KNOWN_ROLES as string[]).includes(r));
   return roles.length ? [...new Set(roles)] : ["user"];
 }
@@ -113,17 +111,17 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
 
   const email = String(profile.email || "").trim().toLowerCase();
   if (!email) {
-    res.status(403).json({ error: "Your 10 Minute School account has no email address, so it cannot be matched to an employee record." });
+    res.status(403).json({ error: "Your 10 Minute School account has no email address, so we cannot identify you." });
     return;
   }
 
-  // Everything about the person comes from the provider's own HR record.
-  const hr = await fetchProfile(accessToken, profile.sub);
+  // Everything about the person comes from the `/v1/admin/me` record.
+  const hr = profile.record;
   // The official phone number doubles as the bKash number: "+8801805980148" -> "01805980148".
-  const digits = String(hr.work_phone || hr.phone_number || profile.phone || "").replace(/\D/g, "");
+  const digits = String(hr.phone_number || profile.phone || "").replace(/\D/g, "");
   const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
   const user: SessionUser = {
-    employeeId: hr.employee_id || hr.employee_code || profile.sub,
+    employeeId: hr.employee_id || profile.sub,
     name: profile.name || email,
     email,
     gender: hr.gender || "",
@@ -131,7 +129,7 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     department: hr.current_department || hr.department || "",
     designation: hr.designation || hr.job_role || "",
     lineManagerId: hr.supervisor_employee_id || hr.line_manager || "",
-    roles: rolesFrom({ roles: hr.groups ?? profile.roles, role: profile.role }),
+    roles: rolesFrom(hr.groups),
     paymentMethod: officialPhone ? "bKash" : "",
     accountNumber: officialPhone,
   };
