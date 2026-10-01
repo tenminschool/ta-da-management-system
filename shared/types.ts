@@ -90,6 +90,8 @@ export interface SessionUser {
   department: string;
   designation: string;
   lineManagerId: string;
+  /** The line manager's email, when resolved from the HR record's supervisor name at sign-in. */
+  lineManagerEmail?: string;
   roles: Role[];
   paymentMethod: string;
   accountNumber: string;

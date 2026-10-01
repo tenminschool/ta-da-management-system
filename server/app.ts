@@ -19,7 +19,7 @@ import {
   withSheetLock, type Row,
 } from "./sheets.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
@@ -120,6 +120,17 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   // The official phone number doubles as the bKash number: "+8801805980148" -> "01805980148".
   const digits = String(hr.phone_number || profile.phone || "").replace(/\D/g, "");
   const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
+  // The HR record names the line manager (`supervisor`) but gives no ID or
+  // email, so look them up in the directory when no ID is supplied directly.
+  let lineManagerId = hr.supervisor_employee_id || hr.line_manager || "";
+  let lineManagerEmail = "";
+  if (hr.supervisor) {
+    const boss = await resolveSupervisor(accessToken, hr.supervisor);
+    if (boss) {
+      lineManagerId = lineManagerId || boss.employeeId;
+      lineManagerEmail = boss.email;
+    }
+  }
   const user: SessionUser = {
     employeeId: hr.employee_id || profile.sub,
     name: profile.name || email,
@@ -128,7 +139,8 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     band: hr.band || "",
     department: hr.current_department || hr.department || "",
     designation: hr.designation || hr.job_role || "",
-    lineManagerId: hr.supervisor_employee_id || hr.line_manager || "",
+    lineManagerId,
+    lineManagerEmail,
     roles: rolesFrom(hr.groups),
     paymentMethod: officialPhone ? "bKash" : "",
     accountNumber: officialPhone,
@@ -960,7 +972,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
       createdAt: now,
       status: submit ? "manager_review" : "draft",
       managerId: req.session.lineManagerId || "",
-      managerEmail: "",
+      managerEmail: req.session.lineManagerEmail || "",
       submittedAt: submit ? now : "",
     });
 

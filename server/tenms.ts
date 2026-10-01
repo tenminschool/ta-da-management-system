@@ -89,6 +89,8 @@ export interface TenMSRecord {
   department?: string;
   supervisor_employee_id?: string;
   line_manager?: string;
+  /** The line manager's display name (no ID or email), e.g. "Md. Mahmud Siddik". */
+  supervisor?: string;
   phone_number?: string;
   groups?: string[];
   teams?: { id: string; name: string }[];
@@ -130,4 +132,27 @@ export async function searchAdmins(accessToken: string, q: string, limit = 25): 
       gender: str(u.gender),
     }))
     .filter((p) => p.employeeId && p.name);
+}
+
+/**
+ * Resolves the HR record's `supervisor` (a display name only) to that person's
+ * employee ID and email by searching the directory. Returns null unless
+ * exactly one person has that name, so a duplicate name never routes a claim
+ * to the wrong manager.
+ */
+export async function resolveSupervisor(
+  accessToken: string,
+  name: string,
+): Promise<{ employeeId: string; email: string } | null> {
+  const wanted = name.trim().replace(/\s+/g, " ").toLowerCase();
+  if (!wanted) return null;
+  try {
+    const people = await searchAdmins(accessToken, name.trim(), 50);
+    const same = people.filter((p) => p.name.trim().replace(/\s+/g, " ").toLowerCase() === wanted);
+    if (same.length === 1) return { employeeId: same[0].employeeId, email: same[0].email.toLowerCase() };
+    console.warn(`[tenms] supervisor "${name}" matched ${same.length} directory entries; not using it.`);
+  } catch (err) {
+    console.warn(`[tenms] supervisor lookup failed for "${name}":`, (err as Error).message);
+  }
+  return null;
 }
