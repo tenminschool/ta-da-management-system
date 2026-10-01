@@ -129,6 +129,14 @@ export interface InsideCityBlockEntry {
   addedAt: string;
 }
 
+/** A desk role an administrator has granted to an email, on top of whatever the identity provider reports. */
+export interface RoleGrant {
+  email: string;
+  role: Exclude<Role, "user">;
+  addedBy: string;
+  addedAt: string;
+}
+
 /** One employee's vehicle, submitted for HR/Admin approval before it can be claimed against. */
 export interface VehicleRegistration {
   employeeId: string;

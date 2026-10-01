@@ -24,7 +24,7 @@ import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
 import {
-  allEmployees, deptHeadIdFor, fromInsideCityBlockEntry, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
+  allEmployees, deptHeadIdFor, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateEmployees, invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId,
   nowISO, parseLinks, STAGE_COLUMN, toApprovalRow, toInsideCityBlockEntry, toRequest, toUnlockRequest, toVehicle,
   upsertApproval,
@@ -35,7 +35,7 @@ import {
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup, type Role } from "../shared/types.js";
 import type {
-  InsideCityBlockEntry, RequestDraft, RequestRecord, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
+  InsideCityBlockEntry, RequestDraft, RequestRecord, RoleGrant, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
 
 const app = express();
@@ -54,8 +54,14 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     res.status(401).json({ error: "Please sign in again." });
     return;
   }
-  (req as AuthedRequest).session = session;
-  next();
+  // Roles an administrator has granted are applied here, on every request,
+  // so a grant or removal takes effect without signing in again.
+  effectiveRoles(session.email, session.roles)
+    .then((roles) => {
+      (req as AuthedRequest).session = { ...session, roles };
+      next();
+    })
+    .catch(next);
 }
 
 /** Wraps an async handler so a rejected promise becomes a 500 instead of a hang. */
@@ -95,6 +101,25 @@ function rolesFrom(groups: unknown): Role[] {
   const raw = Array.isArray(groups) ? groups.filter((g): g is string => typeof g === "string") : [];
   const roles = raw.map((r) => r.trim().toLowerCase()).filter((r): r is Role => (KNOWN_ROLES as string[]).includes(r));
   return roles.length ? [...new Set(roles)] : ["user"];
+}
+
+/**
+ * Emails that are always system admins, whatever groups the provider reports
+ * or grants say; they cannot be removed from the admin list. Matched against
+ * the email on the verified 10MS token. Extra addresses can be added
+ * (comma-separated) with DEFAULT_ADMIN_EMAILS.
+ */
+const DEFAULT_ADMIN_EMAILS = new Set(
+  ["fahad@10minuteschool.com", ...String(process.env.DEFAULT_ADMIN_EMAILS || "").split(",")]
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
+
+/** Provider roles + default admins + roles granted in the RoleGrants tab. */
+async function effectiveRoles(email: string, base: Role[]): Promise<Role[]> {
+  const e = (email || "").trim().toLowerCase();
+  const extra: Role[] = [...(await grantedRolesFor(e)), ...(DEFAULT_ADMIN_EMAILS.has(e) ? (["admin"] as Role[]) : [])];
+  return [...new Set<Role>([...base, ...extra])];
 }
 
 app.post("/api/auth/tenms", handler(async (req, res) => {
@@ -141,7 +166,7 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     designation: hr.designation || hr.job_role || "",
     lineManagerId,
     lineManagerEmail,
-    roles: rolesFrom(hr.groups),
+    roles: await effectiveRoles(email, rolesFrom(hr.groups)),
     paymentMethod: officialPhone ? "bKash" : "",
     accountNumber: officialPhone,
   };
@@ -1963,6 +1988,68 @@ app.delete("/api/admin/inside-city-block/:email", requireAuth, handler(async (re
   }
   await clearRow("InsideCityBlock", row._row);
   invalidateInsideCityBlock();
+  res.json({ ok: true });
+}));
+
+// ── Role management: admins grant or remove admin / hr / finance by email ───
+
+app.get("/api/admin/roles", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin")) {
+    res.status(403).json({ error: "Only an administrator can manage roles." });
+    return;
+  }
+  const grants = (await readTab("RoleGrants")).map(toRoleGrant)
+    .filter((g) => g.email && isGrantableRole(g.role))
+    .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
+    .map(({ _row, ...g }) => g);
+  res.json({ grants, defaultAdmins: [...DEFAULT_ADMIN_EMAILS] });
+}));
+
+app.post("/api/admin/roles", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin")) {
+    res.status(403).json({ error: "Only an administrator can manage roles." });
+    return;
+  }
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const role = String(req.body?.role || "").trim().toLowerCase();
+  if (!BLOCK_EMAIL_RE.test(email)) {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+  if (!isGrantableRole(role)) {
+    res.status(400).json({ error: "Role must be admin, hr or finance." });
+    return;
+  }
+  const rows = (await readTab("RoleGrants")).map(toRoleGrant);
+  if (rows.some((g) => g.email === email && g.role === role)) {
+    res.status(400).json({ error: `${email} already has the ${role} role.` });
+    return;
+  }
+  const grant: RoleGrant = { email, role, addedBy: `${req.session.name} <${req.session.email}>`, addedAt: nowISO() };
+  await appendRow("RoleGrants", fromRoleGrant(grant));
+  invalidateRoleGrants();
+  res.json({ grant });
+}));
+
+app.delete("/api/admin/roles", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin")) {
+    res.status(403).json({ error: "Only an administrator can manage roles." });
+    return;
+  }
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const role = String(req.body?.role || "").trim().toLowerCase();
+  if (role === "admin" && DEFAULT_ADMIN_EMAILS.has(email)) {
+    res.status(400).json({ error: "A default administrator cannot be removed." });
+    return;
+  }
+  const rows = (await readTab("RoleGrants")).map(toRoleGrant);
+  const row = rows.find((g) => g.email === email && g.role === role);
+  if (!row) {
+    res.status(404).json({ error: "No such role grant." });
+    return;
+  }
+  await clearRow("RoleGrants", row._row);
+  invalidateRoleGrants();
   res.json({ ok: true });
 }));
 

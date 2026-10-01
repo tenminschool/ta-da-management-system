@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { api, type EmployeeLite } from "../api.js";
-import type { InsideCityBlockEntry, UnlockRequest } from "../../shared/types.js";
+import type { InsideCityBlockEntry, RoleGrant, UnlockRequest } from "../../shared/types.js";
 import { Card, Notice, Spinner } from "./ui.js";
 
 const DESCRIPTIONS: Record<string, string> = {
@@ -74,6 +74,7 @@ export default function AdminConfig() {
 
       <UnlockRequestsQueue />
       <ClaimUnlock />
+      <RoleManager />
       <InsideCityBlockManager />
 
       <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
@@ -541,6 +542,133 @@ function InsideCityBlockManager() {
           </div>
           {addError && <div className="mt-3"><Notice tone="error" items={[addError]} /></div>}
           {error && <div className="mt-3"><Notice tone="error" items={[error]} /></div>}
+        </>
+      )}
+    </Card>
+  );
+}
+
+const ROLE_LABEL: Record<RoleGrant["role"], string> = { admin: "Admin", hr: "HR", finance: "Finance" };
+
+/**
+ * Who holds the admin / HR / finance roles. Granted by email and merged with
+ * whatever 10MS reports, so it takes effect the next time that person loads
+ * the app. The built-in default admins are listed but cannot be removed.
+ */
+function RoleManager() {
+  const [grants, setGrants] = useState<RoleGrant[]>([]);
+  const [defaults, setDefaults] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<RoleGrant["role"]>("admin");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  const [busyKey, setBusyKey] = useState("");
+  const [rowError, setRowError] = useState<Record<string, string>>({});
+
+  const load = () => {
+    setLoading(true);
+    api.roleGrants()
+      .then((r) => { setGrants(r.grants); setDefaults(r.defaultAdmins); setError(""); })
+      .catch((err) => setError((err as Error).message))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  async function add() {
+    setAdding(true);
+    setAddError("");
+    try {
+      await api.grantRole(email.trim(), role);
+      setEmail("");
+      load();
+    } catch (err) {
+      setAddError((err as Error).message);
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function remove(g: RoleGrant) {
+    const key = `${g.email}|${g.role}`;
+    setBusyKey(key);
+    setRowError((r) => ({ ...r, [key]: "" }));
+    try {
+      await api.revokeRole(g.email, g.role);
+      load();
+    } catch (err) {
+      setRowError((r) => ({ ...r, [key]: (err as Error).message }));
+    } finally {
+      setBusyKey("");
+    }
+  }
+
+  return (
+    <Card
+      title="Roles"
+      subtitle="Make someone an admin, HR or finance by their 10 Minute School email. It applies the next time they open the app."
+    >
+      {loading ? <Spinner /> : error ? <Notice tone="error" items={[error]} /> : (
+        <>
+          <ul className="mb-4 divide-y divide-slate-100 text-sm">
+            {defaults.map((d) => (
+              <li key={`default-${d}`} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                <span className="font-medium text-slate-800">{d}</span>
+                <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
+                  Admin · default
+                </span>
+              </li>
+            ))}
+            {grants.map((g) => {
+              const key = `${g.email}|${g.role}`;
+              return (
+                <li key={key} className="py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="min-w-0">
+                      <span className="font-medium text-slate-800">{g.email}</span>
+                      <span className="ml-2 block text-xs text-slate-400 sm:inline">
+                        Added by {g.addedBy.replace(/<.*>/, "").trim()}
+                      </span>
+                    </span>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-semibold text-brand-700">
+                        {ROLE_LABEL[g.role]}
+                      </span>
+                      <button
+                        className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        disabled={busyKey === key}
+                        onClick={() => remove(g)}
+                        aria-label={`Remove ${ROLE_LABEL[g.role]} from ${g.email}`}
+                      >
+                        {busyKey === key ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                  {rowError[key] && <p className="mt-1 text-xs text-rose-600">{rowError[key]}</p>}
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-start">
+            <input
+              className="field"
+              type="email"
+              placeholder="name@10minuteschool.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <select className="field" value={role} onChange={(e) => setRole(e.target.value as RoleGrant["role"])}>
+              <option value="admin">Admin</option>
+              <option value="hr">HR</option>
+              <option value="finance">Finance</option>
+            </select>
+            <button className="btn-primary shrink-0" disabled={adding || !email.trim()} onClick={add}>
+              {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add
+            </button>
+          </div>
+          {addError && <div className="mt-3"><Notice tone="error" items={[addError]} /></div>}
         </>
       )}
     </Card>
