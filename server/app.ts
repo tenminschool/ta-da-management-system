@@ -19,7 +19,7 @@ import {
   withSheetLock, type Row,
 } from "./sheets.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
@@ -191,15 +191,7 @@ app.post("/api/me/bkash", requireAuth, handler(async (req, res) => {
     res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
     return;
   }
-  const rows = await readTab("Employees");
-  const row = rows.find((r) => r.employee_id === req.session.employeeId);
-  if (!row) {
-    res.status(404).json({ error: "Your employee record was not found." });
-    return;
-  }
-  const { _row, ...rest } = row;
-  await updateRow("Employees", _row, { ...rest, account_number: bkashNumber });
-  invalidateEmployees();
+  // There is no Employees sheet to save into any more; the number travels with the claim it is typed on.
   res.json({ ok: true, bkashNumber });
 }));
 
@@ -215,15 +207,7 @@ app.post("/api/employees/:id/bkash", requireAuth, handler(async (req, res) => {
     res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
     return;
   }
-  const rows = await readTab("Employees");
-  const row = rows.find((r) => r.employee_id === req.params.id);
-  if (!row) {
-    res.status(404).json({ error: "No employee with that ID." });
-    return;
-  }
-  const { _row, ...rest } = row;
-  await updateRow("Employees", _row, { ...rest, account_number: bkashNumber });
-  invalidateEmployees();
+  // There is no Employees sheet to save into any more; the number travels with the claim it is typed on.
   res.json({ ok: true, employeeId: req.params.id, bkashNumber });
 }));
 
@@ -233,27 +217,24 @@ app.get("/api/policy", requireAuth, handler(async (_req, res) => {
   res.json(await loadPolicy());
 }));
 
-/** Employee lookup for the team-member picker: search by ID or name. */
+/**
+ * Employee lookup for the team-member picker: searches the 10MS directory with
+ * the caller's own 10MS token, which the browser sends alongside the app token.
+ */
 app.get("/api/employees", requireAuth, handler(async (req, res) => {
-  const q = String(req.query.q || "").trim().toLowerCase();
-  const rows = (await allEmployees()).filter((e) => e.status === "Active");
-  const matched = q
-    ? rows.filter((e) =>
-        e.employeeId.toLowerCase().includes(q) ||
-        e.name.toLowerCase().includes(q) ||
-        e.email.toLowerCase().includes(q))
-    : rows;
-  res.json({
-    employees: matched.slice(0, 25).map((e) => ({
-      employeeId: e.employeeId,
-      name: e.name,
-      email: e.email,
-      department: e.department,
-      designation: e.designation,
-      band: e.band,
-      gender: e.gender,
-    })),
-  });
+  const q = String(req.query.q || "").trim();
+  const token = String(req.headers["x-tenms-token"] || "");
+  if (!token) {
+    res.status(401).json({ error: "Your 10 Minute School session is needed to search employees. Please sign in again." });
+    return;
+  }
+  try {
+    const people = await searchAdmins(token, q);
+    res.json({ employees: people.filter((p) => p.employeeId !== req.session.employeeId) });
+  } catch (err) {
+    const e = err as TenMSVerifyError;
+    res.status(e.status || 502).json({ error: e.message });
+  }
 }));
 
 /** Whether this deployment can accept file uploads at all. */
@@ -877,28 +858,10 @@ async function approvedVehicleFor(employeeId: string): Promise<SessionUser["regi
 }
 
 async function currentSession(session: Session): Promise<Session> {
-  const row = (await allEmployees()).find((e) => e.employeeId === session.employeeId);
   const blocked = await insideCityBlockedEmails();
   return {
     ...session,
-    // Whatever HR/Admin can edit on this person's row, or the person
-    // themselves (their own bKash number) — trusting the token here would
-    // keep every one of these stuck at whatever they were at sign-in.
-    ...(row && {
-      name: row.name,
-      email: row.email,
-      gender: row.gender,
-      band: row.band,
-      department: row.department,
-      designation: row.designation,
-      lineManagerId: row.lineManagerId,
-      roles: row.roles,
-      paymentMethod: row.paymentMethod,
-      accountNumber: row.accountNumber,
-      claimUnlockFrom: row.claimUnlockFrom || "",
-      claimUnlockExact: row.claimUnlockExact || "",
-    }),
-    insideCityBlocked: blocked.has((row?.email || session.email || "").toLowerCase()),
+    insideCityBlocked: blocked.has((session.email || "").toLowerCase()),
     registeredVehicle: await approvedVehicleFor(session.employeeId),
   };
 }
@@ -984,7 +947,6 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
     return;
   }
 
-  const manager = (await allEmployees()).find((e) => e.employeeId === req.session.lineManagerId);
   const now = nowISO();
 
   // Allocating the request number and writing the row must be atomic: two
@@ -997,8 +959,8 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
       requestId,
       createdAt: now,
       status: submit ? "manager_review" : "draft",
-      managerId: manager?.employeeId || "",
-      managerEmail: manager?.email || "",
+      managerId: req.session.lineManagerId || "",
+      managerEmail: "",
       submittedAt: submit ? now : "",
     });
 

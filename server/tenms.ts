@@ -93,3 +93,41 @@ export interface TenMSRecord {
   groups?: string[];
   teams?: { id: string; name: string }[];
 }
+
+export interface TenMSPerson {
+  employeeId: string;
+  name: string;
+  email: string;
+  department: string;
+  designation: string;
+  band: string;
+  gender: string;
+}
+
+/**
+ * Searches the 10MS admin directory (`/v1/admin/all`) on behalf of the signed-in
+ * person, using their own token. The list sits somewhere under `data` and the
+ * response shape is not documented, so the first array found there is used.
+ */
+export async function searchAdmins(accessToken: string, q: string, limit = 25): Promise<TenMSPerson[]> {
+  const res = await ask(`/v1/admin/all?skip=0&limit=${limit}&search=${encodeURIComponent(q)}`, accessToken);
+  if (!res.ok) throw new TenMSVerifyError(`The employee directory could not be searched (${res.status}).`, res.status === 401 ? 401 : 502);
+  const body = (await res.json()) as { data?: unknown };
+  const data = body?.data as unknown;
+  const list: unknown[] = Array.isArray(data)
+    ? data
+    : (Object.values((data as object) || {}).find((v) => Array.isArray(v)) as unknown[] | undefined) ?? [];
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  return list
+    .filter((u): u is Record<string, unknown> => !!u && typeof u === "object")
+    .map((u) => ({
+      employeeId: str(u.employee_id) || str(u.id),
+      name: str(u.name),
+      email: str(u.username) || str(u.email),
+      department: str(u.current_department) || str(u.department),
+      designation: str(u.designation) || str(u.job_role),
+      band: str(u.band),
+      gender: str(u.gender),
+    }))
+    .filter((p) => p.employeeId && p.name);
+}

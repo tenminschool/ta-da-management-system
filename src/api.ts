@@ -1,5 +1,6 @@
 /** Typed fetch wrapper. Holds the session token and unwraps API errors. */
 
+import { auth } from "./lib/auth.js";
 import type {
   ApprovalRow, Computation, InsideCityBlockEntry, Policy, RequestDraft, RequestRecord, SessionUser, UnlockRequest,
   VehicleRegistration,
@@ -238,7 +239,11 @@ export const api = {
     }),
   removeInsideCityBlock: (email: string) =>
     call<{ ok: boolean }>(`/admin/inside-city-block/${encodeURIComponent(email)}`, { method: "DELETE" }),
-  employees: (q: string) => call<{ employees: EmployeeLite[] }>(`/employees?q=${encodeURIComponent(q)}`),
+  employees: async (q: string) =>
+    call<{ employees: EmployeeLite[] }>(`/employees?q=${encodeURIComponent(q)}`, {
+      // The directory is searched with the person's own 10MS token.
+      headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
+    }),
 
   requests: (scope: string) =>
     call<{ requests: RequestListItem[]; summary: Summary; inbox: number; desk: DeskSummary }>(

@@ -195,32 +195,22 @@ export async function rememberAuthId(employeeRow: string, authId: string): Promi
 // ── Hierarchy, derived from the LineManagerID column ────────────────────────
 
 /**
- * True when anyone active reports to this person. That is the whole definition
- * of "line manager" in this system — nothing is written in the Roles column,
- * so moving a report to a different manager immediately moves the approval.
+ * True when any claim has been routed to this person as its approver.
  */
 export async function managesOthers(employeeId: string): Promise<boolean> {
   if (!employeeId) return false;
-  return (await allEmployees()).some(
-    (e) => e.status === "Active" && e.lineManagerId === employeeId && e.employeeId !== employeeId,
-  );
+  // Who reports to whom is known from the claims themselves: a request is
+  // routed to its submitter's supervisor when it is filed.
+  return (await readTab("Requests")).some((r) => r.manager_id === employeeId && r.employee_id !== employeeId);
 }
 
 /**
- * The department head for a given employee: one level above the line manager
- * who approves their claims. If the line manager is already the top of the
- * chain there is no separate head, and the advance stops at HR.
- *
- * Walks at most a few links so a bad LineManagerID loop can never hang.
+ * The department head sits one level above the line manager. 10MS sign-in only
+ * knows a person's own supervisor, not the supervisor's, so there is no separate
+ * head and an advance stops at HR.
  */
-export async function deptHeadIdFor(employeeId: string): Promise<string> {
-  const byId = new Map((await allEmployees()).map((e) => [e.employeeId, e]));
-  const employee = byId.get(employeeId);
-  const lineManager = employee?.lineManagerId ? byId.get(employee.lineManagerId) : undefined;
-  if (!lineManager || lineManager.employeeId === employeeId) return "";
-  const head = lineManager.lineManagerId ? byId.get(lineManager.lineManagerId) : undefined;
-  if (!head || head.employeeId === lineManager.employeeId) return "";
-  return head.employeeId;
+export async function deptHeadIdFor(_employeeId: string): Promise<string> {
+  return "";
 }
 
 // ── Packing repeating data into a single cell ───────────────────────────────
