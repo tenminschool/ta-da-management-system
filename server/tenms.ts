@@ -93,6 +93,8 @@ export interface TenMSProfile {
   band?: string;
   designation?: string;
   current_department?: string;
+  department?: string;
+  job_role?: string;
   supervisor_employee_id?: string;
   supervisor_email?: string;
   line_manager?: string;

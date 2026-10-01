@@ -123,13 +123,13 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   const digits = String(hr.work_phone || hr.phone_number || profile.phone || "").replace(/\D/g, "");
   const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
   const user: SessionUser = {
-    employeeId: hr.employee_code || hr.employee_id || profile.sub,
+    employeeId: hr.employee_id || hr.employee_code || profile.sub,
     name: profile.name || email,
     email,
     gender: hr.gender || "",
     band: hr.band || "",
-    department: hr.current_department || "",
-    designation: hr.designation || "",
+    department: hr.current_department || hr.department || "",
+    designation: hr.designation || hr.job_role || "",
     lineManagerId: hr.supervisor_employee_id || hr.line_manager || "",
     roles: rolesFrom({ roles: hr.groups ?? profile.roles, role: profile.role }),
     paymentMethod: officialPhone ? "bKash" : "",
