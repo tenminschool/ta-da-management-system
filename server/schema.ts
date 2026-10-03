@@ -45,9 +45,10 @@ export const TABS: TabSpec[] = [
     headers: [
       // Written on first SSO sign-in: the identity provider's stable subject id.
       "auth_id",
-      "employee_id", "name", "email", "password", "gender", "band",
-      "department", "designation", "line_manager_id", "roles",
-      "payment_method", "account_number", "status",
+      // Named after the 10MS HR record fields each one mirrors.
+      "employee_id", "name", "username", "password", "gender", "band",
+      "department", "current_hr_position", "supervisor", "roles",
+      "payment_method", "phone_number", "employee_status",
       // Set by an administrator to let this person file a late claim: the
       // earliest travel date they may now submit a claim for. Open-ended —
       // everything from here on is unlocked, the manual Configuration tool.
@@ -68,7 +69,7 @@ export const TABS: TabSpec[] = [
       // The roles column names only the extra desk someone sits at: admin, hr
       // or finance. Everyone can raise a claim regardless, so plain staff are
       // just "user". Line manager is not written here either — it comes from
-      // line_manager_id, so Rakib (EMP-1005) automatically approves for
+      // supervisor, so Rakib (EMP-1005) automatically approves for
       // everyone pointing at him.
       ["", "EMP-3001", "Nafisa Karim", "finance@10ms.com", "1234", "Female", "D", "Finance", "Finance Officer", "EMP-1006", "finance", "Bank", "1234500005", "Active"],
       ["", "EMP-3002", "Mahin Chowdhury", "finance2@10ms.com", "1234", "Male", "E", "Finance", "Finance Executive", "EMP-1006", "finance", "Bank", "1234500007", "Active"],
@@ -335,5 +336,19 @@ export const TABS: TabSpec[] = [
     ],
   },
 ];
+
+/**
+ * Headers that were renamed, as { tab: { newName: oldName } }, so `npm run setup`
+ * carries the data across instead of treating the old column as dropped.
+ */
+export const HEADER_RENAMES: Record<string, Record<string, string>> = {
+  Employees: {
+    username: "email",
+    current_hr_position: "designation",
+    supervisor: "line_manager_id",
+    phone_number: "account_number",
+    employee_status: "status",
+  },
+};
 
 export const TAB = Object.fromEntries(TABS.map((t) => [t.title, t])) as Record<string, TabSpec>;

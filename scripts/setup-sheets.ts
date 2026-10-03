@@ -11,7 +11,7 @@
  */
 
 import "dotenv/config";
-import { OBSOLETE_TABS, TABS } from "../server/schema.js";
+import { HEADER_RENAMES, OBSOLETE_TABS, TABS } from "../server/schema.js";
 import { sheetsClient, spreadsheetId, colLetter } from "../server/sheets.js";
 
 type Rec = Record<string, string>;
@@ -112,14 +112,16 @@ async function main() {
     const live = Object.keys(rows[0]);
     if (live.length === t.headers.length && live.every((c, i) => c === t.headers[i])) continue;
 
-    const added = t.headers.filter((h) => !live.includes(h));
-    const dropped = live.filter((h) => !t.headers.includes(h));
+    const renames = HEADER_RENAMES[t.title] || {};
+    const renamedFrom = Object.entries(renames).filter(([to, from]) => !live.includes(to) && live.includes(from));
+    const added = t.headers.filter((h) => !live.includes(h) && !renamedFrom.some(([to]) => to === h));
+    const dropped = live.filter((h) => !t.headers.includes(h) && !renamedFrom.some(([, from]) => from === h));
     console.log(
       `  ${t.title}: realigning ${rows.length} row(s)` +
       (added.length ? ` — new: ${added.join(", ")}` : "") +
       (dropped.length ? ` — no longer used: ${dropped.join(", ")}` : ""),
     );
-    realign.push({ title: t.title, rows: rows.map((r) => t.headers.map((h) => nn(r[h]))), added });
+    realign.push({ title: t.title, rows: rows.map((r) => t.headers.map((h) => nn(r[h] ?? r[renames[h]]))), added });
   }
 
   for (const t of TABS) {

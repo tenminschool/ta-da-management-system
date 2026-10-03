@@ -77,7 +77,7 @@ export type StageKey = "Manager" | "Admin" | "Finance" | "Payment";
  * finance person's cell reads just `finance`, not `user,finance`.
  *
  * Line manager and department head are NOT roles: both are derived from the
- * line_manager_id column, so the hierarchy is maintained in one place only.
+ * supervisor column, so the hierarchy is maintained in one place only.
  */
 export type Role = "user" | "admin" | "hr" | "finance";
 
