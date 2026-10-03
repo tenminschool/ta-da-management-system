@@ -84,6 +84,9 @@ export interface TenMSRecord {
   gender?: string;
   band?: string;
   current_hr_position?: string;
+  designation?: string;
+  job_role?: string;
+  current_department?: string;
   employee_status?: string;
   department?: string;
   /** The line manager's display name (no ID or email), e.g. "Md. Mahmud Siddik". */
