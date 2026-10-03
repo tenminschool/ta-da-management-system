@@ -85,7 +85,7 @@ export const TABS: TabSpec[] = [
     widths: [150, 150, 150, 150, 110, 160, 210, 70, 140, 160, 100, 130, 110, 110, 80, 260],
     headers: [
       "request_id", "created_at", "updated_at", "status",
-      "employee_id", "employee_name", "email", "band", "department", "designation",
+      "employee_id", "name", "username", "band", "department", "current_hr_position",
       "scope", "city", "claim_type", "travel_type", "team_size", "team_members",
       "from_date", "to_date", "trip_days", "purpose", "destination",
       "start_time", "end_time", "working_hours", "worked_at",
@@ -98,7 +98,7 @@ export const TABS: TabSpec[] = [
       "total_claim",
       "advance_type", "advance_requested", "advance_approved", "advance_status",
       "settlement_due_date", "settled_amount", "settled_at",
-      "final_payable", "manager_id", "manager_email", "submitted_at", "completed_at",
+      "final_payable", "supervisor", "supervisor_email", "submitted_at", "completed_at",
       "document_types", "document_links",
       "payment_mode", "transaction_id", "payment_date", "paid_amount", "paid_by",
       "policy_notes", "employee_note",
@@ -348,6 +348,13 @@ export const HEADER_RENAMES: Record<string, Record<string, string>> = {
     supervisor: "line_manager_id",
     phone_number: "account_number",
     employee_status: "status",
+  },
+  Requests: {
+    name: "employee_name",
+    username: "email",
+    current_hr_position: "designation",
+    supervisor: "manager_id",
+    supervisor_email: "manager_email",
   },
 };
 

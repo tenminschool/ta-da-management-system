@@ -201,7 +201,7 @@ export async function managesOthers(employeeId: string): Promise<boolean> {
   if (!employeeId) return false;
   // Who reports to whom is known from the claims themselves: a request is
   // routed to its submitter's supervisor when it is filed.
-  return (await readTab("Requests")).some((r) => r.manager_id === employeeId && r.employee_id !== employeeId);
+  return (await readTab("Requests")).some((r) => r.supervisor === employeeId && r.employee_id !== employeeId);
 }
 
 /**
@@ -263,11 +263,11 @@ export function toRequest(r: Row & { _row: string }): RequestRecord & { _row: st
     updatedAt: r.updated_at,
     status: (r.status || "draft") as Status,
     employeeId: r.employee_id,
-    employeeName: r.employee_name,
-    email: r.email,
+    employeeName: r.name,
+    email: r.username,
     band: r.band,
     department: r.department,
-    designation: r.designation,
+    designation: r.current_hr_position,
     scope: r.scope === "outside" ? "outside" : "inside",
     city: r.city,
     claimType: (["ta", "perdiem", "both"].includes(r.claim_type) ? r.claim_type : "both") as RequestRecord["claimType"],
@@ -344,8 +344,8 @@ export function toRequest(r: Row & { _row: string }): RequestRecord & { _row: st
     settledAmount: num(r.settled_amount),
     settledAt: r.settled_at,
     finalPayable: num(r.final_payable),
-    managerId: r.manager_id,
-    managerEmail: r.manager_email,
+    managerId: r.supervisor,
+    managerEmail: r.supervisor_email,
     submittedAt: r.submitted_at,
     completedAt: r.completed_at,
     documentTypes: csv(r.document_types),
@@ -367,11 +367,11 @@ export function fromRequest(req: RequestRecord): Row {
     updated_at: req.updatedAt,
     status: req.status,
     employee_id: req.employeeId,
-    employee_name: req.employeeName,
-    email: req.email,
+    name: req.employeeName,
+    username: req.email,
     band: req.band,
     department: req.department,
-    designation: req.designation,
+    current_hr_position: req.designation,
     scope: req.scope,
     city: req.city,
     claim_type: req.claimType,
@@ -448,8 +448,8 @@ export function fromRequest(req: RequestRecord): Row {
     settled_amount: req.settledAmount ? String(req.settledAmount) : "",
     settled_at: req.settledAt,
     final_payable: String(req.finalPayable),
-    manager_id: req.managerId,
-    manager_email: req.managerEmail,
+    supervisor: req.managerId,
+    supervisor_email: req.managerEmail,
     submitted_at: req.submittedAt,
     completed_at: req.completedAt,
     document_types: req.documentTypes.join(", "),
