@@ -83,12 +83,9 @@ export interface TenMSRecord {
   employee_id?: string;
   gender?: string;
   band?: string;
-  designation?: string;
-  job_role?: string;
-  current_department?: string;
+  current_hr_position?: string;
+  employee_status?: string;
   department?: string;
-  supervisor_employee_id?: string;
-  line_manager?: string;
   /** The line manager's display name (no ID or email), e.g. "Md. Mahmud Siddik". */
   supervisor?: string;
   phone_number?: string;
@@ -155,4 +152,28 @@ export async function resolveSupervisor(
     console.warn(`[tenms] supervisor lookup failed for "${name}":`, (err as Error).message);
   }
   return null;
+}
+
+/**
+ * Band by HR position. The managerial and specialist paths sit on the same
+ * band at each level, so both are listed together.
+ */
+const BAND_BY_POSITION: Record<string, string> = Object.fromEntries(
+  Object.entries({
+    A: ["CXO"],
+    B: ["Senior Vice President", "Chief Specialist", "Vice President", "Assistant Vice President", "Principal Specialist"],
+    C1: ["General Manager", "Manager", "Lead Specialist"],
+    C2: ["Deputy Manager", "Senior Specialist", "Assistant Manager", "Specialist"],
+    D: ["Senior Executive", "Executive"],
+  }).flatMap(([band, names]) => names.map((n) => [n.toLowerCase(), band])),
+);
+
+/** Band E is a group of employment types rather than a ladder, so those match by keyword. */
+const BAND_E_WORDS = ["temporary", "intern", "contractor", "part-time", "part time", "consultant", "project executive", "admin executive", "student advisor"];
+
+export function bandForPosition(position: string | undefined): string {
+  const p = String(position || "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (!p) return "";
+  if (BAND_BY_POSITION[p]) return BAND_BY_POSITION[p];
+  return BAND_E_WORDS.some((w) => p.includes(w)) ? "E" : "";
 }

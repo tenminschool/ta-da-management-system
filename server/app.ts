@@ -19,7 +19,7 @@ import {
   withSheetLock, type Row,
 } from "./sheets.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import {
   createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
 } from "./drive.js";
@@ -147,23 +147,28 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
   // The HR record names the line manager (`supervisor`) but gives no ID or
   // email, so look them up in the directory when no ID is supplied directly.
-  let lineManagerId = hr.supervisor_employee_id || hr.line_manager || "";
+  let lineManagerId = "";
   let lineManagerEmail = "";
   if (hr.supervisor) {
     const boss = await resolveSupervisor(accessToken, hr.supervisor);
     if (boss) {
-      lineManagerId = lineManagerId || boss.employeeId;
+      lineManagerId = boss.employeeId;
       lineManagerEmail = boss.email;
     }
+  }
+  // `employee_status` is "Active" for someone currently employed; a blank one is not held against them.
+  if (hr.employee_status && hr.employee_status.trim().toLowerCase() !== "active") {
+    res.status(403).json({ error: "This account is marked inactive. Contact PeopleOps." });
+    return;
   }
   const user: SessionUser = {
     employeeId: hr.employee_id || profile.sub,
     name: profile.name || email,
     email,
     gender: hr.gender || "",
-    band: hr.band || "",
-    department: hr.current_department || hr.department || "",
-    designation: hr.designation || hr.job_role || "",
+    band: bandForPosition(hr.current_hr_position),
+    department: hr.department || "",
+    designation: hr.current_hr_position || "",
     lineManagerId,
     lineManagerEmail,
     roles: await effectiveRoles(email, rolesFrom(hr.groups)),

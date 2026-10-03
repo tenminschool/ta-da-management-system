@@ -27,7 +27,7 @@ const AMBER = { red: 0.85, green: 0.6, blue: 0.13 };
 const SLATE = { red: 0.35, green: 0.4, blue: 0.47 };
 
 /** Seniority order, most senior first. */
-export const BAND_ORDER = ["A", "B", "C", "D", "E1", "E2", "F", "G"];
+export const BAND_ORDER = ["A", "B", "C1", "C2", "D", "E"];
 
 /** Tabs from the previous, sprawling layout. `npm run setup` removes them. */
 export const OBSOLETE_TABS = [
@@ -58,11 +58,11 @@ export const TABS: TabSpec[] = [
       "claim_unlock_exact",
     ],
     seed: [
-      ["", "EMP-1001", "Ariful Islam", "ariful@10ms.com", "1234", "Male", "G", "Sales", "Sales Executive", "EMP-1005", "user", "bKash", "01700000001", "Active"],
-      ["", "EMP-1002", "Nusrat Jahan", "nusrat@10ms.com", "1234", "Female", "F", "Academic", "Content Producer", "EMP-1005", "user", "bKash", "01700000002", "Active"],
+      ["", "EMP-1001", "Ariful Islam", "ariful@10ms.com", "1234", "Male", "E", "Sales", "Sales Executive", "EMP-1005", "user", "bKash", "01700000001", "Active"],
+      ["", "EMP-1002", "Nusrat Jahan", "nusrat@10ms.com", "1234", "Female", "E", "Academic", "Content Producer", "EMP-1005", "user", "bKash", "01700000002", "Active"],
       ["", "EMP-1003", "Tanvir Ahmed", "tanvir@10ms.com", "1234", "Male", "D", "Operations", "Manager, Operations", "EMP-1006", "user", "Bank", "1234500001", "Active"],
-      ["", "EMP-1004", "Sadia Rahman", "sadia@10ms.com", "1234", "Female", "E2", "Marketing", "Marketing Associate", "EMP-1003", "user", "Nagad", "01700000004", "Active"],
-      ["", "EMP-1005", "Rakib Hasan", "rakib@10ms.com", "1234", "Male", "C", "Sales", "Head of Sales", "EMP-1006", "user", "Bank", "1234500002", "Active"],
+      ["", "EMP-1004", "Sadia Rahman", "sadia@10ms.com", "1234", "Female", "E", "Marketing", "Marketing Associate", "EMP-1003", "user", "Nagad", "01700000004", "Active"],
+      ["", "EMP-1005", "Rakib Hasan", "rakib@10ms.com", "1234", "Male", "C1", "Sales", "Head of Sales", "EMP-1006", "user", "Bank", "1234500002", "Active"],
       ["", "EMP-1006", "Farhana Akter", "farhana@10ms.com", "1234", "Female", "B", "PeopleOps", "Director, PeopleOps", "", "hr", "Bank", "1234500003", "Active"],
       ["", "EMP-2001", "Admin Desk", "admin@10ms.com", "1234", "Male", "D", "Administration", "Admin Officer", "EMP-1006", "admin", "Bank", "1234500004", "Active"],
       // The roles column names only the extra desk someone sits at: admin, hr
@@ -71,9 +71,9 @@ export const TABS: TabSpec[] = [
       // line_manager_id, so Rakib (EMP-1005) automatically approves for
       // everyone pointing at him.
       ["", "EMP-3001", "Nafisa Karim", "finance@10ms.com", "1234", "Female", "D", "Finance", "Finance Officer", "EMP-1006", "finance", "Bank", "1234500005", "Active"],
-      ["", "EMP-3002", "Mahin Chowdhury", "finance2@10ms.com", "1234", "Male", "E1", "Finance", "Finance Executive", "EMP-1006", "finance", "Bank", "1234500007", "Active"],
-      ["", "EMP-4001", "Shirin Akhter", "hr@10ms.com", "1234", "Female", "C", "PeopleOps", "HR Business Partner", "EMP-1006", "hr", "Bank", "1234500006", "Active"],
-      ["", "EMP-4002", "Sumaiya Islam", "hr2@10ms.com", "1234", "Female", "E1", "PeopleOps", "HR Executive", "EMP-1006", "hr", "Bank", "1234500008", "Active"],
+      ["", "EMP-3002", "Mahin Chowdhury", "finance2@10ms.com", "1234", "Male", "E", "Finance", "Finance Executive", "EMP-1006", "finance", "Bank", "1234500007", "Active"],
+      ["", "EMP-4001", "Shirin Akhter", "hr@10ms.com", "1234", "Female", "C1", "PeopleOps", "HR Business Partner", "EMP-1006", "hr", "Bank", "1234500006", "Active"],
+      ["", "EMP-4002", "Sumaiya Islam", "hr2@10ms.com", "1234", "Female", "E", "PeopleOps", "HR Executive", "EMP-1006", "hr", "Bank", "1234500008", "Active"],
     ],
   },
 
@@ -219,12 +219,10 @@ export const TABS: TabSpec[] = [
     seed: [
       ["A", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1800, 5000, "Yes", "No", "2026-01-01"],
       ["B", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1800, 5000, "Yes", "No", "2026-01-01"],
-      ["C", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
+      ["C1", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
+      ["C2", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
       ["D", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
-      ["E1", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
-      ["E2", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
-      ["F", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 800, 1200, 3000, "No", "Yes", "2026-01-01"],
-      ["G", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 700, 1050, 2000, "No", "Yes", "2026-01-01"],
+      ["E", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
     ],
   },
 
