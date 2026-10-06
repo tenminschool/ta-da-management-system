@@ -758,7 +758,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const anyLegNeedsReceipt = draft.legs.some((l) => policy.modes.find((m) => m.mode === l.mode)?.requiresReceipt);
   const needsReceipt = anyLegNeedsReceipt || accommodationAmount > 0 || otherAmount > 0;
   if (cfgStr(policy, "REQUIRE_DOCUMENT_LINK", "Yes").toLowerCase() === "yes" && needsReceipt && !links.length) {
-    errors.push("Share at least one document link (Drive, bill, ticket or receipt) supporting this claim.");
+    errors.push("Attach at least one document (bill, ticket or receipt) supporting this claim.");
   }
   if (links.some((l) => /drive\.google\.com|docs\.google\.com/i.test(l))) {
     notes.push(`${links.length} document link(s) attached — approvers open them directly, so keep the Drive sharing open to them.`);

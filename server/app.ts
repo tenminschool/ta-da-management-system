@@ -20,9 +20,7 @@ import {
 } from "./data.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
 import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
-import {
-  createUploadSession, DRIVE_FOLDER_ID, DriveError, documentFileName, finishUpload, MAX_UPLOAD_BYTES,
-} from "./drive.js";
+import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
 import {
   allEmployees, deptHeadIdFor, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateEmployees, invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId,
@@ -279,39 +277,27 @@ app.get("/api/employees", requireAuth, handler(async (req, res) => {
   }
 }));
 
-/** Whether this deployment can accept file uploads at all. */
+/** Upload limits. Uploads themselves are always on; a failure is reported when it happens. */
 app.get("/api/uploads/config", requireAuth, handler(async (_req, res) => {
-  res.json({ enabled: !!DRIVE_FOLDER_ID, maxBytes: MAX_UPLOAD_BYTES });
+  res.json({ enabled: true, maxBytes: MAX_UPLOAD_BYTES });
 }));
 
 /**
- * Step 1 of an upload: open a resumable session and hand the browser a URL to
- * PUT the file to. The bytes go straight from the browser to Google, so a
+ * Decides where one upload goes and under what name. The browser then sends
+ * the file straight to the 10MS file service with the person's own token, so a
  * 50 MB file is never limited by this server's request size.
  */
 app.post("/api/uploads/session", requireAuth, handler(async (req, res) => {
   const original = String(req.body?.name || "file");
-  const mimeType = String(req.body?.mimeType || "application/octet-stream");
   const size = Number(req.body?.size) || 0;
   const index = Number(req.body?.index) || 0;
 
   const name = documentFileName(req.session.employeeId, req.session.name, original, index);
   try {
-    // Pass the caller's origin through so Google allows the browser's PUT.
-    res.json(await createUploadSession(name, mimeType, size, req.get("origin") || undefined));
+    res.json(planUpload(req.session.employeeId, name, size));
   } catch (err) {
-    const e = err as DriveError;
-    res.status(e.status || 502).json({ error: e.message });
-  }
-}));
-
-/** Step 2: the browser reports the new file id; we share it and return the link. */
-app.post("/api/uploads/finish", requireAuth, handler(async (req, res) => {
-  try {
-    res.json({ file: await finishUpload(String(req.body?.fileId || "")) });
-  } catch (err) {
-    const e = err as DriveError;
-    res.status(e.status || 502).json({ error: e.message });
+    const e = err as UploadError;
+    res.status(e.status || 400).json({ error: e.message });
   }
 }));
 

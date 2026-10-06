@@ -168,53 +168,87 @@ export interface EmployeeLite {
   gender: string;
 }
 
+/**
+ * The public URL of an uploaded file, wherever the file service puts it in its
+ * response: a value under a url-like key if there is one, otherwise the first
+ * http(s) string found.
+ */
+function findFileUrl(value: unknown): string {
+  const isUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v);
+  const preferred = /^(url|location|link|cdn_?url|public_?url|file_?url|path)$/i;
+  const walk = (v: unknown, onlyPreferred: boolean): string => {
+    if (isUrl(v) && !onlyPreferred) return v;
+    if (Array.isArray(v)) {
+      for (const x of v) { const f = walk(x, onlyPreferred); if (f) return f; }
+    } else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) {
+        if (isUrl(x) && (!onlyPreferred || preferred.test(k))) return x;
+      }
+      for (const x of Object.values(v)) { const f = walk(x, onlyPreferred); if (f) return f; }
+    }
+    return "";
+  };
+  return walk(value, true) || walk(value, false);
+}
+
 export const api = {
   uploadConfig: () => call<{ enabled: boolean; maxBytes: number }>("/uploads/config"),
 
   /**
-   * Uploads one file straight to Google Drive. The server only opens a
-   * resumable session and finalises afterwards — the bytes never pass through
-   * it, which is what allows files far larger than a serverless request body.
+   * Uploads one file straight from the browser to the 10MS file service, so it
+   * never passes through the server and is not limited by a serverless request
+   * body. The server only decides the name and key. Every failure says what
+   * went wrong, using the service's own words where it gave any.
    */
   upload: async (
     file: File,
     index: number,
     onProgress?: (fraction: number) => void,
   ): Promise<{ id: string; name: string; link: string; sizeBytes: number }> => {
-    const { uploadUrl } = await post<{ uploadUrl: string; name: string }>("/uploads/session", {
-      name: file.name,
-      mimeType: file.type || "application/octet-stream",
-      size: file.size,
-      index,
-    });
+    const plan = await post<{
+      endpoint: string; bucket: string; acl: string; key: string; name: string;
+    }>("/uploads/session", { name: file.name, mimeType: file.type || "application/octet-stream", size: file.size, index });
 
-    const uploaded = await new Promise<{ id: string }>((resolve, reject) => {
+    const token = await auth.getAccessToken().catch(() => "");
+    if (!token) throw new Error("Your 10 Minute School session has expired. Sign out and sign in again.");
+
+    const form = new FormData();
+    form.append("bucket", plan.bucket);
+    form.append("acl", plan.acl);
+    form.append("key", plan.key);
+    form.append("file", file, plan.name);
+
+    const reply = await new Promise<unknown>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open("PUT", uploadUrl, true);
-      xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+      xhr.open("POST", plan.endpoint, true);
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.setRequestHeader("accept", "application/json");
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
       };
       xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          try {
-            resolve(JSON.parse(xhr.responseText));
-          } catch {
-            reject(new Error("Drive accepted the file but returned an unexpected response."));
-          }
-        } else {
-          reject(new Error(`Drive rejected the upload (${xhr.status}).`));
+        let body: unknown = null;
+        try { body = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+        if (xhr.status >= 200 && xhr.status < 300 && body) {
+          resolve(body);
+          return;
         }
+        const said = (body as { message?: unknown } | null)?.message;
+        const detail = typeof said === "string" && said ? said : xhr.responseText.slice(0, 120);
+        reject(new Error(`The file service refused the upload (${xhr.status}${detail ? `: ${detail}` : ""}).`));
       };
-      xhr.onerror = () => reject(new Error("The upload was interrupted. Check your connection and try again."));
-      xhr.send(file);
+      xhr.onerror = () => reject(new Error(
+        `Could not reach the file service at ${new URL(plan.endpoint).host}. Check your connection, or whether it allows this site.`,
+      ));
+      xhr.send(form);
     });
 
-    const { file: saved } = await post<{ file: { id: string; name: string; link: string; sizeBytes: number } }>(
-      "/uploads/finish",
-      { fileId: uploaded.id },
-    );
-    return saved;
+    const link = findFileUrl(reply);
+    if (!link) {
+      console.error("[upload] no file URL in the response:", reply);
+      throw new Error("The file was uploaded, but the service's reply had no file address, so it cannot be attached.");
+    }
+    return { id: plan.key, name: plan.name, link, sizeBytes: file.size };
   },
 
   /** Which sign-in methods this deployment offers. */

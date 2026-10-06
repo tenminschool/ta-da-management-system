@@ -145,28 +145,22 @@ trip:
 ## Documents
 
 The employee picks files from their device — image, PDF, Word, Excel, CSV, anything — and they are
-uploaded straight to a shared Google Drive folder, renamed **`employeeId-name-date`** (a second file
-in the same claim gets `-2`, and so on). The request stores the resulting Drive links, so approvers
-click through from the claim as before. Alongside that is a **multi-select** of document types,
-editable in the `Lists` tab.
+uploaded to the 10 Minute School file service (bucket `10mscdn`, public-read) under
+`hq/<employee id>/ta-da`, renamed **`employeeId-lastname-date`** (a second file in the same claim
+gets `-2`, and so on). The request stores the resulting file address, so approvers click through
+from the claim. Alongside that is a **multi-select** of document types, editable in the `Lists` tab.
 
-The bytes go **straight from the browser to Google**. The server only opens a resumable upload
-session and finalises afterwards, so a 50 MB file is never limited by the few megabytes a
+The bytes go **straight from the browser to the file service**, authorised with the signed-in
+person's own 10MS access token. The server only decides the
+name and key and enforces the size limit, so a 50 MB file is never limited by the few megabytes a
 serverless request body allows.
 
-### The target must be a Shared Drive
-
-A service account has no storage quota of its own and cannot own a file, so a folder in a personal
-My Drive is refused with *"Service Accounts do not have storage quota"* however it is shared. In a
-Shared Drive the storage belongs to the organisation, which is what makes it work. Add the service
-account to the Shared Drive as **Content Manager**.
+If the file service refuses a file, the form shows its own reply and status code.
 
 | Variable | Purpose |
 |---|---|
-| `DRIVE_FOLDER_ID` | Shared Drive (or a folder in one) uploads land in. Without it, uploads are switched off and the form says so. |
 | `MAX_UPLOAD_MB` | Per-file limit, default 50. |
-| `DRIVE_PUBLIC_FILES` | Default `true`: each uploaded file is made readable by anyone with the link, because approvers are not members of the Shared Drive and would otherwise hit "Request access". Set `false` if the Drive is shared with them another way. |
-| `GOOGLE_IMPERSONATE_SUBJECT` | Only if you must use a personal My Drive, via domain-wide delegation. |
+| `UPLOAD_BUCKET`, `UPLOAD_ACL`, `UPLOAD_ENDPOINT` | Where files go. Defaults: `10mscdn`, `public-read`, the 10MS `s3-manager` upload URL. |
 
 ## How the policy works
 

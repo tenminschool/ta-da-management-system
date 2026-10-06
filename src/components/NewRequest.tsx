@@ -1855,7 +1855,7 @@ function StepDocuments({
         title="Documents"
         subtitle={
           needsReceipt || showUploader
-            ? "Attach tickets, bills, receipts, invoices, hotel bills or approval mail. Files are stored in the shared Drive and renamed with your employee ID, name and date."
+            ? "Attach tickets, bills, receipts, invoices, hotel bills or approval mail. Files are renamed with your employee ID, last name and date."
             : "Not required for this claim."
         }
       >
@@ -1893,7 +1893,7 @@ function StepDocuments({
               </Field>
 
               {!enabled && (
-                <Notice tone="warn" items={["File uploads are not configured on this deployment — DRIVE_FOLDER_ID is not set."]} />
+                <Notice tone="warn" items={["File uploads are not available on this deployment."]} />
               )}
 
               <label
