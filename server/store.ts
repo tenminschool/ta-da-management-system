@@ -9,7 +9,8 @@
  */
 
 import crypto from "crypto";
-import { appendRow, readTab, readTabs, updateRow, withSheetLock, type Row } from "./sheets.js";
+import { appendRow, readTab, readTabs, updateRow, withSheetLock, type Row } from "./data.js";
+import { readTab as readSheetTab } from "./sheets.js";
 import type {
   ApprovalRow, InsideCityBlockEntry, Leg, Policy, RequestRecord, Role, RoleGrant, SessionUser, StageKey, Status, TeamMember, UnlockRequest,
   VehicleRegistration,
@@ -171,25 +172,9 @@ export function invalidateEmployees(): void {
 
 export async function allEmployees(): Promise<EmployeeRow[]> {
   if (employeeCache && Date.now() - employeeCache.at < EMPLOYEE_TTL_MS) return employeeCache.rows;
-  const rows = (await readTab("Employees")).map(toEmployee);
+  const rows = (await readSheetTab("Employees")).map(toEmployee);
   employeeCache = { rows, at: Date.now() };
   return rows;
-}
-
-/**
- * Records the identity provider's subject id against the employee the first
- * time they sign in with SSO, so the sheet shows which account each person
- * actually authenticates with. Only writes when it changed, so a normal
- * sign-in costs no extra write.
- */
-export async function rememberAuthId(employeeRow: string, authId: string): Promise<void> {
-  if (!employeeRow || !authId) return;
-  const rows = await readTab("Employees");
-  const row = rows.find((r) => r._row === employeeRow);
-  if (!row || row.auth_id === authId) return;
-  const { _row, ...rest } = row;
-  await updateRow("Employees", employeeRow, { ...rest, auth_id: authId });
-  invalidateEmployees();
 }
 
 // ── Hierarchy, derived from the LineManagerID column ────────────────────────

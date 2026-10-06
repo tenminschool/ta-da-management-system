@@ -181,6 +181,20 @@ export const TABS: TabSpec[] = [
     headers: ["email", "role", "added_by", "added_at"],
   },
 
+  // ── Late-claim windows an administrator has opened, one row per employee ──
+  {
+    title: "ClaimUnlocks",
+    color: AMBER,
+    widths: [150, 170, 170],
+    headers: [
+      "employee_id",
+      // The earliest travel date they may now file a late claim for; open-ended.
+      "claim_unlock_from",
+      // Unlocks exactly this one travel date, set by approving a "Contact HR" request.
+      "claim_unlock_exact",
+    ],
+  },
+
   // ── Admin-configurable policy ─────────────────────────────────────────────
   {
     title: "Config",

@@ -15,9 +15,9 @@ import express, { type NextFunction, type Request, type Response } from "express
 import ExcelJS from "exceljs";
 
 import {
-  apiCalls, appendRow, clearRow, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls, updateRow,
-  withSheetLock, type Row,
-} from "./sheets.js";
+  apiCalls, appendRow, clearRow, getClaimUnlock, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls,
+  setClaimUnlock, updateRow, withSheetLock, type Row,
+} from "./data.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
 import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import {
@@ -901,8 +901,11 @@ async function approvedVehicleFor(employeeId: string): Promise<SessionUser["regi
 
 async function currentSession(session: Session): Promise<Session> {
   const blocked = await insideCityBlockedEmails();
+  const unlock = await getClaimUnlock(session.employeeId);
   return {
     ...session,
+    claimUnlockFrom: unlock.from,
+    claimUnlockExact: unlock.exact,
     insideCityBlocked: blocked.has((session.email || "").toLowerCase()),
     registeredVehicle: await approvedVehicleFor(session.employeeId),
   };
@@ -1729,7 +1732,7 @@ app.post("/api/requests/:id/advance", requireAuth, handler(async (req, res) => {
 
 // ── Admin configuration ─────────────────────────────────────────────────────
 
-const EDITABLE_TABS = ["Config", "BandPolicy", "Lists", "Employees"];
+const EDITABLE_TABS = ["Config", "BandPolicy", "Lists"];
 
 app.get("/api/admin/tabs", requireAuth, handler(async (req, res) => {
   if (!hasRole(req.session, "admin", "hr")) {
@@ -1757,13 +1760,7 @@ app.get("/api/admin/tabs", requireAuth, handler(async (req, res) => {
  * unlock request — the same write either way.
  */
 async function applyClaimUnlock(employeeId: string, from: string): Promise<boolean> {
-  const rows = await readTab("Employees");
-  const row = rows.find((r) => r.employee_id === employeeId);
-  if (!row) return false;
-  const { _row, ...rest } = row;
-  await updateRow("Employees", _row, { ...rest, claim_unlock_from: from });
-  invalidateEmployees();
-  return true;
+  return setClaimUnlock(employeeId, { claim_unlock_from: from });
 }
 
 /**
@@ -1773,13 +1770,7 @@ async function applyClaimUnlock(employeeId: string, from: string): Promise<boole
  * not leave every other late claim that person might file afterward open too.
  */
 async function applyClaimUnlockExact(employeeId: string, exact: string): Promise<boolean> {
-  const rows = await readTab("Employees");
-  const row = rows.find((r) => r.employee_id === employeeId);
-  if (!row) return false;
-  const { _row, ...rest } = row;
-  await updateRow("Employees", _row, { ...rest, claim_unlock_exact: exact });
-  invalidateEmployees();
-  return true;
+  return setClaimUnlock(employeeId, { claim_unlock_exact: exact });
 }
 
 app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {

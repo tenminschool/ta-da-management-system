@@ -8,7 +8,6 @@ const DESCRIPTIONS: Record<string, string> = {
   Config: "Rates, limits and thresholds. Change a value here and every calculation follows it immediately.",
   BandPolicy: "Per-band transport lists (male / female), outside-city weekday & weekend rates, accommodation limit, flight and car-pool eligibility.",
   Lists: "Every dropdown in one place, keyed by ListName — City (Extra1 = Inside/Outside), TransportMode (Extra1 = scope, Extra2 = needs receipt), WorkedAt, DualWorkstation, PaymentMethod, DocumentType, and ApprovalStage (Extra1 = step order, Extra2 = role).",
-  Employees: "People, bands, line managers and roles. The roles column is one of user, admin, hr or finance — everyone can raise a claim regardless, and being a line manager comes from supervisor, not from here.",
 };
 
 export default function AdminConfig() {
@@ -67,7 +66,7 @@ export default function AdminConfig() {
       <div>
         <h1 className="text-lg font-bold text-slate-900 sm:text-xl">Admin configuration</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Every policy value lives here and in the Google Sheet — changing a rate, a band rule or the approval
+          Every policy value lives here, in the database — changing a rate, a band rule or the approval
           chain never needs a code change.
         </p>
       </div>
