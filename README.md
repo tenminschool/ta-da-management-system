@@ -26,12 +26,11 @@ serverless bundle.
 1. Import the repo in Vercel. `vercel.json` already sets the build command
    (`vite build`), the output directory (`dist`) and the rewrites — `/api/*`
    goes to the function, everything else to the SPA.
-2. Add these environment variables under **Settings → Environment Variables**:
+2. Add these environment variables (sessions are signed from `DATABASE_URL`, so there is no separate secret) under **Settings → Environment Variables**:
 
    | Variable | Purpose |
    |---|---|
    | `DATABASE_URL` | PostgreSQL connection string (`…?sslmode=require`). Tables are prefixed `ta_da_`. |
-   | `SESSION_SECRET` | A long random string that signs session tokens. Required in production. |
    | `VITE_TENMS_CLIENT_ID` | Public client id for "Login with 10 Minute School". |
 3. Deploy, then open the app and sign in. The tables are created on first use; `npm run db:setup`
    creates them ahead of time.

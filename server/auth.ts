@@ -2,9 +2,10 @@
  * Stateless HMAC session tokens.
  *
  * The token carries the whole session, so no server-side session store is
- * needed and the app survives restarts / serverless cold starts. The signing
- * secret is SESSION_SECRET. Deployments that predate it keep using the Google
- * service-account key they already had, so nobody is signed out by the change.
+ * needed and the app survives restarts / serverless cold starts. Tokens are
+ * signed with a key derived from DATABASE_URL, which every deployment already
+ * has, so there is no separate secret to configure. SESSION_SECRET overrides it
+ * if you ever want sessions to survive a database password change.
  */
 
 import crypto from "crypto";
@@ -17,15 +18,15 @@ export interface Session extends SessionUser {
 }
 
 function secret(): string {
-  const seed = process.env.SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY;
+  const seed = process.env.SESSION_SECRET || process.env.DATABASE_URL;
   if (!seed) {
     // Signing with a published fallback would let anyone mint an admin session.
     if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
-      throw new Error("SESSION_SECRET is not set. Set it to a long random string.");
+      throw new Error("DATABASE_URL is not set, so there is nothing to sign sessions with.");
     }
     return crypto.createHash("sha256").update("ta-perdiem-dev-secret").digest("hex");
   }
-  return crypto.createHash("sha256").update(seed).digest("hex");
+  return crypto.createHash("sha256").update(`ta-da-session:${seed}`).digest("hex");
 }
 
 export function signToken(user: SessionUser): string {
