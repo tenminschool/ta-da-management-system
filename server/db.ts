@@ -64,23 +64,72 @@ export function useDbPool(p: pg.Pool): void {
 
 let ready: Promise<void> | null = null;
 
-/** Creates missing tables and columns and seeds empty tables, once per process. */
+const SCHEMA_LOCK_KEY = 7_201_0002;
+
+/**
+ * Makes sure every table and column exists and the policy tables are seeded,
+ * once per process.
+ *
+ * This runs on every cold start of a serverless instance, so the common case —
+ * nothing to do — must cost one or two round trips, not one per column. It
+ * reads what exists in a single query and only changes what is missing, under
+ * an advisory lock so two instances starting together cannot both seed.
+ */
 function ensureSchema(): Promise<void> {
   if (!ready) {
     ready = (async () => {
       const db = dbPool();
-      for (const spec of DB_TABS) {
-        const t = q(tableName(spec.title));
-        await db.query(`CREATE TABLE IF NOT EXISTS ${t} ("_row" BIGSERIAL PRIMARY KEY)`);
-        for (const h of spec.headers) {
-          await db.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS ${q(h)} TEXT NOT NULL DEFAULT ''`);
+
+      const missing = async (client: Queryable) => {
+        const { rows } = await client.query(
+          `SELECT table_name, column_name FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name LIKE $1`,
+          [`${PREFIX.replace(/[\\_%]/g, "\\$&")}%`],
+        );
+        const have = new Map<string, Set<string>>();
+        for (const r of rows) {
+          if (!have.has(r.table_name)) have.set(r.table_name, new Set());
+          have.get(r.table_name)!.add(r.column_name);
         }
-        if (spec.seed?.length) {
-          const { rows } = await db.query(`SELECT 1 FROM ${t} LIMIT 1`);
-          if (!rows.length) {
-            await insertMany(db, spec.title, spec.seed.map((r) => Object.fromEntries(spec.headers.map((h, i) => [h, String(r[i] ?? "")]))));
+        return DB_TABS.map((spec) => ({
+          spec,
+          exists: have.has(tableName(spec.title)),
+          columns: spec.headers.filter((h) => !have.get(tableName(spec.title))?.has(h)),
+        })).filter((t) => !t.exists || t.columns.length);
+      };
+
+      const unseeded = async (client: Queryable) => {
+        const seeded = DB_TABS.filter((t) => t.seed?.length);
+        if (!seeded.length) return [];
+        const { rows } = await client.query(
+          seeded.map((t) => `SELECT '${t.title}' AS tab, count(*)::int AS n FROM ${q(tableName(t.title))}`).join(" UNION ALL "),
+        );
+        return seeded.filter((t) => !rows.find((r) => r.tab === t.title)?.n);
+      };
+
+      // Fast path: everything is there.
+      const todo = await missing(db);
+      if (!todo.length && !(await unseeded(db)).length) return;
+
+      // Something is missing. Do it once, under a lock, re-checking inside it.
+      const c = await db.connect();
+      try {
+        await c.query("SELECT pg_advisory_lock($1)", [SCHEMA_LOCK_KEY]);
+        for (const { spec: t, exists, columns } of await missing(c)) {
+          const name = q(tableName(t.title));
+          if (!exists) await c.query(`CREATE TABLE IF NOT EXISTS ${name} ("_row" BIGSERIAL PRIMARY KEY)`);
+          if (columns.length) {
+            await c.query(
+              `ALTER TABLE ${name} ${columns.map((h) => `ADD COLUMN IF NOT EXISTS ${q(h)} TEXT NOT NULL DEFAULT ''`).join(", ")}`,
+            );
           }
         }
+        for (const t of await unseeded(c)) {
+          await insertMany(c, t.title, t.seed!.map((r) => Object.fromEntries(t.headers.map((h, i) => [h, String(r[i] ?? "")]))));
+        }
+      } finally {
+        await c.query("SELECT pg_advisory_unlock($1)", [SCHEMA_LOCK_KEY]).catch(() => {});
+        c.release();
       }
     })().catch((err) => {
       ready = null;

@@ -133,24 +133,24 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   // The official phone number doubles as the bKash number: "+8801805980148" -> "01805980148".
   const digits = String(hr.phone_number || profile.phone || "").replace(/\D/g, "");
   const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
-  // The HR record names the line manager (`supervisor`) but gives no ID or
-  // email, so look them up in the directory when no ID is supplied directly.
-  let lineManagerId = "";
-  let lineManagerEmail = "";
-  if (hr.supervisor) {
-    const boss = await resolveSupervisor(accessToken, hr.supervisor);
-    if (boss) {
-      lineManagerId = boss.employeeId;
-      lineManagerEmail = boss.email;
-    }
-  }
   // `employee_status` is "Active" for someone currently employed; a blank one is not held against them.
   if (hr.employee_status && hr.employee_status.trim().toLowerCase() !== "active") {
     res.status(403).json({ error: "This account is marked inactive. Contact PeopleOps." });
     return;
   }
+  const employeeId = hr.employee_id || profile.sub;
+  // The HR record names the line manager (`supervisor`) but gives no ID or email, so they are
+  // looked up in the directory. That, the granted roles and the "manages anyone" check do not
+  // depend on one another, so they run together rather than one after the other.
+  const [boss, roles, manages] = await Promise.all([
+    hr.supervisor ? resolveSupervisor(accessToken, hr.supervisor) : Promise.resolve(null),
+    effectiveRoles(email, rolesFrom(hr.groups)),
+    managesOthers(employeeId),
+  ]);
+  const lineManagerId = boss?.employeeId || "";
+  const lineManagerEmail = boss?.email || "";
   const user: SessionUser = {
-    employeeId: hr.employee_id || profile.sub,
+    employeeId,
     name: profile.name || email,
     email,
     gender: hr.gender || "",
@@ -159,13 +159,13 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     designation: hr.current_hr_position || hr.designation || hr.job_role || "",
     lineManagerId,
     lineManagerEmail,
-    roles: await effectiveRoles(email, rolesFrom(hr.groups)),
+    roles,
     paymentMethod: officialPhone ? "bKash" : "",
     accountNumber: officialPhone,
   };
   res.json({
     token: signToken(user),
-    user: { ...user, managesOthers: await managesOthers(user.employeeId) },
+    user: { ...user, managesOthers: manages },
   });
 }));
 
@@ -839,14 +839,17 @@ async function approvedVehicleFor(employeeId: string): Promise<SessionUser["regi
 }
 
 async function currentSession(session: Session): Promise<Session> {
-  const blocked = await insideCityBlockedEmails();
-  const unlock = await getClaimUnlock(session.employeeId);
+  const [blocked, unlock, registeredVehicle] = await Promise.all([
+    insideCityBlockedEmails(),
+    getClaimUnlock(session.employeeId),
+    approvedVehicleFor(session.employeeId),
+  ]);
   return {
     ...session,
     claimUnlockFrom: unlock.from,
     claimUnlockExact: unlock.exact,
     insideCityBlocked: blocked.has((session.email || "").toLowerCase()),
-    registeredVehicle: await approvedVehicleFor(session.employeeId),
+    registeredVehicle,
   };
 }
 

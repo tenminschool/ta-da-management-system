@@ -191,6 +191,8 @@ function findFileUrl(value: unknown): string {
   return walk(value, true) || walk(value, false);
 }
 
+const signingIn = new Map<string, Promise<{ token: string; user: SessionUser }>>();
+
 export const api = {
   uploadConfig: () => call<{ enabled: boolean; maxBytes: number }>("/uploads/config"),
 
@@ -258,8 +260,18 @@ export const api = {
   },
 
   /** Exchanges a verified 10 Minute School access token for an app session. */
-  tenmsLogin: (accessToken: string) =>
-    post<{ token: string; user: SessionUser }>("/auth/tenms", { accessToken }),
+  tenmsLogin: (accessToken: string) => {
+    // The sign-in screen and the app's start-up check can both notice a fresh session at the same
+    // moment; asking the server twice for the same token only doubles the work, so they share one.
+    let pending = signingIn.get(accessToken);
+    if (!pending) {
+      pending = post<{ token: string; user: SessionUser }>("/auth/tenms", { accessToken });
+      signingIn.set(accessToken, pending);
+      const forget = () => setTimeout(() => signingIn.delete(accessToken), 10_000);
+      pending.then(forget, () => signingIn.delete(accessToken));
+    }
+    return pending;
+  },
   me: () => call<{ user: SessionUser }>("/me"),
   saveBkashNumber: (bkashNumber: string) => post<{ ok: boolean; bkashNumber: string }>("/me/bkash", { bkashNumber }),
   saveTeammateBkash: (employeeId: string, bkashNumber: string) =>
