@@ -205,12 +205,18 @@ export const api = {
     index: number,
     onProgress?: (fraction: number) => void,
   ): Promise<{ id: string; name: string; link: string; sizeBytes: number }> => {
+    // Each step names itself in its error, so a bare "Failed to fetch" always says where it happened.
     const plan = await post<{
       endpoint: string; bucket: string; acl: string; key: string; name: string;
-    }>("/uploads/session", { name: file.name, mimeType: file.type || "application/octet-stream", size: file.size, index });
+    }>("/uploads/session", { name: file.name, mimeType: file.type || "application/octet-stream", size: file.size, index })
+      .catch((err: Error) => {
+        throw new Error(`Step 1 of 3 — could not start the upload on this app's server: ${err.message}`);
+      });
 
-    const token = await auth.getAccessToken().catch(() => "");
-    if (!token) throw new Error("Your 10 Minute School session has expired. Sign out and sign in again.");
+    const token = await auth.getAccessToken().catch((err: Error) => {
+      throw new Error(`Step 2 of 3 — could not get your 10 Minute School access token: ${err.message}. Sign out and sign in again.`);
+    });
+    if (!token) throw new Error("Step 2 of 3 — you have no 10 Minute School access token. Sign out and sign in again.");
 
     const form = new FormData();
     form.append("bucket", plan.bucket);
@@ -235,10 +241,10 @@ export const api = {
         }
         const said = (body as { message?: unknown } | null)?.message;
         const detail = typeof said === "string" && said ? said : xhr.responseText.slice(0, 120);
-        reject(new Error(`The file service refused the upload (${xhr.status}${detail ? `: ${detail}` : ""}).`));
+        reject(new Error(`Step 3 of 3 — the file service refused the upload (${xhr.status}${detail ? `: ${detail}` : ""}).`));
       };
       xhr.onerror = () => reject(new Error(
-        `Could not reach the file service at ${new URL(plan.endpoint).host}. Check your connection, or whether it allows this site.`,
+        `Step 3 of 3 — could not reach the file service at ${new URL(plan.endpoint).host}. Check your connection, or whether it allows this site.`,
       ));
       xhr.send(form);
     });
@@ -246,7 +252,7 @@ export const api = {
     const link = findFileUrl(reply);
     if (!link) {
       console.error("[upload] no file URL in the response:", reply);
-      throw new Error("The file was uploaded, but the service's reply had no file address, so it cannot be attached.");
+      throw new Error("Step 3 of 3 — the file was uploaded, but the service's reply had no file address, so it cannot be attached.");
     }
     return { id: plan.key, name: plan.name, link, sizeBytes: file.size };
   },
