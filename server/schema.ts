@@ -1,14 +1,12 @@
 /**
- * Google-Sheet schema for the TA & Per-Diem system.
- *
- * Six tabs, and one row per record — a request never spreads across rows.
+ * Database schema for the TA & Per-Diem system. Each "tab" below is a table named
+ * `ta_da_<tab in snake_case>`, one row per record — a request never spreads across rows.
  * Trips, team members, document links, payment and advance details all live in
  * their own columns on the request's single row; every approval desk gets a
  * column group on the request's single Approvals row. All the small dropdown
  * lists share one `Lists` tab instead of a tab each.
  *
- * Column order IS the contract: rows are read/written positionally against
- * `headers`, so `npm run setup` and the server can never disagree.
+ * `headers` are the columns; `seed` rows fill a table the first time it is empty.
  */
 
 export interface TabSpec {
@@ -29,55 +27,7 @@ const SLATE = { red: 0.35, green: 0.4, blue: 0.47 };
 /** Seniority order, most senior first. */
 export const BAND_ORDER = ["A", "B", "C1", "C2", "D", "E"];
 
-/** Tabs from the previous, sprawling layout. `npm run setup` removes them. */
-export const OBSOLETE_TABS = [
-  "RequestLegs", "TeamMembers", "Payments", "Advances", "Documents", "DocumentChunks",
-  "Cities", "TransportModes", "ApprovalFlow", "WorkedAtOptions", "DualWorkstationOptions",
-  "PaymentMethods", "Notifications",
-];
-
 export const TABS: TabSpec[] = [
-  // ── People ────────────────────────────────────────────────────────────────
-  {
-    title: "Employees",
-    color: BLUE,
-    widths: [230, 110, 170, 240, 100, 90, 70, 150, 180, 130, 210, 130, 150, 90, 150],
-    headers: [
-      // Written on first SSO sign-in: the identity provider's stable subject id.
-      "auth_id",
-      // Named after the 10MS HR record fields each one mirrors.
-      "employee_id", "name", "username", "password", "gender", "band",
-      "department", "current_hr_position", "supervisor", "roles",
-      "payment_method", "phone_number", "employee_status",
-      // Set by an administrator to let this person file a late claim: the
-      // earliest travel date they may now submit a claim for. Open-ended —
-      // everything from here on is unlocked, the manual Configuration tool.
-      "claim_unlock_from",
-      // Set by approving a "Contact HR" request: unlocks exactly the one trip
-      // that was asked about, and nothing filed for any other date — unlike
-      // claim_unlock_from, this does not stay open going forward.
-      "claim_unlock_exact",
-    ],
-    seed: [
-      ["", "EMP-1001", "Ariful Islam", "ariful@10ms.com", "1234", "Male", "E", "Sales", "Sales Executive", "EMP-1005", "user", "bKash", "01700000001", "Active"],
-      ["", "EMP-1002", "Nusrat Jahan", "nusrat@10ms.com", "1234", "Female", "E", "Academic", "Content Producer", "EMP-1005", "user", "bKash", "01700000002", "Active"],
-      ["", "EMP-1003", "Tanvir Ahmed", "tanvir@10ms.com", "1234", "Male", "D", "Operations", "Manager, Operations", "EMP-1006", "user", "Bank", "1234500001", "Active"],
-      ["", "EMP-1004", "Sadia Rahman", "sadia@10ms.com", "1234", "Female", "E", "Marketing", "Marketing Associate", "EMP-1003", "user", "Nagad", "01700000004", "Active"],
-      ["", "EMP-1005", "Rakib Hasan", "rakib@10ms.com", "1234", "Male", "C1", "Sales", "Head of Sales", "EMP-1006", "user", "Bank", "1234500002", "Active"],
-      ["", "EMP-1006", "Farhana Akter", "farhana@10ms.com", "1234", "Female", "B", "PeopleOps", "Director, PeopleOps", "", "hr", "Bank", "1234500003", "Active"],
-      ["", "EMP-2001", "Admin Desk", "admin@10ms.com", "1234", "Male", "D", "Administration", "Admin Officer", "EMP-1006", "admin", "Bank", "1234500004", "Active"],
-      // The roles column names only the extra desk someone sits at: admin, hr
-      // or finance. Everyone can raise a claim regardless, so plain staff are
-      // just "user". Line manager is not written here either — it comes from
-      // supervisor, so Rakib (EMP-1005) automatically approves for
-      // everyone pointing at him.
-      ["", "EMP-3001", "Nafisa Karim", "finance@10ms.com", "1234", "Female", "D", "Finance", "Finance Officer", "EMP-1006", "finance", "Bank", "1234500005", "Active"],
-      ["", "EMP-3002", "Mahin Chowdhury", "finance2@10ms.com", "1234", "Male", "E", "Finance", "Finance Executive", "EMP-1006", "finance", "Bank", "1234500007", "Active"],
-      ["", "EMP-4001", "Shirin Akhter", "hr@10ms.com", "1234", "Female", "C1", "PeopleOps", "HR Business Partner", "EMP-1006", "hr", "Bank", "1234500006", "Active"],
-      ["", "EMP-4002", "Sumaiya Islam", "hr2@10ms.com", "1234", "Female", "E", "PeopleOps", "HR Executive", "EMP-1006", "hr", "Bank", "1234500008", "Active"],
-    ],
-  },
-
   // ── One row per request ───────────────────────────────────────────────────
   {
     title: "Requests",
@@ -350,26 +300,5 @@ export const TABS: TabSpec[] = [
     ],
   },
 ];
-
-/**
- * Headers that were renamed, as { tab: { newName: oldName } }, so `npm run setup`
- * carries the data across instead of treating the old column as dropped.
- */
-export const HEADER_RENAMES: Record<string, Record<string, string>> = {
-  Employees: {
-    username: "email",
-    current_hr_position: "designation",
-    supervisor: "line_manager_id",
-    phone_number: "account_number",
-    employee_status: "status",
-  },
-  Requests: {
-    name: "employee_name",
-    username: "email",
-    current_hr_position: "designation",
-    supervisor: "manager_id",
-    supervisor_email: "manager_email",
-  },
-};
 
 export const TAB = Object.fromEntries(TABS.map((t) => [t.title, t])) as Record<string, TabSpec>;

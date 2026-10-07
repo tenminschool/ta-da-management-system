@@ -1,11 +1,9 @@
 /**
- * Record layer over PostgreSQL — the interface the app used when its data lived
- * in a Google Sheet, so the rest of the server did not have to change.
+ * Record layer over PostgreSQL: rows in, rows out, keyed by column name.
  *
- * Every tab in `schema.ts` except Employees is a table named
- * `ta_da_<tab in snake_case>`. Columns are the tab's headers, all TEXT, because
+ * Every tab in `schema.ts` is a table named `ta_da_<tab in snake_case>`. Columns are the tab's headers, all TEXT, because
  * the app already reads and writes everything as strings. `_row` is a serial
- * primary key standing in for the sheet's row number: it is stable, it orders
+ * primary key: it is stable, it orders
  * reads, and it is what `updateRow` / `clearRow` address.
  *
  * Tables are created, topped up with any new columns, and seeded on first use,
@@ -18,8 +16,8 @@ import { TAB, TABS } from "./schema.js";
 
 export type Row = Record<string, string>;
 
-/** Tabs that live in the database. Employees stays in the sheet and is not one of them. */
-export const DB_TABS = TABS.filter((t) => t.title !== "Employees");
+/** Every table the app owns. */
+export const DB_TABS = TABS;
 
 const PREFIX = process.env.DB_TABLE_PREFIX || "ta_da_";
 
@@ -97,7 +95,7 @@ export const initDatabase = ensureSchema;
 
 function spec(tab: string) {
   const s = TAB[tab];
-  if (!s || s.title === "Employees") throw new Error(`"${tab}" is not a database table.`);
+  if (!s) throw new Error(`"${tab}" is not a database table.`);
   return s;
 }
 
@@ -234,7 +232,7 @@ async function inTransaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T
 let lockChain: Promise<unknown> = Promise.resolve();
 const ADVISORY_KEY = 7_201_0001;
 
-export function withSheetLock<T>(fn: () => Promise<T>): Promise<T> {
+export function withLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = async () => {
     await ensureSchema();
     const c = await dbPool().connect();

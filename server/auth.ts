@@ -3,7 +3,8 @@
  *
  * The token carries the whole session, so no server-side session store is
  * needed and the app survives restarts / serverless cold starts. The signing
- * secret is derived from the service-account key already in the environment.
+ * secret is SESSION_SECRET. Deployments that predate it keep using the Google
+ * service-account key they already had, so nobody is signed out by the change.
  */
 
 import crypto from "crypto";
@@ -16,10 +17,15 @@ export interface Session extends SessionUser {
 }
 
 function secret(): string {
-  return crypto
-    .createHash("sha256")
-    .update(process.env.GOOGLE_PRIVATE_KEY || "ta-perdiem-dev-secret")
-    .digest("hex");
+  const seed = process.env.SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY;
+  if (!seed) {
+    // Signing with a published fallback would let anyone mint an admin session.
+    if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
+      throw new Error("SESSION_SECRET is not set. Set it to a long random string.");
+    }
+    return crypto.createHash("sha256").update("ta-perdiem-dev-secret").digest("hex");
+  }
+  return crypto.createHash("sha256").update(seed).digest("hex");
 }
 
 export function signToken(user: SessionUser): string {

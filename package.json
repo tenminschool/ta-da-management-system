@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "setup": "tsx scripts/setup-sheets.ts",
     "db:setup": "tsx scripts/setup-db.ts",
-    "db:migrate": "tsx scripts/migrate-sheets-to-db.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && mkdir -p dist/server-assets && cp server/assets/payment-template.xlsx dist/server-assets/",
     "start": "NODE_ENV=production node dist/server.cjs",
     "lint": "tsc --noEmit",
@@ -18,7 +16,6 @@
     "dotenv": "^17.2.3",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
-    "googleapis": "^173.0.0",
     "lucide-react": "^0.546.0",
     "pg": "^8.23.1",
     "react": "^19.1.0",

@@ -257,13 +257,9 @@ export const api = {
     return { id: plan.key, name: plan.name, link, sizeBytes: file.size };
   },
 
-  /** Which sign-in methods this deployment offers. */
-  authMethods: () => call<{ password: boolean }>("/auth/methods"),
   /** Exchanges a verified 10 Minute School access token for an app session. */
   tenmsLogin: (accessToken: string) =>
     post<{ token: string; user: SessionUser }>("/auth/tenms", { accessToken }),
-  login: (email: string, password: string) =>
-    post<{ token: string; user: SessionUser }>("/login", { email, password }),
   me: () => call<{ user: SessionUser }>("/me"),
   saveBkashNumber: (bkashNumber: string) => post<{ ok: boolean; bkashNumber: string }>("/me/bkash", { bkashNumber }),
   saveTeammateBkash: (employeeId: string, bkashNumber: string) =>

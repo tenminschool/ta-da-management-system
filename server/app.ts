@@ -15,15 +15,15 @@ import express, { type NextFunction, type Request, type Response } from "express
 import ExcelJS from "exceljs";
 
 import {
-  apiCalls, appendRow, clearRow, getClaimUnlock, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls,
-  setClaimUnlock, updateRow, withSheetLock, type Row,
-} from "./data.js";
+  apiCalls, appendRow, clearRow, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls, updateRow,
+  withLock, type Row,
+} from "./db.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
 import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
 import {
-  allEmployees, deptHeadIdFor, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
-  invalidateEmployees, invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, nextRequestId, nextUnlockRequestId,
+  deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
+  invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, setClaimUnlock, nextRequestId, nextUnlockRequestId,
   nowISO, parseLinks, STAGE_COLUMN, toApprovalRow, toInsideCityBlockEntry, toRequest, toUnlockRequest, toVehicle,
   upsertApproval,
 } from "./store.js";
@@ -75,22 +75,12 @@ function handler(fn: (req: AuthedRequest, res: Response) => Promise<void>) {
 // ── Auth ────────────────────────────────────────────────────────────────────
 
 /**
- * Which sign-in methods this deployment offers. Unauthenticated on purpose —
- * the login screen needs it before anyone is signed in.
- */
-app.get("/api/auth/methods", handler(async (_req, res) => {
-  res.json({
-    password: String(process.env.ALLOW_PASSWORD_LOGIN || "").toLowerCase() === "true",
-  });
-}));
-
-/**
  * Signs a person in from a verified 10 Minute School session.
  *
  * The browser sends the access token it just obtained; we ask the provider who
- * that token belongs to, then match the email against the Employees sheet.
+ * that token belongs to, then build the session from that account's own record.
  * Everything about the person comes from the provider's `/v1/admin/me` record;
- * the Employees sheet is not consulted.
+ * nothing else is consulted.
  */
 const KNOWN_ROLES: Role[] = ["user", "admin", "hr", "finance"];
 
@@ -179,43 +169,6 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   });
 }));
 
-/**
- * Password sign-in, kept for local development and first-run setup only.
- * Disabled unless ALLOW_PASSWORD_LOGIN is set, because the sheet stores
- * passwords in plain text — 10 Minute School SSO is the real front door.
- */
-app.post("/api/login", handler(async (req, res) => {
-  if (String(process.env.ALLOW_PASSWORD_LOGIN || "").toLowerCase() !== "true") {
-    res.status(403).json({ error: "Password sign-in is disabled. Use “Login with 10 Minute School”." });
-    return;
-  }
-
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const password = String(req.body?.password ?? "");
-  if (!email || !password) {
-    res.status(400).json({ error: "Email and password are required." });
-    return;
-  }
-
-  const employee = (await allEmployees()).find(
-    (e) => e.email.toLowerCase() === email && e.password === password,
-  );
-  if (!employee) {
-    res.status(401).json({ error: "Wrong email or password." });
-    return;
-  }
-  if (employee.status !== "Active") {
-    res.status(403).json({ error: "This account is inactive. Contact PeopleOps." });
-    return;
-  }
-
-  const { password: _pw, status: _st, authId: _aid, _row, ...user } = employee;
-  res.json({
-    token: signToken(user),
-    user: { ...user, managesOthers: await managesOthers(user.employeeId) },
-  });
-}));
-
 app.get("/api/me", requireAuth, handler(async (req, res) => {
   // Recomputed rather than read from the token, so a saved bKash number, a
   // claim-window unlock, a hierarchy change etc. all take effect on the next
@@ -231,7 +184,7 @@ app.post("/api/me/bkash", requireAuth, handler(async (req, res) => {
     res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
     return;
   }
-  // There is no Employees sheet to save into any more; the number travels with the claim it is typed on.
+  // There is no employee table to save into; the number travels with the claim it is typed on.
   res.json({ ok: true, bkashNumber });
 }));
 
@@ -247,7 +200,7 @@ app.post("/api/employees/:id/bkash", requireAuth, handler(async (req, res) => {
     res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
     return;
   }
-  // There is no Employees sheet to save into any more; the number travels with the claim it is typed on.
+  // There is no employee table to save into; the number travels with the claim it is typed on.
   res.json({ ok: true, employeeId: req.params.id, bkashNumber });
 }));
 
@@ -317,7 +270,7 @@ function canView(session: Session, req: RequestRecord): boolean {
   if (req.teamMembers.some((m) => m.employeeId === session.employeeId)) return true;
   if (hasRole(session, "admin", "finance", "hr")) return true;
   // Line-manager access is decided by the request's ManagerID — which came from
-  // the requester's LineManagerID — not by any role in the sheet.
+  // the requester's LineManagerID — not by any stored role.
   if (req.managerId === session.employeeId) return true;
   return false;
 }
@@ -984,7 +937,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   // people submitting at the same instant would otherwise read the same
   // highest number and both be issued it.
   const prefix = cfgStr(policy, "REQUEST_ID_PREFIX", "TA");
-  const written = await withSheetLock(async () => {
+  const written = await withLock(async () => {
     const requestId = await nextRequestId(prefix);
     let built = buildRecord(draft, computation, session, policy, {
       requestId,
@@ -2152,13 +2105,11 @@ app.post("/api/admin/tabs/:tab", requireAuth, handler(async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? (req.body.rows as Row[]) : [];
   await replaceTabRows(tab, rows);
   invalidatePolicy();
-  invalidateEmployees();
   res.json({ ok: true, rows: rows.length });
 }));
 
 /**
- * Sheets API usage since the last reset, for checking headroom against
- * Google's 300 reads/min and 300 writes/min quotas.
+ * Database query counts since the last reset.
  */
 app.get("/api/admin/stats", requireAuth, handler(async (req, res) => {
   if (!hasRole(req.session, "admin", "hr")) {

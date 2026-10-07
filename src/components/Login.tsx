@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { ExternalLink, KeyRound, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { ExternalLink, Loader2 } from "lucide-react";
 import { LoginButton, useTenMSAuth } from "@tenminuteschool/auth-admin-react";
 import { api, setToken } from "../api.js";
 import { CLIENT_ID, REDIRECT_URI } from "../lib/auth.js";
@@ -9,9 +9,9 @@ import type { SessionUser } from "../../shared/types.js";
 /**
  * Sign-in is "Login with 10 Minute School".
  *
- * The SDK gets us a verified session; the app session comes from matching that
- * account's email against the Employees sheet, which is where band, department,
- * roles and line manager actually live.
+ * The SDK gets us a verified session; the app session is built from that
+ * account's own 10MS record, which is where band, department, roles and line
+ * manager come from.
  */
 export default function Login({
   onSignedIn,
@@ -24,11 +24,6 @@ export default function Login({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(notice);
   const [showRedirectHint, setShowRedirectHint] = useState(false);
-  const [passwordAllowed, setPasswordAllowed] = useState(false);
-
-  useEffect(() => {
-    api.authMethods().then((m) => setPasswordAllowed(m.password)).catch(() => {});
-  }, []);
 
   // The sign-in popup talks back to its opener with postMessage, which the
   // browser's Cross-Origin-Opener-Policy blocks when the opener is a
@@ -128,87 +123,12 @@ export default function Login({
           </div>
         )}
 
-        {passwordAllowed && <PasswordFallback onDone={onSignedIn} />}
       </Card>
 
       <p className="mt-8 text-center text-sm text-slate-500">
         Access restricted to authorized team members only.
       </p>
     </Shell>
-  );
-}
-
-/**
- * Development-only way in, shown only when the server reports that password
- * sign-in is switched on. It stays hidden — and the endpoint stays closed — on
- * any deployment that does not set ALLOW_PASSWORD_LOGIN.
- */
-function PasswordFallback({ onDone }: { onDone: (user: SessionUser) => void }) {
-  const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  const field =
-    "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-100 outline-none " +
-    "placeholder:text-slate-500 focus:border-white/25 focus:ring-2 focus:ring-white/10";
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        className="mt-5 flex w-full items-center justify-center gap-2 text-xs font-semibold text-slate-500 transition hover:text-slate-300"
-      >
-        <KeyRound size={13} /> Use a password instead (development only)
-      </button>
-    );
-  }
-
-  return (
-    <form
-      className="mt-5 space-y-3 rounded-xl bg-white/5 p-4 ring-1 ring-white/10"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError("");
-        try {
-          const { token, user } = await api.login(email, password);
-          setToken(token);
-          onDone(user);
-        } catch (err) {
-          setError((err as Error).message);
-          setBusy(false);
-        }
-      }}
-    >
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Development sign-in</p>
-      <input
-        className={field}
-        type="email"
-        autoComplete="username"
-        placeholder="you@10ms.com"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        required
-      />
-      <input
-        className={field}
-        type="password"
-        autoComplete="current-password"
-        placeholder="Password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-      />
-      {error && <p className="text-xs text-rose-300">{error}</p>}
-      <button
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-white/10 py-2.5 text-sm font-semibold text-slate-100 transition hover:bg-white/15 disabled:opacity-50"
-        disabled={busy}
-      >
-        {busy && <Loader2 size={14} className="animate-spin" />} Sign in
-      </button>
-    </form>
   );
 }
 

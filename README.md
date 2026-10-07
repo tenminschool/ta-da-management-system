@@ -4,13 +4,13 @@ A fully digital TA, Per-Diem, accommodation and travel-management module for Peo
 PRD in `Transportation Allowance (TA) & Per-Diem Management System.docx`. A Bangla summary of the
 requirement is in [REQUIREMENT-BANGLA.md](REQUIREMENT-BANGLA.md).
 
-**The database is the Google Sheet** — no other datastore is involved.
+**The database is PostgreSQL** — every record lives in `ta_da_*` tables. Nothing is stored in, or read from, a spreadsheet.
 
 ## Run it
 
 ```bash
 npm install
-npm run setup     # creates / repairs / migrates the 6 tabs (safe to re-run)
+npm run db:setup  # creates the ta_da_* tables and default policy rows (safe to re-run)
 npm run dev       # http://localhost:3000
 ```
 
@@ -26,92 +26,45 @@ serverless bundle.
 1. Import the repo in Vercel. `vercel.json` already sets the build command
    (`vite build`), the output directory (`dist`) and the rewrites — `/api/*`
    goes to the function, everything else to the SPA.
-2. Add the three environment variables below under **Settings → Environment
-   Variables** (Production, Preview and Development).
-3. Deploy, then open the app and sign in.
+2. Add these environment variables under **Settings → Environment Variables**:
 
-`GOOGLE_PRIVATE_KEY` works whether you paste it with real line breaks or with
-literal `\n` — the server normalises both.
+   | Variable | Purpose |
+   |---|---|
+   | `DATABASE_URL` | PostgreSQL connection string (`…?sslmode=require`). Tables are prefixed `ta_da_`. |
+   | `SESSION_SECRET` | A long random string that signs session tokens. Required in production. |
+   | `VITE_TENMS_CLIENT_ID` | Public client id for "Login with 10 Minute School". |
+3. Deploy, then open the app and sign in. The tables are created on first use; `npm run db:setup`
+   creates them ahead of time.
 
-### Optional tuning
-
-| Variable | Default | What it does |
-|---|---|---|
-| `SHEETS_READS_PER_MINUTE` | 150 | Pace of Sheets reads, kept under Google's 300/min |
-| `SHEETS_WRITES_PER_MINUTE` | 150 | Same for writes |
-
-### One thing to know about serverless
-
-The rate limiter and the write lock live **inside one process**. Vercel runs
-several instances under load, so they do not coordinate. Two protections cover
-this: request numbers are re-checked against the sheet after writing and
-reissued if another instance took the same one, and the retry/backoff handles
-any quota rejection. At ~50 claims a day this is comfortable. If you ever push
-far past that, move `Requests` to a real database and keep the sheet as a
-mirror — nothing else in the design would change.
-
-Credentials come from `.env` (generated from `test.md`): `GOOGLE_CLIENT_EMAIL`,
-`GOOGLE_PRIVATE_KEY`, `SPREADSHEET_ID`.
+Request numbers are allocated under a Postgres advisory lock, so several serverless instances can
+file claims at the same moment without ever being issued the same number.
 
 ## Sign in
 
-Accounts live in the **Employees** tab. Seeded logins all use password `1234`:
+Sign-in is "Login with 10 Minute School". The server verifies the access token with the provider and
+builds the session from that account's own 10MS record (`/v1/admin/me`):
 
-| Email | Roles column | Reports to | Band |
-|---|---|---|---|
-| ariful@10ms.com | `user` | Rakib | G (male) |
-| nusrat@10ms.com | `user` | Rakib | F (female) |
-| sadia@10ms.com | `user` | Tanvir | E2 |
-| tanvir@10ms.com | `user` | Farhana | D |
-| rakib@10ms.com | `user` | Farhana | C |
-| farhana@10ms.com | `hr` | — | B |
-| admin@10ms.com | `admin` | Farhana | D |
-| finance@10ms.com · finance2@10ms.com | `finance` | Farhana | D · E1 |
-| hr@10ms.com · hr2@10ms.com | `hr` | Farhana | C · E1 |
+| App field | 10MS field |
+|---|---|
+| employee id | `employee_id` |
+| name, email | `name`, `username` |
+| designation | `current_hr_position` |
+| department | `department` |
+| band | worked out from the HR position (A, B, C1, C2, D, E) |
+| line manager | `supervisor` (looked up in the 10MS directory) |
+| payment number | `phone_number` |
 
-### Only four roles — the hierarchy is not one of them
+Admin, HR and Finance roles are granted by email in **Configuration → Roles** and stored in the
+`ta_da_role_grants` table; `fahad@10minuteschool.com` is always an admin, and `DEFAULT_ADMIN_EMAILS`
+adds more.
 
-The roles column holds one of `user`, `admin`, `hr`, `finance`, and **any number of people can hold
-each one**. `user` — raise and track your own claims — is granted to everyone automatically, so the
-column only ever names the extra desk somebody sits at: a Finance person's cell reads just
-`finance`, never `user,finance`. Admin, HR and Finance all keep the ability to file their own
-claims.
+## Database tables — one row per record
 
-Administration can do everything HR can — approve an advance at the HR step,
-reject one, and record its settlement — plus its own stage in the claim chain.
-Finance alone releases money.
-
-**You never write "manager" or "department head" anywhere.** Both come from the `LineManagerID`
-column, which you are maintaining regardless:
-
-- **Line manager** — anyone whose employee ID appears in someone else's `line_manager_id`. They get
-  the Approval Desk automatically, and see exactly their own reports' claims. Rakib above is a plain
-  `user` and still approves Ariful's claims, because Ariful points at him.
-- **Department head** — one level above the approving line manager, i.e. the line manager's own line
-  manager. For Ariful (→ Rakib → Farhana) that is Farhana. An advance over the limit always takes a
-  second approval after HR: the department head when the employee has one, Administration when
-  nobody sits above the line manager. Administration can clear either case, and its approval is the
-  last stage.
-
-Move a person to a different manager in the sheet and their approvals move with them on the next
-request — nothing else to update.
-
-A shared queue works as you'd expect: a claim waiting on Finance appears in **every** Finance
-person's Pending Approvals, whoever opens it first decides it, and from that moment the others can
-no longer act on it. The Approvals row then carries **that person's own name** — `FinanceBy`,
-`PaymentBy`, `AdvanceHRBy` and so on record who actually clicked, with their own remark beside it.
-The same holds for HR on advances and for `PaidBy` on the request row.
-
-## Google Sheet tabs — six, one row per record
-
-Created, formatted and migrated automatically by `npm run setup` (frozen bold headers,
-colour-coded tabs, column widths, filters). Re-running it is safe: each tab is re-read under its
-own live headers and written back **mapped by column name**, so a column can be added anywhere —
-even at the front — without shifting a single value.
+Created and topped up automatically on first use (or by `npm run db:setup`): every tab below is
+a `ta_da_<name>` table whose columns are the headers in `server/schema.ts`.
 
 | Tab | What it holds |
 |---|---|
-| `Employees` | `auth_id` (filled in on first SSO sign-in), people, bands, `line_manager_id` (which defines the whole hierarchy), roles, login |
 | `Requests` | **One row per claim.** Trips, team members, document links, payment details and advance/settlement are columns on that row — never extra rows |
 | `Approvals` | **One row per claim**, with a column group per desk: `ManagerStatus / ManagerBy / ManagerAt / ManagerRemarks`, then Admin, Finance, Payment, and the advance HR / Dept-Head steps |
 | `Config` | Rates, limits and thresholds as key/value |
@@ -190,39 +143,7 @@ authoritative). It reads every number from the sheet — nothing is hard-coded:
   Administration when there is nobody above the line manager. Settlement is due 3 working days
   after the trip.
 
-Change any of it from **Configuration** in the app, or by editing the sheet directly — no code change.
-
-## Capacity against the Google Sheets quota
-
-Sheets allows 300 reads/min and 300 writes/min per service account. Measured cost (via
-`GET /api/admin/stats`, admin only):
-
-| Action | Reads | Writes |
-|---|---|---|
-| Open the app | 1 | 0 |
-| Typing in the form (live calculation) | 0 | 0 |
-| Submit a claim | 2 | 2 |
-| One approval | 2 | 2 |
-| **A whole claim, submit → paid, everyone looking** | **17** | **10** |
-
-For 300 employees with ~50 claims a day that is ~850 reads and ~500 writes spread over a working
-day — a couple of calls a minute against a 300/min budget. The quota only matters if many people
-act inside the *same minute*, so three things protect it:
-
-- **Caching** — the policy, employee roster and header rows are cached, so browsing and typing cost
-  nothing. The live calculation in the form runs entirely in the browser.
-- **A token-bucket rate limiter** paces all Sheets traffic below the quota, turning a spike into a
-  short queue instead of a wall of errors. Tune with `SHEETS_READS_PER_MINUTE` /
-  `SHEETS_WRITES_PER_MINUTE`.
-- **Retry with backoff** absorbs anything that still gets a 429.
-
-Verified: 20 people submitting simultaneously and then pushing all 20 claims through every desk
-completes with **zero failures**.
-
-Two caveats worth knowing. The rate limiter and the request-number lock are **per process**, so run
-a single server instance — on multi-instance serverless they would not coordinate. And if you ever
-outgrow this, the fix is to move the `Requests` tab to a real database and keep the sheet as a
-mirror; nothing else in the design would change.
+Change any of it from **Configuration** in the app — no code change.
 
 ## Two workspaces: My Claims vs Approval Desk
 
@@ -264,11 +185,11 @@ and `LastActionAt` always name the most recent decision.
 ```
 server.ts               API + Vite middleware
 server/schema.ts        every tab, header and seed row — the single source of truth
-server/sheets.ts        record layer over the sheet, rate limiting, retry, write lock
-server/store.ts         row ↔ record mapping, cell packing, policy and roster loading
+server/db.ts            record layer over PostgreSQL, schema creation, request-number lock
+server/store.ts         row ↔ record mapping, cell packing, policy loading
 server/auth.ts          stateless HMAC session tokens
 shared/policy.ts        the rule engine, shared by client and server
 shared/types.ts         shared types
-scripts/setup-sheets.ts create, repair and migrate the spreadsheet
+scripts/setup-db.ts     create the tables and default policy rows
 src/                    React client
 ```

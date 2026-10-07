@@ -1,16 +1,14 @@
 /**
- * Domain layer: converts between sheet rows and typed records, loads the
+ * Domain layer: converts between database rows and typed records, loads the
  * admin-configured policy, and owns ID generation.
  *
  * A request occupies exactly one row. The repeating parts — trips, team
  * members, document links — are packed into a single cell each, one item per
- * line with ` | ` between fields, so the sheet stays readable and a request is
- * never spread across rows.
+ * line with ` | ` between fields, so a request is never spread across rows.
  */
 
 import crypto from "crypto";
-import { appendRow, readTab, readTabs, updateRow, withSheetLock, type Row } from "./data.js";
-import { readTab as readSheetTab } from "./sheets.js";
+import { appendRow, readTab, readTabs, updateRow, withLock, type Row } from "./db.js";
 import type {
   ApprovalRow, InsideCityBlockEntry, Leg, Policy, RequestRecord, Role, RoleGrant, SessionUser, StageKey, Status, TeamMember, UnlockRequest,
   VehicleRegistration,
@@ -111,73 +109,29 @@ export async function loadPolicy(): Promise<Policy> {
   return policy;
 }
 
-// ── Employees ───────────────────────────────────────────────────────────────
+// ── Late-claim windows ──────────────────────────────────────────────────────
 
-export interface EmployeeRow extends SessionUser {
-  password: string;
-  status: string;
-  authId: string;
-  _row: string;
+/** The late-claim windows an administrator has opened for one person. */
+export async function getClaimUnlock(employeeId: string): Promise<{ from: string; exact: string }> {
+  if (!employeeId) return { from: "", exact: "" };
+  const r = (await readTab("ClaimUnlocks")).find((x) => x.employee_id === employeeId);
+  return { from: r?.claim_unlock_from || "", exact: r?.claim_unlock_exact || "" };
 }
 
-const ROLES: Role[] = ["user", "admin", "hr", "finance"];
-
-/**
- * Everyone can raise a claim, so `user` is always granted and never has to be
- * written in the sheet. `employee` from the earlier layout is read as `user`,
- * and anything unrecognised is ignored rather than silently granting access.
- */
-function parseRoles(raw: string | undefined): Role[] {
-  const named = csv(raw)
-    .map((r) => r.toLowerCase())
-    .map((r) => (r === "employee" ? "user" : r))
-    .filter((r): r is Role => (ROLES as string[]).includes(r));
-  return [...new Set<Role>(["user", ...named])];
+/** One row per employee; each kind of unlock changes only its own column. */
+export async function setClaimUnlock(employeeId: string, change: Row): Promise<boolean> {
+  if (!employeeId) return false;
+  const row = (await readTab("ClaimUnlocks")).find((r) => r.employee_id === employeeId);
+  if (row) {
+    const { _row, ...rest } = row;
+    await updateRow("ClaimUnlocks", _row, { ...rest, ...change });
+  } else {
+    await appendRow("ClaimUnlocks", { employee_id: employeeId, claim_unlock_from: "", claim_unlock_exact: "", ...change });
+  }
+  return true;
 }
 
-export function toEmployee(r: Row & { _row: string }): EmployeeRow {
-  return {
-    authId: r.auth_id,
-    employeeId: r.employee_id,
-    name: r.name,
-    email: String(r.username || r.email || "").trim(),
-    password: String(r.password ?? ""),
-    gender: r.gender,
-    band: r.band,
-    department: r.department,
-    designation: r.current_hr_position ?? r.designation,
-    lineManagerId: r.supervisor ?? r.line_manager_id,
-    roles: parseRoles(r.roles),
-    paymentMethod: r.payment_method,
-    accountNumber: r.phone_number ?? r.account_number,
-    claimUnlockFrom: r.claim_unlock_from || "",
-    claimUnlockExact: r.claim_unlock_exact || "",
-    status: r.employee_status || r.status || "Active",
-    _row: r._row,
-  };
-}
-
-/**
- * The roster is read on login, on every team-member search and on every
- * approval (to find the next desk's recipients). It changes rarely, so a short
- * cache removes most of those reads. Admin edits invalidate it immediately; a
- * row added straight into the sheet is picked up within the TTL.
- */
-let employeeCache: { rows: EmployeeRow[]; at: number } | null = null;
-const EMPLOYEE_TTL_MS = 45_000;
-
-export function invalidateEmployees(): void {
-  employeeCache = null;
-}
-
-export async function allEmployees(): Promise<EmployeeRow[]> {
-  if (employeeCache && Date.now() - employeeCache.at < EMPLOYEE_TTL_MS) return employeeCache.rows;
-  const rows = (await readSheetTab("Employees")).map(toEmployee);
-  employeeCache = { rows, at: Date.now() };
-  return rows;
-}
-
-// ── Hierarchy, derived from the LineManagerID column ────────────────────────
+// ── Hierarchy, derived from the claims themselves ────────────────────────
 
 /**
  * True when any claim has been routed to this person as its approver.
@@ -669,7 +623,7 @@ export async function upsertApproval(
 ): Promise<void> {
   // Read-then-create, so it has to be serialised: two approvals landing at the
   // same instant would otherwise both see "no row yet" and append two.
-  await withSheetLock(async () => {
+  await withLock(async () => {
   const rows = await readTab("Approvals");
   const existing = rows.find((r) => r.request_id === requestId);
   const stamp = nowISO();
