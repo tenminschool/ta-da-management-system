@@ -230,6 +230,8 @@ export const api = {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", plan.endpoint, true);
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      // The file service also wants the signed-in 10MS token as the user key.
+      xhr.setRequestHeader("x-tenms-user-key", token);
       xhr.setRequestHeader("accept", "application/json");
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
