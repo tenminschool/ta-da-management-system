@@ -9,7 +9,7 @@
  */
 
 export const UPLOAD_ENDPOINT =
-  process.env.UPLOAD_ENDPOINT || "https://api.10minuteschool.com/s3-manager/api/v1/files/services/upload";
+  process.env.UPLOAD_ENDPOINT || "https://api.10minuteschool.com/s3-manager/api/v1/files/upload";
 export const UPLOAD_BUCKET = process.env.UPLOAD_BUCKET || "10mscdn";
 export const UPLOAD_ACL = process.env.UPLOAD_ACL || "public-read";
 
