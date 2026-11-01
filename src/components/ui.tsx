@@ -79,7 +79,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`card ${className}`}>
+    <section className={`card min-w-0 ${className}`}>
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5 sm:px-5 sm:py-4">
           <div>
@@ -89,7 +89,7 @@ export function Card({
           {actions}
         </header>
       )}
-      <div className="p-4 sm:p-5">{children}</div>
+      <div className="min-w-0 p-4 sm:p-5">{children}</div>
     </section>
   );
 }

@@ -7,6 +7,7 @@ import { api, type RequestDetail as Detail } from "../api.js";
 import type { ApprovalRow, Policy, RequestDraft, SessionUser } from "../../shared/types.js";
 import { STATUS_PROGRESS, TRACK_STAGES } from "../../shared/types.js";
 import { cfgNum, cfgStr, insidePerTravellerAmount, money, todayISO } from "../../shared/policy.js";
+import { documentName } from "../lib/files.js";
 import { Card, Empty, Field, Modal, Money, Notice, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestDetail({
@@ -418,10 +419,10 @@ export default function RequestDetail({
                       href={link}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 text-sm transition hover:border-brand-200 hover:bg-slate-50"
+                      className="flex min-w-0 items-center gap-3 rounded-xl border border-slate-200 px-3 py-2.5 text-sm transition hover:border-brand-200 hover:bg-slate-50"
                     >
                       <LinkIcon size={15} className="shrink-0 text-slate-400" />
-                      <span className="min-w-0 flex-1 truncate font-medium text-slate-700">{link}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium text-slate-700" title={documentName(link)}>{documentName(link)}</span>
                       <ExternalLink size={14} className="shrink-0 text-brand-500" />
                     </a>
                   </li>

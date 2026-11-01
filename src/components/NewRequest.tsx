@@ -9,6 +9,7 @@ import {
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
+import { documentName } from "../lib/files.js";
 import { VehicleRegisterForm } from "./VehicleRegister.js";
 
 const STEPS = ["Travel Type", "Transportation", "Allowances", "Documents"];
@@ -1810,7 +1811,7 @@ function StepDocuments({
 
   const maxMB = Math.round(maxBytes / 1024 / 1024);
   const mb = (n: number) => `${(n / 1024 / 1024).toFixed(n < 1024 * 1024 ? 2 : 1)} MB`;
-  const nameFor = (link: string) => uploads.find((u) => u.link === link)?.name || link;
+  const nameFor = (link: string) => uploads.find((u) => u.link === link)?.name || documentName(link);
 
   async function accept(list: FileList | null) {
     if (!list?.length) return;
@@ -1939,11 +1940,11 @@ function StepDocuments({
           {errors.length > 0 && <Notice tone="error" items={errors} />}
 
           {draft.documentLinks.length > 0 && (
-            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+            <ul className="min-w-0 divide-y divide-slate-100 rounded-xl border border-slate-200">
               {draft.documentLinks.map((link) => {
                 const up = uploads.find((u) => u.link === link);
                 return (
-                  <li key={link} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                  <li key={link} className="flex min-w-0 items-center gap-3 px-4 py-2.5 text-sm">
                     <FileText size={15} className="shrink-0 text-slate-400" />
                     <span className="min-w-0 flex-1">
                       <a
@@ -1951,6 +1952,7 @@ function StepDocuments({
                         target="_blank"
                         rel="noreferrer"
                         className="block truncate font-medium text-slate-700 hover:underline"
+                        title={nameFor(link)}
                       >
                         {nameFor(link)}
                       </a>
