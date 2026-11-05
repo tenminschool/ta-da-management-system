@@ -111,6 +111,7 @@ export interface TenMSRecord {
   /** The line manager's display name (no ID or email), e.g. "Md. Mahmud Siddik". */
   supervisor?: string;
   phone_number?: string;
+  profile_img?: string;
   groups?: string[];
   teams?: { id: string; name: string }[];
 }

@@ -158,6 +158,7 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     band: bandForPosition(hr.current_hr_position || hr.designation || hr.job_role),
     department: hr.department || hr.current_department || "",
     designation: hr.current_hr_position || hr.designation || hr.job_role || "",
+    picture: /^https?:\/\//i.test(hr.profile_img || profile.picture || "") ? (hr.profile_img || profile.picture || "") : "",
     lineManagerId,
     lineManagerEmail,
     roles,

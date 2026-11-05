@@ -89,6 +89,8 @@ export interface SessionUser {
   band: string;
   department: string;
   designation: string;
+  /** Link to the profile photo on the 10MS record (`profile_img`); blank when there is none. */
+  picture?: string;
   lineManagerId: string;
   /** The line manager's email, when resolved from the HR record's supervisor name at sign-in. */
   lineManagerEmail?: string;

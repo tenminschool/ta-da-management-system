@@ -269,7 +269,8 @@ export default function App() {
         <UserMenu
           name={tenmsUser?.name || user.name}
           email={user.email}
-          subtitle={`Band ${user.band} · ${user.department}`}
+          subtitle={user.band ? `Band ${user.band}` : undefined}
+          picture={user.picture}
           // The host owns the session when this panel is embedded — signing
           // out here would strand the two out of step.
           onSignOut={HOST_OWNS_SESSION ? undefined : () => void signOut()}

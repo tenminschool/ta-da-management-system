@@ -329,9 +329,11 @@ export function MultiSelect({
  * click rather than needing a dedicated close button.
  */
 export function UserMenu({
-  name, email, subtitle, onSignOut,
-}: { name: string; email: string; subtitle?: string; onSignOut?: () => void }) {
+  name, email, subtitle, picture, onSignOut,
+}: { name: string; email: string; subtitle?: string; picture?: string; onSignOut?: () => void }) {
   const [open, setOpen] = React.useState(false);
+  const [photoFailed, setPhotoFailed] = React.useState(false);
+  React.useEffect(() => setPhotoFailed(false), [picture]);
   const ref = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -343,9 +345,20 @@ export function UserMenu({
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
 
+  // The profile photo when there is one and it loads; the generic glyph otherwise.
   const AvatarGlyph = () => (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">
-      <UserRound size={16} />
+    <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
+      {picture && !photoFailed ? (
+        <img
+          src={picture}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={() => setPhotoFailed(true)}
+          className="size-full object-cover"
+        />
+      ) : (
+        <UserRound size={16} />
+      )}
     </span>
   );
 
