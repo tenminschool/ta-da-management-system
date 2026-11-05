@@ -127,6 +127,7 @@ export default function NewRequest({
       const res = editing
         ? await api.update(editing.requestId, draft, submit)
         : await api.create(draft, submit);
+      if (res.mailWarning) console.warn("[mail]", res.mailWarning);
       onDone(res.request.requestId);
     } catch (err) {
       setError((err as Error).message);

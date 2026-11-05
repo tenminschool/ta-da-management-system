@@ -310,20 +310,20 @@ export const api = {
   // The 10MS token rides along so the server can look up each teammate's
   // supervisor in the directory for the claim notifications.
   create: async (draft: RequestDraft, submit: boolean) =>
-    call<{ request: RequestRecord; computation: Computation }>("/requests", {
+    call<{ request: RequestRecord; computation: Computation; mailWarning?: string }>("/requests", {
       method: "POST",
       body: JSON.stringify({ draft, submit }),
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
   update: async (id: string, draft: RequestDraft, submit: boolean) =>
-    call<{ request: RequestRecord; computation: Computation }>(`/requests/${encodeURIComponent(id)}`, {
+    call<{ request: RequestRecord; computation: Computation; mailWarning?: string }>(`/requests/${encodeURIComponent(id)}`, {
       method: "PUT",
       body: JSON.stringify({ draft, submit }),
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
   // The 10MS token is what the notification mails are sent with.
   act: async (id: string, action: string, remarks: string, approvedAmount?: number) =>
-    call<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/action`, {
+    call<{ request: RequestRecord; mailWarning?: string }>(`/requests/${encodeURIComponent(id)}/action`, {
       method: "POST",
       body: JSON.stringify({ action, remarks, approvedAmount }),
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },

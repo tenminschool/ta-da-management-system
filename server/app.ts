@@ -1026,9 +1026,11 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   });
   const record = await ensureUniqueRequestId(written.built, written.rowNumber, prefix);
 
-  if (submit) await onSubmitted(record, req.session, policy, false, appLink(req), String(req.headers["x-tenms-token"] || ""));
+  const mailWarning = submit
+    ? await onSubmitted(record, req.session, policy, false, appLink(req), String(req.headers["x-tenms-token"] || ""))
+    : "";
 
-  res.json({ request: record, computation });
+  res.json({ request: record, computation, mailWarning });
 }));
 
 app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
@@ -1080,11 +1082,11 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   });
 
   await updateRow("Requests", row._row, fromRequest(updated));
-  if (submit) {
-    await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req), String(req.headers["x-tenms-token"] || ""));
-  }
+  const mailWarning = submit
+    ? await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req), String(req.headers["x-tenms-token"] || ""))
+    : "";
 
-  res.json({ request: updated, computation });
+  res.json({ request: updated, computation, mailWarning });
 }));
 
 async function onSubmitted(
@@ -1094,7 +1096,7 @@ async function onSubmitted(
   resubmit = false,
   link = "",
   token = "",
-): Promise<void> {
+): Promise<string> {
   await upsertApproval(
     record.requestId,
     record.employeeName,
@@ -1104,7 +1106,7 @@ async function onSubmitted(
       lastAction: resubmit ? `Resubmitted by ${session.name}` : `Submitted by ${session.name}`,
     },
   );
-  await notifyClaim(record, { kind: "submitted", resubmit }, link, token);
+  return notifyClaim(record, { kind: "submitted", resubmit }, link, token);
 
 }
 
@@ -1250,14 +1252,14 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
     lastAction: `${stageStatus} by ${req.session.name}`,
   });
 
-  await notifyClaim(updated, {
+  const mailWarning = await notifyClaim(updated, {
     kind: action === "approve" ? "approved" : action === "reject" ? "rejected" : "returned",
     stage,
     by: req.session.name,
     remarks,
   }, appLink(req), String(req.headers["x-tenms-token"] || ""));
 
-  res.json({ request: updated });
+  res.json({ request: updated, mailWarning });
 }));
 
 // Company Arrangement trips are paid by the company directly, so the

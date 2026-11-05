@@ -206,28 +206,41 @@ async function send(to: string, subject: string, body: string, token: string): P
 }
 
 /**
- * Sends this event's mails. Never throws; failures are logged per address.
+ * Sends this event's mails. Never throws; failures are logged per address and
+ * summarised in the returned text ("" when everything went out), so the caller
+ * can pass it back to the browser.
  * `link` is where the app is reachable, for the "open" link in the mail.
  * `token` is the acting person's own 10MS sign-in token, sent as the Bearer
  * value — the same token the browser uses for document uploads.
  */
-export async function notifyClaim(record: RequestRecord, event: ClaimEvent, link: string, token: string): Promise<void> {
+export async function notifyClaim(record: RequestRecord, event: ClaimEvent, link: string, token: string): Promise<string> {
   try {
     if (!token) {
-      console.warn(`[mail] ${record.requestId}: no 10MS sign-in token came with the request; mails not sent.`);
-      return;
+      const why = "no 10MS sign-in token came with the request";
+      console.warn(`[mail] ${record.requestId}: ${why}; mails not sent.`);
+      return `Emails not sent: ${why}.`;
     }
     const recipients = await recipientsFor(record, event);
     const subject = `[TA/DA] ${headline(record, event)}`;
     const results = await Promise.allSettled(
       [...recipients].map(([email, r]) => send(email, subject, bodyFor(record, event, r, link), token)),
     );
+    const to = [...recipients.keys()];
+    const failed: string[] = [];
     results.forEach((res, i) => {
       if (res.status === "rejected") {
-        console.warn(`[mail] ${record.requestId} → ${[...recipients.keys()][i]} failed:`, (res.reason as Error)?.message);
+        const msg = (res.reason as Error)?.message;
+        console.warn(`[mail] ${record.requestId} → ${to[i]} failed:`, msg);
+        failed.push(`${to[i]} (${msg})`);
       }
     });
+    if (!to.length) {
+      console.warn(`[mail] ${record.requestId}: nobody to notify — no email addresses on the claim.`);
+      return "Emails not sent: no email addresses were found for this claim.";
+    }
+    return failed.length ? `Emails failed for ${failed.join("; ")}` : "";
   } catch (err) {
     console.warn(`[mail] ${record.requestId} notifications failed:`, (err as Error).message);
+    return `Emails not sent: ${(err as Error).message}`;
   }
 }

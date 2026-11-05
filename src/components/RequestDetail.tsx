@@ -956,7 +956,8 @@ function ActionModal({
     setBusy(true);
     setError("");
     try {
-      await api.act(requestId, action, remarks, action === "approve" ? Number(amount) : undefined);
+      const res = await api.act(requestId, action, remarks, action === "approve" ? Number(amount) : undefined);
+      if (res.mailWarning) console.warn("[mail]", res.mailWarning);
       onDone();
     } catch (err) {
       setError((err as Error).message);
