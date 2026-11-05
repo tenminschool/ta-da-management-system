@@ -21,6 +21,7 @@ import {
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
 import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
+import { notifyClaim } from "./mail.js";
 import {
   deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, setClaimUnlock, nextRequestId, nextUnlockRequestId,
@@ -583,6 +584,35 @@ app.post("/api/requests/preview", requireAuth, handler(async (req, res) => {
 }));
 
 /** Fills in every field so a partial payload from the client can't throw. */
+/** Where the app is reachable, for links in notification mails. */
+function appLink(req: Request): string {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  const host = req.get("x-forwarded-host") || req.get("host");
+  const proto = (req.get("x-forwarded-proto") || req.protocol || "https").split(",")[0];
+  return host ? `${proto}://${host}` : "";
+}
+
+/**
+ * Fills in each team member's email and their own supervisor's email from the
+ * 10MS directory, so the claim notifications reach them. Looked up with the
+ * submitter's own 10MS token; anyone who cannot be resolved simply gets no mail.
+ */
+async function withTeamContacts(draft: RequestDraft, token: string): Promise<RequestDraft> {
+  if (draft.travelType !== "team" || !draft.teamMembers.length || !token) return draft;
+  const teamMembers = await Promise.all(draft.teamMembers.map(async (m) => {
+    try {
+      const found = (await searchAdmins(token, m.name || m.employeeId, 50)).find((p) => p.employeeId === m.employeeId);
+      const email = (found?.email || m.email || "").toLowerCase();
+      const boss = found?.supervisor ? await resolveSupervisor(token, found.supervisor) : null;
+      return { ...m, email, supervisorEmail: boss?.email || m.supervisorEmail || "" };
+    } catch (err) {
+      console.warn(`[mail] could not look up team member ${m.employeeId}:`, (err as Error).message);
+      return m;
+    }
+  }));
+  return { ...draft, teamMembers };
+}
+
 function normaliseDraft(raw: unknown): RequestDraft {
   const d = (raw ?? {}) as Partial<RequestDraft>;
   const n = (v: unknown) => {
@@ -909,8 +939,10 @@ function childFromMain(main: RequestRecord, member: TeamMember, amount: number, 
 
 app.post("/api/requests", requireAuth, handler(async (req, res) => {
   const policy = await loadPolicy();
-  const draft = normaliseDraft(req.body?.draft);
   const submit = req.body?.submit !== false;
+  const draft = submit
+    ? await withTeamContacts(normaliseDraft(req.body?.draft), String(req.headers["x-tenms-token"] || ""))
+    : normaliseDraft(req.body?.draft);
   // Read once and reused below: buildRecord's fuel_rate has to be priced
   // against the same registered vehicle the amount itself was computed from.
   const session = await currentSession(req.session);
@@ -987,7 +1019,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   });
   const record = await ensureUniqueRequestId(written.built, written.rowNumber, prefix);
 
-  if (submit) await onSubmitted(record, req.session, policy);
+  if (submit) await onSubmitted(record, req.session, policy, false, appLink(req), String(req.headers["x-tenms-token"] || ""));
 
   res.json({ request: record, computation });
 }));
@@ -1010,8 +1042,9 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   }
 
   const policy = await loadPolicy();
-  const draft = normaliseDraft({ ...req.body?.draft, requestId: existing.requestId });
   const submit = req.body?.submit !== false;
+  const normalised = normaliseDraft({ ...req.body?.draft, requestId: existing.requestId });
+  const draft = submit ? await withTeamContacts(normalised, String(req.headers["x-tenms-token"] || "")) : normalised;
   if (submit) {
     const waiting = (await awaitingAcknowledgement(req.session.employeeId))
       .filter((id) => id !== existing.requestId);
@@ -1040,7 +1073,9 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   });
 
   await updateRow("Requests", row._row, fromRequest(updated));
-  if (submit) await onSubmitted(updated, req.session, policy, existing.status === "returned");
+  if (submit) {
+    await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req), String(req.headers["x-tenms-token"] || ""));
+  }
 
   res.json({ request: updated, computation });
 }));
@@ -1050,6 +1085,8 @@ async function onSubmitted(
   session: Session,
   policy: Awaited<ReturnType<typeof loadPolicy>>,
   resubmit = false,
+  link = "",
+  token = "",
 ): Promise<void> {
   await upsertApproval(
     record.requestId,
@@ -1060,6 +1097,7 @@ async function onSubmitted(
       lastAction: resubmit ? `Resubmitted by ${session.name}` : `Submitted by ${session.name}`,
     },
   );
+  await notifyClaim(record, { kind: "submitted", resubmit }, link, token);
 
 }
 
@@ -1205,6 +1243,12 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
     lastAction: `${stageStatus} by ${req.session.name}`,
   });
 
+  await notifyClaim(updated, {
+    kind: action === "approve" ? "approved" : action === "reject" ? "rejected" : "returned",
+    stage,
+    by: req.session.name,
+    remarks,
+  }, appLink(req), String(req.headers["x-tenms-token"] || ""));
 
   res.json({ request: updated });
 }));

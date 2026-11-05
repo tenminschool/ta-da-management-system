@@ -159,6 +159,7 @@ function packTeam(members: TeamMember[]): string {
     .map((m) => [
       m.employeeId, m.name, m.department, m.designation, m.band, m.gender, m.bkashNumber,
       m.companyTransportAmount || "", m.companyAccommodationAmount || "", yn(m.officeMealTaken),
+      m.email || "", m.supervisorEmail || "",
     ].join(" | "))
     .join("\n");
 }
@@ -168,12 +169,15 @@ function unpackTeam(cell: string | undefined): TeamMember[] {
     const [
       employeeId = "", name = "", department = "", designation = "", band = "", gender = "", bkashNumber = "",
       companyTransportAmount = "", companyAccommodationAmount = "", officeMealTaken = "",
+      email = "", supervisorEmail = "",
     ] = line.split("|").map((s) => s.trim());
     return {
       employeeId, name, department, designation, band, gender, bkashNumber,
       companyTransportAmount: num(companyTransportAmount),
       companyAccommodationAmount: num(companyAccommodationAmount),
       officeMealTaken: bool(officeMealTaken),
+      email: email.toLowerCase(),
+      supervisorEmail: supervisorEmail.toLowerCase(),
     };
   });
 }

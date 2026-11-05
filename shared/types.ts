@@ -205,6 +205,10 @@ export interface TeamMember {
    */
   companyTransportAmount: number;
   companyAccommodationAmount: number;
+  /** Work email, from the directory — for claim notifications. */
+  email?: string;
+  /** Their own line manager's email, resolved when the claim is submitted. */
+  supervisorEmail?: string;
 }
 
 export interface Leg {

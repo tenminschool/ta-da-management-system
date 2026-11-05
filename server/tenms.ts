@@ -104,6 +104,8 @@ export interface TenMSPerson {
   designation: string;
   band: string;
   gender: string;
+  /** Their line manager's display name, as the HR record holds it. */
+  supervisor: string;
 }
 
 /**
@@ -130,6 +132,7 @@ export async function searchAdmins(accessToken: string, q: string, limit = 25): 
       designation: str(u.designation) || str(u.job_role),
       band: str(u.band),
       gender: str(u.gender),
+      supervisor: str(u.supervisor),
     }))
     .filter((p) => p.employeeId && p.name);
 }

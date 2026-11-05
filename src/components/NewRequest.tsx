@@ -806,6 +806,7 @@ function TeamPicker({
           designation: e.designation,
           band: e.band,
           gender: e.gender,
+          email: e.email,
           // Left blank rather than pulled from their record: the search
           // endpoint answers on every keystroke, and returning someone's
           // personal payout number just for typing their name is a wider leak
