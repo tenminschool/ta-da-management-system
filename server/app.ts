@@ -144,7 +144,11 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   // looked up in the directory. That, the granted roles and the "manages anyone" check do not
   // depend on one another, so they run together rather than one after the other.
   const [boss, roles, manages] = await Promise.all([
-    hr.supervisor ? resolveSupervisor(accessToken, hr.supervisor) : Promise.resolve(null),
+    // The record carries the manager's ID and email directly; only an older record that has
+    // just the name needs the directory lookup.
+    hr.supervisor_email
+      ? Promise.resolve({ employeeId: hr.supervisor_employee_id || "", email: hr.supervisor_email.trim().toLowerCase() })
+      : hr.supervisor ? resolveSupervisor(accessToken, hr.supervisor) : Promise.resolve(null),
     effectiveRoles(email, rolesFrom(hr.groups)),
     managesOthers(employeeId),
   ]);
@@ -604,8 +608,10 @@ async function withTeamContacts(draft: RequestDraft, token: string): Promise<Req
     try {
       const found = (await searchAdmins(token, m.name || m.employeeId, 50)).find((p) => p.employeeId === m.employeeId);
       const email = (found?.email || m.email || "").toLowerCase();
-      const boss = found?.supervisor ? await resolveSupervisor(token, found.supervisor) : null;
-      return { ...m, email, supervisorEmail: boss?.email || m.supervisorEmail || "" };
+      const supervisorEmail = found?.supervisorEmail
+        || (found?.supervisor ? (await resolveSupervisor(token, found.supervisor))?.email : "")
+        || m.supervisorEmail || "";
+      return { ...m, email, supervisorEmail };
     } catch (err) {
       console.warn(`[mail] could not look up team member ${m.employeeId}:`, (err as Error).message);
       return m;

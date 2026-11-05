@@ -110,6 +110,9 @@ export interface TenMSRecord {
   department?: string;
   /** The line manager's display name (no ID or email), e.g. "Md. Mahmud Siddik". */
   supervisor?: string;
+  /** The line manager's own employee ID and email, as the HR record holds them. */
+  supervisor_employee_id?: string;
+  supervisor_email?: string;
   phone_number?: string;
   profile_img?: string;
   groups?: string[];
@@ -126,6 +129,7 @@ export interface TenMSPerson {
   gender: string;
   /** Their line manager's display name, as the HR record holds it. */
   supervisor: string;
+  supervisorEmail: string;
 }
 
 /**
@@ -153,6 +157,7 @@ export async function searchAdmins(accessToken: string, q: string, limit = 25): 
       band: str(u.band),
       gender: str(u.gender),
       supervisor: str(u.supervisor),
+      supervisorEmail: str(u.supervisor_email).toLowerCase(),
     }))
     .filter((p) => p.employeeId && p.name);
 }
