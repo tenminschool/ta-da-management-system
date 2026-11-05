@@ -36,6 +36,18 @@ async function ask(path: string, accessToken: string): Promise<Response> {
   }
 }
 
+/** The signed-in admin's full HR record — what the SDK's getMyProfile() reads. Empty if it cannot be fetched. */
+async function fetchOwnProfile(accessToken: string, id: string): Promise<Record<string, unknown>> {
+  try {
+    const res = await ask(`/v1/admin/profile/${encodeURIComponent(id)}`, accessToken);
+    if (!res.ok) return {};
+    const body = (await res.json()) as { data?: { user?: Record<string, unknown> } };
+    return body?.data?.user ?? {};
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Resolves an access token to the signed-in admin, as `/v1/admin/me` reports
  * them — the same call the SDK uses to validate a session. It answers for both
@@ -53,13 +65,20 @@ export async function verifyAccessToken(accessToken: string): Promise<TenMSUser>
     const body = (await admin.json()) as { data?: { user?: Record<string, unknown> } };
     const u = body?.data?.user;
     if (u && typeof u.id === "string" && u.id) {
+      // `/me` can leave out the HR fields (position, department…) that the SDK's own
+      // getMyProfile() returns from `/v1/admin/profile/{id}`, so that record fills any gaps.
+      const full = await fetchOwnProfile(accessToken, u.id);
+      const merged: Record<string, unknown> = { ...u };
+      for (const [k, v] of Object.entries(full)) {
+        if (v !== null && v !== undefined && v !== "" && (merged[k] === undefined || merged[k] === null || merged[k] === "")) merged[k] = v;
+      }
       return {
         sub: u.id,
         email: typeof u.username === "string" ? u.username : undefined,
         name: typeof u.name === "string" ? u.name : undefined,
         picture: typeof u.profile_img === "string" ? u.profile_img : undefined,
         phone: typeof u.phone_number === "string" ? u.phone_number : undefined,
-        record: u as TenMSRecord,
+        record: merged as TenMSRecord,
       };
     }
     throw new TenMSVerifyError("The sign-in service returned an incomplete profile.", 502);
@@ -177,9 +196,44 @@ const BAND_BY_POSITION: Record<string, string> = Object.fromEntries(
 /** Band E is a group of employment types rather than a ladder, so those match by keyword. */
 const BAND_E_WORDS = ["temporary", "intern", "contractor", "part-time", "part time", "consultant", "project executive", "admin executive", "student advisor"];
 
+/** Lower-case, abbreviations spelled out, punctuation turned into spaces. */
+function tidy(position: string): string {
+  return ` ${position
+    .toLowerCase()
+    .replace(/\bsr\.?(?=\s)/g, "senior")
+    .replace(/\bjr\.?(?=\s)/g, "junior")
+    .replace(/\basst\.?(?=\s)/g, "assistant")
+    .replace(/\bdy\.?(?=\s)/g, "deputy")
+    .replace(/\bvp\b/g, "vice president")
+    .replace(/\bavp\b/g, "assistant vice president")
+    .replace(/\bsvp\b/g, "senior vice president")
+    .replace(/\bgm\b/g, "general manager")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()} `;
+}
+
+/** Known titles, longest first, so "Assistant Vice President" wins over "Vice President". */
+const TITLES_LONGEST_FIRST = Object.entries(BAND_BY_POSITION)
+  .map(([title, band]) => ({ title: ` ${tidy(title).trim()} `, band }))
+  .sort((a, b) => b.title.length - a.title.length);
+
+/**
+ * The title may carry more than the level — "Senior Executive, Content" or
+ * "Assistant Manager (Finance)" — so after an exact match fails, the longest
+ * known title found as whole words inside it decides the band. Employment
+ * types (band E) are checked first, since "Project Executive" would otherwise
+ * read as an Executive.
+ */
 export function bandForPosition(position: string | undefined): string {
-  const p = String(position || "").trim().replace(/\s+/g, " ").toLowerCase();
-  if (!p) return "";
-  if (BAND_BY_POSITION[p]) return BAND_BY_POSITION[p];
-  return BAND_E_WORDS.some((w) => p.includes(w)) ? "E" : "";
+  const raw = String(position || "").trim();
+  if (!raw) return "";
+  const p = tidy(raw);
+  const plain = raw.replace(/\s+/g, " ").toLowerCase();
+  if (BAND_BY_POSITION[plain]) return BAND_BY_POSITION[plain];
+  const wordsE = BAND_E_WORDS.map((w) => ` ${tidy(w).trim()} `);
+  if (wordsE.some((w) => p.includes(w)) || BAND_E_WORDS.some((w) => plain.includes(w) && !/^[a-z]/.test(plain.slice(plain.indexOf(w) + w.length)))) return "E";
+  const hit = TITLES_LONGEST_FIRST.find((t) => p.includes(t.title));
+  if (hit) return hit.band;
+  console.warn(`[band] no band matches the position "${raw}".`);
+  return "";
 }
