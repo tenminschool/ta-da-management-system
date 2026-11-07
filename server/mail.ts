@@ -195,8 +195,7 @@ async function send(to: string, subject: string, body: string, token: string): P
   try {
     const res = await fetch(MAIL_URL, {
       method: "POST",
-      // Same pair of headers the browser sends with document uploads.
-      headers: { Authorization: `Bearer ${token}`, "x-tenms-user-key": `Bearer ${token}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ type: "mail", to: [to], cc: [], bcc: [], subject, body, html: true }),
       signal: ctrl.signal,
     });
