@@ -269,7 +269,7 @@ export default function App() {
         <UserMenu
           name={tenmsUser?.name || user.name}
           email={user.email}
-          subtitle={user.band ? `Band ${user.band}` : undefined}
+          subtitle={[user.band && `Band ${user.band}`, user.gender && user.gender.charAt(0).toUpperCase() + user.gender.slice(1).toLowerCase()].filter(Boolean).join(" · ") || undefined}
           picture={user.picture}
           // The host owns the session when this panel is embedded — signing
           // out here would strand the two out of step.
