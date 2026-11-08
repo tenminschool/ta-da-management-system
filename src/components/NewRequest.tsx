@@ -192,7 +192,7 @@ export default function NewRequest({
 
           {error && <Notice tone="error" items={[error]} />}
 
-          <div className="sticky bottom-[4.25rem] z-10 -mx-3 flex items-center gap-2 border-t border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur sm:static sm:mx-0 sm:justify-between sm:border-0 sm:bg-transparent sm:px-0 sm:py-0 lg:bottom-0">
+          <div className="sticky bottom-[calc(3.75rem+env(safe-area-inset-bottom))] z-10 -mx-3 flex items-center gap-2 border-t border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur sm:-mx-4 sm:justify-between sm:px-4 lg:bottom-0 lg:mx-0 lg:rounded-xl lg:border lg:bg-white/95 lg:shadow-sm">
             <button
               className="btn-ghost shrink-0 !px-3 sm:!px-4"
               onClick={() => setStep((s) => Math.max(0, s - 1))}

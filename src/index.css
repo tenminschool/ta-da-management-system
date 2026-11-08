@@ -82,6 +82,19 @@ body,
   height: 100%;
 }
 
+/* A single over-wide element must never make the whole page scroll sideways. */
+html,
+body {
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Long emails, request IDs and links wrap rather than push a card wider than the screen. */
+main :where(p, li, h1, h2, h3, dd, dt, label, a, span) {
+  overflow-wrap: anywhere;
+}
+
 body {
   background: var(--main-gray);
   color: var(--foreground);

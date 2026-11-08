@@ -191,9 +191,9 @@ export function Modal({
   return (
     <div className="fixed inset-0 z-[60] flex items-end justify-center overflow-y-auto bg-slate-900/40 backdrop-blur-sm sm:items-start sm:p-4">
       <div className={`card w-full rounded-b-none sm:my-8 sm:rounded-2xl ${wide ? "max-w-4xl" : "max-w-lg"}`}>
-        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-sm font-bold text-slate-800">{title}</h2>
-          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+        <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+          <h2 className="min-w-0 text-sm font-bold text-slate-800">{title}</h2>
+          <button onClick={onClose} aria-label="Close" className="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X size={18} />
           </button>
         </header>

@@ -450,7 +450,7 @@ export default function App() {
         </main>
 
         {/* Phone tab bar */}
-        <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+        <nav className="fixed inset-x-0 bottom-0 z-30 grid auto-cols-fr grid-flow-col border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
           {mobileNav.map(({ key, short, icon: Icon, badge }) => (
             <button
               key={key}
