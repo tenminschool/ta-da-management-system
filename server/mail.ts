@@ -17,7 +17,7 @@
  */
 import type { MailBatch, RequestRecord } from "../shared/types.js";
 import { readTab } from "./db.js";
-import { toRoleGrant } from "./store.js";
+import { DEFAULT_ADMIN_EMAILS, toRoleGrant } from "./store.js";
 
 const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://postal.10minuteschool.com/api/v1/mail/send";
 
@@ -48,9 +48,16 @@ interface Recipient {
 
 const clean = (e: string | undefined) => String(e || "").trim().toLowerCase();
 
-async function roleEmails(role: "hr" | "finance"): Promise<string[]> {
-  const fromEnv = String(process.env[role === "hr" ? "HR_EMAILS" : "FINANCE_EMAILS"] || "")
-    .split(",").map(clean).filter(Boolean);
+type DeskRole = "hr" | "admin" | "finance";
+
+/**
+ * Everyone holding the role: granted on Configuration → Roles, listed in the
+ * HR_EMAILS / FINANCE_EMAILS settings, or (for admin) always-admin addresses.
+ */
+async function roleEmails(role: DeskRole): Promise<string[]> {
+  const fromEnv = role === "admin"
+    ? [...DEFAULT_ADMIN_EMAILS]
+    : String(process.env[role === "hr" ? "HR_EMAILS" : "FINANCE_EMAILS"] || "").split(",").map(clean).filter(Boolean);
   let granted: string[] = [];
   try {
     granted = (await readTab("RoleGrants")).map(toRoleGrant).filter((g) => g.role === role).map((g) => g.email);
@@ -94,11 +101,14 @@ async function recipientsFor(record: RequestRecord, event: ClaimEvent): Promise<
       if (!r.reports.includes(t.name)) r.reports.push(t.name);
     }
   };
-  const addDesk = async (role: "hr" | "finance", act: boolean) => {
-    for (const email of await roleEmails(role)) {
-      const r = get(email);
-      r.desk = role === "hr" ? "HR" : "Finance";
-      r.act = r.act || act;
+  /** `acts`: the roles whose members have to act now; the rest are only informed. */
+  const addDesk = async (roles: DeskRole[], desk: "HR" | "Finance", acts: DeskRole[]) => {
+    for (const role of roles) {
+      for (const email of await roleEmails(role)) {
+        const r = get(email);
+        r.desk = desk;
+        r.act = r.act || acts.includes(role);
+      }
     }
   };
 
@@ -110,16 +120,19 @@ async function recipientsFor(record: RequestRecord, event: ClaimEvent): Promise<
   } else if (event.kind === "approved") {
     addTravellers();
     if (event.stage === "manager_review") {
-      await addDesk("hr", true);
+      // HR's desk is acted on by admins; HR-role holders are kept informed.
+      await addDesk(["admin", "hr"], "HR", ["admin"]);
     } else if (event.stage === "admin_review") {
       addSupervisors();
-      await addDesk("finance", true);
+      await addDesk(["finance"], "Finance", ["finance"]);
     } else if (event.stage === "finance_review") {
       addSupervisors();
-      await addDesk("hr", false);
+      await addDesk(["admin", "hr"], "HR", []);
     }
   } else {
     addTravellers();
+    // A rejection also tells the supervisors, whoever rejected it.
+    if (event.kind === "rejected") addSupervisors();
   }
   return out;
 }

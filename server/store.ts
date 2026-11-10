@@ -708,3 +708,15 @@ export async function grantedRolesFor(email: string): Promise<Role[]> {
   }
   return roleGrantCache.byEmail.get(email.trim().toLowerCase()) ?? [];
 }
+
+/**
+ * Emails that are always system admins, whatever groups the provider reports
+ * or grants say; they cannot be removed from the admin list. Matched against
+ * the email on the verified 10MS token. Extra addresses can be added
+ * (comma-separated) with DEFAULT_ADMIN_EMAILS.
+ */
+export const DEFAULT_ADMIN_EMAILS = new Set(
+  ["fahad@10minuteschool.com", ...String(process.env.DEFAULT_ADMIN_EMAILS || "").split(",")]
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+);
