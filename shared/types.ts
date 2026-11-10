@@ -213,6 +213,19 @@ export interface TeamMember {
   supervisorEmail?: string;
 }
 
+/** One email, ready to send. */
+export interface MailJob {
+  to: string;
+  subject: string;
+  body: string;
+}
+
+/** The emails a claim event produces, and where to post them. */
+export interface MailBatch {
+  url: string;
+  jobs: MailJob[];
+}
+
 export interface Leg {
   travelDate: string;
   mode: string;

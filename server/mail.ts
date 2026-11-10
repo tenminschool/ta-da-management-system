@@ -15,12 +15,11 @@
  *
  * Mail never blocks a claim: a failure is logged and the request goes on.
  */
-import type { RequestRecord } from "../shared/types.js";
+import type { MailBatch, RequestRecord } from "../shared/types.js";
 import { readTab } from "./db.js";
 import { toRoleGrant } from "./store.js";
 
 const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://postal.10minuteschool.com/api/v1/mail/send";
-const MAIL_TIMEOUT_MS = 8000;
 
 export type ClaimEvent =
   | { kind: "submitted"; resubmit: boolean }
@@ -189,58 +188,24 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
   return `<div style="font-family:Arial,sans-serif;color:#0f172a">${lines.join("\n")}</div>`;
 }
 
-async function send(to: string, subject: string, body: string, token: string): Promise<void> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), MAIL_TIMEOUT_MS);
-  try {
-    const res = await fetch(MAIL_URL, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "mail", to: [to], cc: [], bcc: [], subject, body, html: true }),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) throw new Error(`${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 /**
- * Sends this event's mails. Never throws; failures are logged per address and
- * summarised in the returned text ("" when everything went out), so the caller
- * can pass it back to the browser.
+ * Builds this event's mails. The server does not send them: Postal's Cloudflare
+ * check turns away calls that come from a server, so the signed-in person's
+ * browser posts them (with their own 10MS token) the way it posts uploads.
+ * Never throws; a failure here just means no mails for the event.
  * `link` is where the app is reachable, for the "open" link in the mail.
- * `token` is the acting person's own 10MS sign-in token, sent as the Bearer
- * value — the same token the browser uses for document uploads.
  */
-export async function notifyClaim(record: RequestRecord, event: ClaimEvent, link: string, token: string): Promise<string> {
+export async function planClaimMail(record: RequestRecord, event: ClaimEvent, link: string): Promise<MailBatch> {
   try {
-    if (!token) {
-      const why = "no 10MS sign-in token came with the request";
-      console.warn(`[mail] ${record.requestId}: ${why}; mails not sent.`);
-      return `Emails not sent: ${why}.`;
-    }
     const recipients = await recipientsFor(record, event);
+    if (!recipients.size) console.warn(`[mail] ${record.requestId}: nobody to notify — no email addresses on the claim.`);
     const subject = `[TA/DA] ${headline(record, event)}`;
-    const results = await Promise.allSettled(
-      [...recipients].map(([email, r]) => send(email, subject, bodyFor(record, event, r, link), token)),
-    );
-    const to = [...recipients.keys()];
-    const failed: string[] = [];
-    results.forEach((res, i) => {
-      if (res.status === "rejected") {
-        const msg = (res.reason as Error)?.message;
-        console.warn(`[mail] ${record.requestId} → ${to[i]} failed:`, msg);
-        failed.push(`${to[i]} (${msg})`);
-      }
-    });
-    if (!to.length) {
-      console.warn(`[mail] ${record.requestId}: nobody to notify — no email addresses on the claim.`);
-      return "Emails not sent: no email addresses were found for this claim.";
-    }
-    return failed.length ? `Emails failed for ${failed.join("; ")}` : "";
+    return {
+      url: MAIL_URL,
+      jobs: [...recipients].map(([to, r]) => ({ to, subject, body: bodyFor(record, event, r, link) })),
+    };
   } catch (err) {
-    console.warn(`[mail] ${record.requestId} notifications failed:`, (err as Error).message);
-    return `Emails not sent: ${(err as Error).message}`;
+    console.warn(`[mail] ${record.requestId} could not prepare notifications:`, (err as Error).message);
+    return { url: MAIL_URL, jobs: [] };
   }
 }

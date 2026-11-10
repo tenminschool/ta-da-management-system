@@ -2,7 +2,7 @@
 
 import { auth } from "./lib/auth.js";
 import type {
-  ApprovalRow, Computation, InsideCityBlockEntry, Policy, RoleGrant, RequestDraft, RequestRecord, SessionUser, UnlockRequest,
+  ApprovalRow, Computation, InsideCityBlockEntry, MailBatch, Policy, RoleGrant, RequestDraft, RequestRecord, SessionUser, UnlockRequest,
   VehicleRegistration,
 } from "../shared/types.js";
 import type { ModeOption } from "../shared/policy.js";
@@ -310,23 +310,20 @@ export const api = {
   // The 10MS token rides along so the server can look up each teammate's
   // supervisor in the directory for the claim notifications.
   create: async (draft: RequestDraft, submit: boolean) =>
-    call<{ request: RequestRecord; computation: Computation; mailWarning?: string }>("/requests", {
+    call<{ request: RequestRecord; computation: Computation; mail?: MailBatch }>("/requests", {
       method: "POST",
       body: JSON.stringify({ draft, submit }),
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
   update: async (id: string, draft: RequestDraft, submit: boolean) =>
-    call<{ request: RequestRecord; computation: Computation; mailWarning?: string }>(`/requests/${encodeURIComponent(id)}`, {
+    call<{ request: RequestRecord; computation: Computation; mail?: MailBatch }>(`/requests/${encodeURIComponent(id)}`, {
       method: "PUT",
       body: JSON.stringify({ draft, submit }),
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
-  // The 10MS token is what the notification mails are sent with.
-  act: async (id: string, action: string, remarks: string, approvedAmount?: number) =>
-    call<{ request: RequestRecord; mailWarning?: string }>(`/requests/${encodeURIComponent(id)}/action`, {
-      method: "POST",
-      body: JSON.stringify({ action, remarks, approvedAmount }),
-      headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
+  act: (id: string, action: string, remarks: string, approvedAmount?: number) =>
+    post<{ request: RequestRecord; mail?: MailBatch }>(`/requests/${encodeURIComponent(id)}/action`, {
+      action, remarks, approvedAmount,
     }),
   saveCompanyAmounts: (
     id: string,

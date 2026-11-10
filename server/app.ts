@@ -21,7 +21,7 @@ import {
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
 import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
-import { notifyClaim } from "./mail.js";
+import { planClaimMail } from "./mail.js";
 import {
   deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, setClaimUnlock, nextRequestId, nextUnlockRequestId,
@@ -34,7 +34,7 @@ import {
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup, type Role } from "../shared/types.js";
 import type {
-  InsideCityBlockEntry, RequestDraft, RequestRecord, RoleGrant, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
+  InsideCityBlockEntry, MailBatch, RequestDraft, RequestRecord, RoleGrant, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
 
 const app = express();
@@ -1026,11 +1026,9 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   });
   const record = await ensureUniqueRequestId(written.built, written.rowNumber, prefix);
 
-  const mailWarning = submit
-    ? await onSubmitted(record, req.session, policy, false, appLink(req), String(req.headers["x-tenms-token"] || ""))
-    : "";
+  const mail = submit ? await onSubmitted(record, req.session, policy, false, appLink(req)) : undefined;
 
-  res.json({ request: record, computation, mailWarning });
+  res.json({ request: record, computation, mail });
 }));
 
 app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
@@ -1082,11 +1080,9 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   });
 
   await updateRow("Requests", row._row, fromRequest(updated));
-  const mailWarning = submit
-    ? await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req), String(req.headers["x-tenms-token"] || ""))
-    : "";
+  const mail = submit ? await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req)) : undefined;
 
-  res.json({ request: updated, computation, mailWarning });
+  res.json({ request: updated, computation, mail });
 }));
 
 async function onSubmitted(
@@ -1095,8 +1091,7 @@ async function onSubmitted(
   policy: Awaited<ReturnType<typeof loadPolicy>>,
   resubmit = false,
   link = "",
-  token = "",
-): Promise<string> {
+): Promise<MailBatch> {
   await upsertApproval(
     record.requestId,
     record.employeeName,
@@ -1106,7 +1101,7 @@ async function onSubmitted(
       lastAction: resubmit ? `Resubmitted by ${session.name}` : `Submitted by ${session.name}`,
     },
   );
-  return notifyClaim(record, { kind: "submitted", resubmit }, link, token);
+  return planClaimMail(record, { kind: "submitted", resubmit }, link);
 
 }
 
@@ -1252,14 +1247,14 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
     lastAction: `${stageStatus} by ${req.session.name}`,
   });
 
-  const mailWarning = await notifyClaim(updated, {
+  const mail = await planClaimMail(updated, {
     kind: action === "approve" ? "approved" : action === "reject" ? "rejected" : "returned",
     stage,
     by: req.session.name,
     remarks,
-  }, appLink(req), String(req.headers["x-tenms-token"] || ""));
+  }, appLink(req));
 
-  res.json({ request: updated, mailWarning });
+  res.json({ request: updated, mail });
 }));
 
 // Company Arrangement trips are paid by the company directly, so the

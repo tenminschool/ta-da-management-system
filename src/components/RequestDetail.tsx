@@ -8,6 +8,7 @@ import type { ApprovalRow, Policy, RequestDraft, SessionUser } from "../../share
 import { STATUS_PROGRESS, TRACK_STAGES } from "../../shared/types.js";
 import { cfgNum, cfgStr, insidePerTravellerAmount, money, todayISO } from "../../shared/policy.js";
 import { documentName } from "../lib/files.js";
+import { sendMails } from "../lib/mail.js";
 import { Card, Empty, Field, Modal, Money, Notice, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestDetail({
@@ -957,7 +958,7 @@ function ActionModal({
     setError("");
     try {
       const res = await api.act(requestId, action, remarks, action === "approve" ? Number(amount) : undefined);
-      if (res.mailWarning) console.warn("[mail]", res.mailWarning);
+      await sendMails(res.mail);
       onDone();
     } catch (err) {
       setError((err as Error).message);

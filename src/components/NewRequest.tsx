@@ -10,6 +10,7 @@ import {
 import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
 import { documentName } from "../lib/files.js";
+import { sendMails } from "../lib/mail.js";
 import { VehicleRegisterForm } from "./VehicleRegister.js";
 
 const STEPS = ["Travel Type", "Transportation", "Allowances", "Documents"];
@@ -127,7 +128,7 @@ export default function NewRequest({
       const res = editing
         ? await api.update(editing.requestId, draft, submit)
         : await api.create(draft, submit);
-      if (res.mailWarning) console.warn("[mail]", res.mailWarning);
+      await sendMails(res.mail);
       onDone(res.request.requestId);
     } catch (err) {
       setError((err as Error).message);
