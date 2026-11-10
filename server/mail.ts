@@ -19,7 +19,7 @@ import type { RequestRecord } from "../shared/types.js";
 import { readTab } from "./db.js";
 import { toRoleGrant } from "./store.js";
 
-const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://stage-postal.10minuteschool.net/api/v1/mail/send";
+const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://postal.10minuteschool.com/api/v1/mail/send";
 const MAIL_TIMEOUT_MS = 8000;
 
 export type ClaimEvent =
