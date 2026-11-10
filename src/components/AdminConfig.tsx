@@ -4,6 +4,80 @@ import { api, type EmployeeLite } from "../api.js";
 import type { InsideCityBlockEntry, RoleGrant, UnlockRequest } from "../../shared/types.js";
 import { Card, Notice, Spinner } from "./ui.js";
 
+/**
+ * 10MS branches — the offices a "10MS Office" trip can go to. They are the
+ * `OtherOffice` rows of the Lists tab; this card adds and removes them without
+ * digging through the whole list.
+ */
+function BranchManager({
+  rows, cols, onSaved,
+}: { rows: Record<string, string>[]; cols: string[]; onSaved: (rows: Record<string, string>[]) => void }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const branches = rows.filter((r) => r.list_name === "OtherOffice");
+
+  async function persist(next: Record<string, string>[]) {
+    setBusy(true);
+    setError("");
+    try {
+      await api.saveTab("Lists", next.map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? ""]))));
+      onSaved(next);
+      return true;
+    } catch (err) {
+      setError((err as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function add() {
+    const value = name.trim().replace(/\s+/g, " ");
+    if (!value) return;
+    if (branches.some((b) => b.value.trim().toLowerCase() === value.toLowerCase())) {
+      setError("That branch is already in the list.");
+      return;
+    }
+    const row = { list_name: "OtherOffice", value, label: value, extra_1: "", extra_2: "", active: "Yes" };
+    if (await persist([...rows, row])) setName("");
+  }
+
+  return (
+    <Card title="Branches" subtitle="10MS offices people can pick for a “10MS Office” trip. New branches show up in the claim form straight away.">
+      {error && <div className="mb-3"><Notice tone="error" items={[error]} /></div>}
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <input
+          className="field"
+          placeholder="New branch name, e.g. Bashundhara LC"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+        />
+        <button className="btn-primary shrink-0" onClick={() => void add()} disabled={busy || !name.trim()}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add branch
+        </button>
+      </div>
+      <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
+        {branches.length === 0 && <li className="px-3 py-3 text-sm text-slate-400">No branches yet.</li>}
+        {branches.map((b) => (
+          <li key={b.value} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+            <span className={`min-w-0 ${b.active === "No" ? "text-slate-400 line-through" : "text-slate-800"}`}>{b.label || b.value}</span>
+            <button
+              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+              aria-label={`Remove ${b.value}`}
+              disabled={busy}
+              onClick={() => void persist(rows.filter((r) => r !== b))}
+            >
+              <Trash2 size={15} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 const DESCRIPTIONS: Record<string, string> = {
   Config: "Rates, limits and thresholds. Change a value here and every calculation follows it immediately.",
   BandPolicy: "Per-band transport lists (male / female), outside-city weekday & weekend rates, accommodation limit, flight and car-pool eligibility.",
@@ -75,6 +149,13 @@ export default function AdminConfig() {
       <ClaimUnlock />
       <RoleManager />
       <InsideCityBlockManager />
+      {headers.Lists && (
+        <BranchManager
+          rows={data.Lists || []}
+          cols={headers.Lists}
+          onSaved={(next) => setData((d) => ({ ...d, Lists: next }))}
+        />
+      )}
 
       <div className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {tabs.map((t) => (
@@ -148,9 +229,9 @@ export default function AdminConfig() {
           ))}
         </div>
 
-        <div className="-mx-1 hidden overflow-x-auto px-1 md:block">
+        <div className="-mx-1 hidden max-h-[65vh] overflow-auto px-1 md:block">
           <table className="w-full text-sm">
-            <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 z-10 border-b border-slate-200 bg-white text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 {cols.map((c) => (
                   <th key={c} className="whitespace-nowrap px-2 py-2 font-semibold">{c}</th>

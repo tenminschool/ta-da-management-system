@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { FileUp, Loader2, Trash2 } from "lucide-react";
 import { api } from "../api.js";
 import type { Policy, VehicleRegistration } from "../../shared/types.js";
-import { Card, ChoiceGrid, Field, Notice, Spinner } from "./ui.js";
+import { Card, Field, Notice, Spinner } from "./ui.js";
 
 /**
  * The registration form itself — shared by the standalone "Register your
@@ -16,7 +16,8 @@ export function VehicleRegisterForm({
   initial?: VehicleRegistration | null;
   onSubmitted: (v: VehicleRegistration) => void;
 }) {
-  const [vehicleType, setVehicleType] = useState<"Bike" | "Car">(initial?.vehicleType || "Bike");
+  // Only bikes can be registered; a car registered earlier is re-saved as a bike if edited.
+  const vehicleType = "Bike" as const;
   const [model, setModel] = useState(initial?.model || "");
   const [fuelType, setFuelType] = useState(initial?.fuelType || policy.fuelTypes[0]?.value || "");
   const [mileage, setMileage] = useState(initial?.mileageKmPerLitre || 0);
@@ -71,14 +72,9 @@ export function VehicleRegisterForm({
 
   return (
     <div className="space-y-4">
-      <ChoiceGrid
-        value={vehicleType}
-        onChange={(v) => setVehicleType(v as "Bike" | "Car")}
-        options={[
-          { value: "Bike", label: "Bike", description: "Own motorbike or scooter." },
-          { value: "Car", label: "Car", description: "Own car." },
-        ]}
-      />
+      <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        <span className="font-medium text-slate-800">Bike</span> — own motorbike or scooter. Only bikes can be registered as a personal vehicle.
+      </p>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Model" required hint="e.g. Honda CB Shine 125">
           <input className="field" value={model} onChange={(e) => setModel(e.target.value)} placeholder="Model name" />

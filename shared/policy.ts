@@ -141,7 +141,8 @@ export function workingHours(start: string, end: string): number {
  */
 export function personalVehicleRateFor(policy: Policy, user: SessionUser): number | null {
   const v = user.registeredVehicle;
-  if (!v || !(v.mileageKmPerLitre > 0)) return null;
+  // Only a bike can be claimed as a personal vehicle — a car registered earlier is not priced.
+  if (!v || v.vehicleType !== "Bike" || !(v.mileageKmPerLitre > 0)) return null;
   const fuel = policy.fuelTypes.find((f) => f.value === v.fuelType);
   if (!fuel || !(fuel.pricePerLitre > 0)) return null;
   return money(fuel.pricePerLitre / v.mileageKmPerLitre);
@@ -261,9 +262,10 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
     return out;
   }
 
-  // Outside city.
+  // Outside city. A personal vehicle is an inside-city option only.
   for (const s of policy.modes) {
     if (s.scope === "Inside") continue;
+    if (s.mode === "PersonalVehicle") continue;
     if (s.mode === "Flight") {
       if (band?.flightEligible) push("Flight", true);
       else push("Flight", false, `Flight is not available for Band ${ctx.band}.`);
@@ -372,6 +374,8 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     // approved vehicle — this just gates the trip on that vehicle existing.
     if (!user.registeredVehicle) {
       errors.push("Register your vehicle and get it approved by HR or Admin before claiming a personal-vehicle trip.");
+    } else if (user.registeredVehicle.vehicleType !== "Bike") {
+      errors.push("Only a personal bike can be claimed — a car is not reimbursed as a personal vehicle.");
     } else {
       const rate = personalVehicleRateFor(policy, user);
       if (rate !== null) fuelRate = rate;
@@ -463,13 +467,21 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     ? 0
     : money(Number(draft.accommodationAmount) || 0);
 
+  if (draft.scope === "outside" && !companyArranged && draft.accommodationType === "hotel") {
+    if (!draft.hotelName.trim()) errors.push("Hotel name is required.");
+    if (!(Number(draft.accommodationAmount) > 0)) errors.push("Enter the hotel amount.");
+    if (!draft.checkIn || !draft.checkOut) errors.push("Check-in and check-out dates are required.");
+  }
   if (accommodationAmount > 0) {
     if (draft.scope !== "outside") {
       errors.push("Accommodation can only be claimed for outside-city travel.");
       accommodationAmount = 0;
     } else {
-      if (!draft.hotelName) errors.push("Hotel name is required for an accommodation claim.");
-      if (!draft.checkIn || !draft.checkOut) errors.push("Check-in and check-out dates are required for an accommodation claim.");
+      // A chosen hotel stay is already checked above; this covers a figure entered without choosing.
+      if (draft.accommodationType !== "hotel") {
+        if (!draft.hotelName) errors.push("Hotel name is required for an accommodation claim.");
+        if (!draft.checkIn || !draft.checkOut) errors.push("Check-in and check-out dates are required for an accommodation claim.");
+      }
       if (accommodationAmount > accommodationLimit && accommodationLimit > 0) {
         errors.push(
           `Accommodation ${accommodationAmount} exceeds the Band ${user.band} limit of ${perNightLimit}/night × ${nights || 1} night(s) = ${accommodationLimit}.`,
@@ -662,6 +674,12 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     else if (draft.legs.some((l) => !l.mode)) errors.push("Select a travel mode for every trip.");
     if (draft.legs.some((l) => l.mode === "PersonalVehicle" && !(Number(l.amount) > 0))) {
       errors.push("Enter the distance for every personal-vehicle trip.");
+    }
+    if (draft.scope === "outside" && draft.legs.some((l) => l.mode === "PersonalVehicle")) {
+      errors.push("A personal vehicle can only be claimed for inside-city travel.");
+    }
+    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft).length) {
+      errors.push("More Ways needs at least one more trip — use “Add another trip”.");
     }
   }
 

@@ -365,9 +365,9 @@ export default function Reports({
             ))}
           </ul>
 
-          <div className="-mx-1 hidden overflow-x-auto px-1 md:block print:block">
+          <div className="-mx-1 hidden max-h-[65vh] overflow-auto px-1 md:block print:block print:max-h-none print:overflow-visible">
             <table className="w-full text-sm">
-              <thead className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="sticky top-0 z-10 border-b border-slate-200 bg-white text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-2 py-2 font-semibold">Request</th>
                   <th className="px-2 py-2 font-semibold">Employee</th>

@@ -182,12 +182,12 @@ export const TABS: TabSpec[] = [
       "flight_eligible", "car_pool_eligible", "effective_from",
     ],
     seed: [
-      ["A", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1800, 5000, "Yes", "No", "2026-01-01"],
-      ["B", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1800, 5000, "Yes", "No", "2026-01-01"],
-      ["C1", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
-      ["C2", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
-      ["D", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
-      ["E", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1350, 4000, "No", "Yes", "2026-01-01"],
+      ["A", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1200, 5000, "Yes", "No", "2026-01-01"],
+      ["B", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1200, 5000, "Yes", "No", "2026-01-01"],
+      ["C1", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
+      ["C2", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
+      ["D", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
+      ["E", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
     ],
   },
 
@@ -220,7 +220,7 @@ export const TABS: TabSpec[] = [
       ["TransportMode", "CNG", "CNG", "Inside", "No", "No"],
       ["TransportMode", "Car", "Car", "Inside", "No", "No"],
       ["TransportMode", "CompanyVehicle", "Company Vehicle", "Both", "No", "No"],
-      ["TransportMode", "PersonalVehicle", "Personal Vehicle (Own Bike / Car)", "Both", "No", "Yes"],
+      ["TransportMode", "PersonalVehicle", "Personal Vehicle (Own Bike)", "Inside", "No", "Yes"],
       // Inside city only — outside-city travel does not offer app-based
       // ride-sharing as an option.
       ["TransportMode", "RideSharing", "Ride Sharing (Uber / Pathao)", "Inside", "Yes", "Yes"],

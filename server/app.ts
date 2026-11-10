@@ -119,9 +119,10 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
 
   // Everything about the person comes from the `/v1/admin/me` record.
   const hr = profile.record;
-  // The official phone number doubles as the bKash number: "+8801805980148" -> "01805980148".
-  const digits = String(hr.phone_number || profile.phone || "").replace(/\D/g, "");
-  const officialPhone = digits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
+  // bKash number from the record's `bkash_number`: "+8801805980148" -> "01805980148".
+  // Blank when missing or not a valid number; the claim form then asks the person to type it.
+  const bkashDigits = String(hr.bkash_number || "").replace(/\D/g, "");
+  const bkashNumber = bkashDigits.replace(/^880/, "0").match(/^01[3-9]\d{8}$/)?.[0] ?? "";
   // `employee_status` is "Active" for someone currently employed; a blank one is not held against them.
   if (hr.employee_status && hr.employee_status.trim().toLowerCase() !== "active") {
     res.status(403).json({ error: "This account is marked inactive. Contact PeopleOps." });
@@ -154,8 +155,8 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     lineManagerId,
     lineManagerEmail,
     roles,
-    paymentMethod: officialPhone ? "bKash" : "",
-    accountNumber: officialPhone,
+    paymentMethod: bkashNumber ? "bKash" : "",
+    accountNumber: bkashNumber,
   };
   res.json({
     token: signToken(user),
@@ -2046,13 +2047,14 @@ app.get("/api/vehicles/mine", requireAuth, handler(async (req, res) => {
  * claim would be priced at, and that has to be looked at again.
  */
 app.post("/api/vehicles", requireAuth, handler(async (req, res) => {
-  const vehicleType = req.body?.vehicleType === "Car" ? "Car" : req.body?.vehicleType === "Bike" ? "Bike" : "";
+  // Only a bike can be registered as a personal vehicle.
+  const vehicleType = req.body?.vehicleType === "Bike" ? "Bike" : "";
   const model = String(req.body?.model || "").trim();
   const fuelType = String(req.body?.fuelType || "").trim();
   const mileageKmPerLitre = Number(req.body?.mileageKmPerLitre);
   const imageLink = String(req.body?.imageLink || "").trim();
 
-  if (!vehicleType) { res.status(400).json({ error: "Select whether this is a bike or a car." }); return; }
+  if (!vehicleType) { res.status(400).json({ error: "Only a bike can be registered as a personal vehicle." }); return; }
   if (!model) { res.status(400).json({ error: "Enter the vehicle's model." }); return; }
   const policy = await loadPolicy();
   if (!policy.fuelTypes.some((f) => f.value === fuelType)) {

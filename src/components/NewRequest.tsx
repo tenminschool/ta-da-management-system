@@ -5,9 +5,9 @@ import {
 import { api } from "../api.js";
 import {
   addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
-  impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, todayISO, type ModeOption,
+  impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, teamPayoutSplit, todayISO, type ModeOption,
 } from "../../shared/policy.js";
-import type { Leg, Policy, RequestDraft, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
+import type { Leg, Policy, RequestDraft, RequestRecord, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
 import { documentName } from "../lib/files.js";
 import { sendMails } from "../lib/mail.js";
@@ -120,6 +120,8 @@ export default function NewRequest({
   }, [impliedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const insideCities = policy.cities.filter((c) => c.zone === "Inside");
+  // More Ways is a chain of stops: Next stays off on the trips step until one has been added by hand.
+  const needsMoreTrips = step === 1 && draft.tripDirection === "more_ways" && draft.legs.length <= implied.length;
 
   async function save(submit: boolean) {
     setBusy(true);
@@ -192,6 +194,9 @@ export default function NewRequest({
           )}
 
           {error && <Notice tone="error" items={[error]} />}
+          {needsMoreTrips && (
+            <Notice tone="warn" items={["More Ways needs at least one more trip — use “Add another trip” before going on."]} />
+          )}
 
           <div className="sticky bottom-[calc(3.75rem+env(safe-area-inset-bottom))] z-10 -mx-3 flex items-center gap-2 border-t border-slate-200 bg-slate-100/95 px-3 py-3 backdrop-blur sm:-mx-4 sm:justify-between sm:px-4 lg:bottom-0 lg:mx-0 lg:rounded-xl lg:border lg:bg-white/95 lg:shadow-sm">
             <button
@@ -206,7 +211,12 @@ export default function NewRequest({
                 Save draft
               </button>
               {step < STEPS.length - 1 ? (
-                <button className="btn-primary flex-1 sm:flex-none" onClick={() => setStep((s) => s + 1)}>
+                <button
+                  className="btn-primary flex-1 sm:flex-none"
+                  onClick={() => setStep((s) => s + 1)}
+                  disabled={needsMoreTrips}
+                  title={needsMoreTrips ? "Add at least one more trip for More Ways" : undefined}
+                >
                   Next <ArrowRight size={16} />
                 </button>
               ) : (
@@ -1553,10 +1563,10 @@ function StepAllowances({
             />
             {draft.accommodationType !== "personal" && (
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
-                <Field label="Hotel name">
+                <Field label="Hotel name" required>
                   <input className="field" value={draft.hotelName} onChange={(e) => set({ hotelName: e.target.value })} />
                 </Field>
-                <Field label={`Amount (${currency})`}>
+                <Field label={`Amount (${currency})`} required>
                   <input
                     type="number"
                     min={0}
@@ -1565,10 +1575,10 @@ function StepAllowances({
                     onChange={(e) => set({ accommodationAmount: Number(e.target.value) })}
                   />
                 </Field>
-                <Field label="Check-in">
+                <Field label="Check-in" required>
                   <input type="date" className="field" value={draft.checkIn} onChange={(e) => set({ checkIn: e.target.value })} />
                 </Field>
-                <Field label="Check-out">
+                <Field label="Check-out" required>
                   <input type="date" className="field" value={draft.checkOut} onChange={(e) => set({ checkOut: e.target.value })} />
                 </Field>
               </div>
@@ -1781,6 +1791,12 @@ function StepDocuments({
     }
     return (
       <Field label="Give your personal bKash number" required={required} hint="11 digits starting with 01.">
+        {!user.accountNumber && (
+          <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Your bKash number is not on your 10 Minute School profile. Please ask HR to update your information —
+            until then, type it here for this claim.
+          </p>
+        )}
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
             className="field"
@@ -2092,7 +2108,28 @@ function LiveSummary({
   const ownPerDiem = (mealTaken: boolean) => insidePerTravellerAmount(policy, computation.workingHours, mealTaken);
   const requesterPerDiem = ownPerDiem(draft.dualWorkstation ? true : draft.officeMealTaken);
 
-  const teamPerDiemBreakdown = isTeam && (computation.perDiemAmount > 0 || computation.lunchAllowance > 0);
+  // Inside city each traveller's Per-Diem depends on their own meal answer, so it is itemised;
+  // outside city it is the same for everyone and is covered by the per-person shares below.
+  const teamPerDiemBreakdown = isTeam && draft.scope === "inside" && (computation.perDiemAmount > 0 || computation.lunchAllowance > 0);
+
+  // What each traveller is actually paid on a team claim — the same split the server makes on submit.
+  const shares = isTeam
+    ? teamPayoutSplit({
+        ...draft,
+        employeeId: user.employeeId,
+        employeeName: user.name,
+        taAmount: computation.taAmount,
+        perDiemAmount: computation.perDiemAmount,
+        perDiemDays: computation.perDiemDays,
+        lunchAllowance: computation.lunchAllowance,
+        accommodationAmount: computation.accommodationAmount,
+        otherAmount: computation.otherAmount,
+        totalClaim: computation.totalClaim,
+        advanceRequested: computation.advanceRequested,
+        finalPayable: computation.finalPayable,
+        approvedAmount: 0,
+      } as unknown as RequestRecord, policy)
+    : [];
   const breakdownLabel = computation.perDiemAmount > 0 ? "Per-Diem" : "Lunch allowance";
   const breakdownTotal = computation.perDiemAmount > 0 ? computation.perDiemAmount : computation.lunchAllowance;
 
@@ -2101,7 +2138,7 @@ function LiveSummary({
     // folded into Transportation — showing them again here would look like
     // it was charged twice.
     ["Transportation", computation.taAmount],
-    ...(isTeam ? [] : [
+    ...(teamPerDiemBreakdown ? [] : [
       ["Per-Diem", computation.perDiemAmount] as [string, number],
       ["Lunch allowance", computation.lunchAllowance] as [string, number],
     ]),
@@ -2142,7 +2179,7 @@ function LiveSummary({
         ))}
         {!hasLines && <p className="text-slate-400">Nothing calculated yet.</p>}
         <div className="mt-3 flex justify-between gap-3 border-t border-slate-200 pt-3">
-          <span className="font-semibold text-slate-700">Total claim</span>
+          <span className="font-semibold text-slate-700">{isTeam ? "Team total" : "Total claim"}</span>
           <span className="font-bold text-slate-900"><Money value={computation.totalClaim} currency={currency} /></span>
         </div>
         {computation.advanceRequested > 0 && (
@@ -2158,6 +2195,19 @@ function LiveSummary({
               <span className="font-bold text-emerald-600"><Money value={computation.finalPayable} currency={currency} /></span>
             </div>
           </>
+        )}
+        {isTeam && computation.totalClaim > 0 && (
+          <div className="mt-3 border-t border-slate-200 pt-3">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Each person gets</span>
+            <div className="space-y-1">
+              {shares.map((s, i) => (
+                <div key={s.employeeId || i} className="flex justify-between gap-3">
+                  <span className="min-w-0 text-slate-600">{i === 0 ? `${s.name} (you)` : s.name || `Team member ${i}`}</span>
+                  <span className="shrink-0 font-medium text-slate-800"><Money value={s.amount} currency={currency} /></span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 

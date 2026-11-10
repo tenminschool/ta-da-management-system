@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Banknote, Car, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
   Menu, Plus, Settings, ShieldCheck, User, Wallet,
@@ -54,12 +54,29 @@ export default function App() {
   const [inbox, setInbox] = useState(0);
   const [signInError, setSignInError] = useState("");
 
+  // A link from a notification email arrives as /?request=TA-2026-000033. It is read once,
+  // here, before sign-in, so it survives the sign-in step and still opens that claim after.
+  const pendingRequest = useRef(new URLSearchParams(window.location.search).get("request") || "");
+
   const bootstrap = useCallback(async (signedIn: SessionUser) => {
     setUser(signedIn);
     const [p, r] = await Promise.all([api.policy(), api.requests("mine").catch(() => null)]);
     setPolicy(p);
     if (r) setInbox(r.inbox);
   }, []);
+
+  useEffect(() => {
+    if (!user || !policy || !pendingRequest.current) return;
+    const requestId = pendingRequest.current;
+    pendingRequest.current = "";
+    const approver = user.roles.some((r) => ["admin", "hr", "finance"].includes(r)) || !!user.managesOthers;
+    setWorkspace(approver ? "desk" : "self");
+    setView({ name: "detail", requestId });
+    // Drop the parameter so a refresh or a copied address does not reopen it.
+    const url = new URL(window.location.href);
+    url.searchParams.delete("request");
+    window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }, [user, policy]);
 
   /**
    * A 401 mid-session drops straight back to the sign-in screen. It must never
@@ -280,7 +297,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         {/* Sidebar — a drawer on phones, always-on from lg up */}
         <aside
-          className={`fixed inset-x-0 top-14 bottom-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:inset-auto lg:w-64 lg:max-w-none lg:translate-x-0 ${
+          className={`fixed inset-x-0 top-14 bottom-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:sticky lg:top-14 lg:self-start lg:inset-auto lg:h-[calc(100dvh-3.5rem)] lg:w-64 lg:max-w-none lg:translate-x-0 ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >

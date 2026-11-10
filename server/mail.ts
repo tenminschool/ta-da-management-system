@@ -196,7 +196,16 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
 
   const next = nextStepFor(record, event, r);
   if (next) lines.push(`<p>${esc(next)}</p>`);
-  if (link) lines.push(`<p><a href="${esc(link)}">Open the TA/DA system</a></p>`);
+  if (link) {
+    // Straight to this claim; the app asks the person to sign in first if they have to.
+    const target = `${link.replace(/\/$/, "")}/?request=${encodeURIComponent(record.requestId)}`;
+    lines.push(
+      `<p style="margin:20px 0 6px"><a href="${esc(target)}" style="display:inline-block;background:#171717;color:#ffffff;` +
+        `text-decoration:none;font-weight:600;font-size:14px;padding:11px 20px;border-radius:8px">` +
+        `View claim</a></p>` +
+        `<p style="color:#64748b;font-size:12px;margin:0">Button not working? Open ${esc(target)}</p>`,
+    );
+  }
   lines.push(`<p style="color:#94a3b8;font-size:12px">This is an automatic message from the TA/DA system.</p>`);
   return `<div style="font-family:Arial,sans-serif;color:#0f172a">${lines.join("\n")}</div>`;
 }

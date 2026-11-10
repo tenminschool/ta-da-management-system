@@ -232,7 +232,6 @@ export const api = {
       // The file service wants the same Authorization value as its user key.
       const bearer = `Bearer ${token}`;
       xhr.setRequestHeader("Authorization", bearer);
-      xhr.setRequestHeader("x-tenms-user-key", bearer);
       xhr.setRequestHeader("accept", "application/json");
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total);
