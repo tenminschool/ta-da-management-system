@@ -329,8 +329,8 @@ export function MultiSelect({
  * click rather than needing a dedicated close button.
  */
 export function UserMenu({
-  name, email, subtitle, picture, onSignOut,
-}: { name: string; email: string; subtitle?: string; picture?: string; onSignOut?: () => void }) {
+  name, email, subtitle, details, picture, onSignOut,
+}: { name: string; email: string; subtitle?: string; details?: string[]; picture?: string; onSignOut?: () => void }) {
   const [open, setOpen] = React.useState(false);
   const [photoFailed, setPhotoFailed] = React.useState(false);
   React.useEffect(() => setPhotoFailed(false), [picture]);
@@ -368,12 +368,12 @@ export function UserMenu({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-label="Open user menu"
-        className={`flex max-w-56 items-center gap-2 rounded-lg p-1 text-left transition-colors hover:bg-slate-100 ${open ? "bg-slate-100" : ""}`}
+        className={`flex max-w-56 items-center gap-2 rounded-lg p-1 text-left transition-colors hover:bg-slate-100 sm:max-w-72 lg:max-w-md ${open ? "bg-slate-100" : ""}`}
       >
         <AvatarGlyph />
         <span className="hidden min-w-0 flex-1 leading-tight sm:grid">
           <span className="truncate text-sm font-semibold text-slate-800">{name}</span>
-          {subtitle && <span className="truncate text-xs text-slate-400">{subtitle}</span>}
+          {subtitle && <span className="truncate text-xs text-slate-400" title={subtitle}>{subtitle}</span>}
         </span>
         <ChevronsUpDown size={15} className="hidden shrink-0 text-slate-400 sm:block" />
       </button>
@@ -385,6 +385,7 @@ export function UserMenu({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-slate-800">{name}</p>
               <p className="truncate text-xs text-slate-400">{email}</p>
+              {details?.map((d) => <p key={d} className="truncate text-xs text-slate-500">{d}</p>)}
             </div>
           </div>
           {onSignOut && (

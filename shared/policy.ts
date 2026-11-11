@@ -700,7 +700,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     if (draft.scope === "outside" && draft.legs.some((l) => l.mode === "PersonalVehicle")) {
       errors.push("A personal vehicle can only be claimed for inside-city travel.");
     }
-    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft).length) {
+    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft, user.workplace || "").length) {
       errors.push("More Ways needs at least one more trip — use “Add another trip”.");
     }
   }
@@ -951,7 +951,7 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
  * Only the fare is genuinely new information, so that is all this leaves to
  * fill in. Extra hops can still be added by hand on top of these.
  */
-export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
+export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = ""): Leg[] {
   // Mode is picked per trip now, on the leg itself — the trip (and its first
   // leg) exists before that choice is made, so nothing here waits for it.
   const leg = (travelDate: string, travelFrom: string, travelTo: string, mode = ""): Leg =>
@@ -963,15 +963,18 @@ export function impliedLegs(policy: Policy, draft: RequestDraft): Leg[] {
     // draft — the destination is the specific office picked, not a place name.
     if (kind?.needs === "office") {
       const office = draft.purpose || kind.label;
-      const outward = leg(draft.fromDate, "HQ", office);
-      if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, office, "HQ")];
+      // The trip starts from wherever this person works now.
+      const start = workplace || "HQ";
+      const outward = leg(draft.fromDate, start, office);
+      if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, office, start)];
       return [outward];
     }
     const there = draft.destination || kind?.label || "";
-    const outward = leg(draft.fromDate, draft.city, there);
-    // Two-way is the same day back to the office — a second fare, priced
+    const start = workplace || draft.city;
+    const outward = leg(draft.fromDate, start, there);
+    // Two-way is the same day back to where they started — a second fare, priced
     // separately, not the outward one doubled.
-    if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, there, draft.city)];
+    if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, there, start)];
     return [outward];
   }
 

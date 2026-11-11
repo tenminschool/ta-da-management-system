@@ -89,6 +89,8 @@ export interface SessionUser {
   band: string;
   department: string;
   designation: string;
+  /** Where this person works now (`current_workplace` on the 10MS record) — the start of an inside-city trip. */
+  workplace?: string;
   /** Link to the profile photo on the 10MS record (`profile_img`); blank when there is none. */
   picture?: string;
   lineManagerId: string;

@@ -82,6 +82,16 @@ function handler(fn: (req: AuthedRequest, res: Response) => Promise<void>) {
  * The permission names are agreed with the 10MS admin and can be changed with
  * PERMISSION_ADMIN / PERMISSION_HR / PERMISSION_FINANCE. Everyone is at least a "user".
  */
+/** `current_workplace` is normally a plain string; tolerate an object carrying a name. */
+function workplaceOf(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    for (const k of ["name", "title", "label"]) if (typeof o[k] === "string") return (o[k] as string).trim();
+  }
+  return "";
+}
+
 const PERMISSION_FOR_ROLE: [Role, string][] = [
   ["admin", (process.env.PERMISSION_ADMIN || "tada.role.admin").trim().toLowerCase()],
   ["hr", (process.env.PERMISSION_HR || "tada.role.hr").trim().toLowerCase()],
@@ -147,6 +157,7 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     band: bandForPosition(hr.current_hr_position || hr.designation || hr.job_role),
     department: hr.department || hr.current_department || "",
     designation: hr.current_hr_position || hr.designation || hr.job_role || "",
+    workplace: workplaceOf(hr.current_workplace),
     picture: /^https?:\/\//i.test(hr.profile_img || profile.picture || "") ? (hr.profile_img || profile.picture || "") : "",
     lineManagerId,
     lineManagerEmail,

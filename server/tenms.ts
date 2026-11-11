@@ -117,6 +117,8 @@ export interface TenMSRecord {
   /** The employee's bKash wallet number, as HR holds it. */
   bkash_number?: string;
   profile_img?: string;
+  /** Where the person works now, e.g. an office name. */
+  current_workplace?: unknown;
   groups?: string[];
   teams?: { id: string; name: string }[];
 }

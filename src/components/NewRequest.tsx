@@ -96,8 +96,8 @@ export default function NewRequest({
   // The journey the form already knows about, kept in step with it. Fares are
   // carried across so editing a date never wipes what has been typed, and any
   // extra hops added by hand are left alone at the end of the list.
-  const implied = useMemo(() => impliedLegs(policy, draft), [
-    policy, draft.scope, draft.fromDate, draft.toDate,
+  const implied = useMemo(() => impliedLegs(policy, draft, user.workplace || ""), [
+    policy, user.workplace, draft.scope, draft.fromDate, draft.toDate,
     draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection, draft.purpose,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
