@@ -108,7 +108,10 @@ export default function App() {
     (async () => {
       try {
         if (getToken()) {
-          const { user: u } = await api.me();
+          const { user: u, token: refreshed } = await api.me();
+          // The server re-reads the person's 10MS permissions on every page load and hands back
+          // a token carrying them, so a granted or removed permission lands without a new sign-in.
+          if (refreshed) setToken(refreshed);
           if (!cancelled) await bootstrap(u);
           return;
         }
@@ -180,7 +183,8 @@ export default function App() {
     { key: "desk-advances", label: "Advance Approvals", short: "Advance", icon: HandCoins, show: reviewsAdvances },
     { key: "desk-vehicles", label: "Vehicle Registrations", short: "Vehicles", icon: Car, show: isAdmin },
     { key: "desk-payments", label: "Payments", short: "Pay", icon: Banknote, show: isFinance || isAdmin },
-    { key: "admin", label: "Configuration", short: "Config", icon: Settings, show: isAdmin },
+    // Policy configuration is admin-only; HR keeps the unlock and block tools that live on the same page.
+    { key: "admin", label: user.roles.includes("admin") ? "Configuration" : "Unlocks & Blocks", short: user.roles.includes("admin") ? "Config" : "Unlocks", icon: Settings, show: isAdmin },
   ] as (NavItem & { show: boolean })[]).filter((n) => n.show).map(({ show: _show, ...n }) => n);
 
   const nav = workspace === "self" ? selfNav : deskNav;
@@ -446,7 +450,7 @@ export default function App() {
             />
           )}
 
-          {view.name === "admin" && <AdminConfig />}
+          {view.name === "admin" && <AdminConfig canEditPolicy={user.roles.includes("admin")} />}
 
           {view.name === "detail" && (
             <RequestDetail

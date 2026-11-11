@@ -159,6 +159,9 @@ export default function Reports({
 
   return (
     <div className="space-y-5 print:space-y-4">
+      {/* Title, filters and the four cards stay in place on desktop while the
+          rankings and the claims table scroll underneath. */}
+      <div className="z-20 space-y-5 bg-[var(--main-gray)] lg:sticky lg:top-14 lg:-mx-8 lg:px-8 lg:pb-4 lg:pt-2 print:static print:space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-slate-900 sm:text-xl">Dashboard</h1>
@@ -271,6 +274,7 @@ export default function Reports({
             <p className="mt-0.5 text-xs font-medium text-slate-500">{label}</p>
           </div>
         ))}
+      </div>
       </div>
 
       {/* Once someone has drilled down to one member, the claims table below

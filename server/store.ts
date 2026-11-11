@@ -10,7 +10,7 @@
 import crypto from "crypto";
 import { appendRow, readTab, readTabs, updateRow, withLock, type Row } from "./db.js";
 import type {
-  ApprovalRow, InsideCityBlockEntry, Leg, Policy, RequestRecord, Role, RoleGrant, SessionUser, StageKey, Status, TeamMember, UnlockRequest,
+  ApprovalRow, InsideCityBlockEntry, Leg, Policy, RequestRecord, SessionUser, StageKey, Status, TeamMember, UnlockRequest,
   VehicleRegistration,
 } from "../shared/types.js";
 
@@ -657,66 +657,3 @@ export async function upsertApproval(
     else await appendRow("Approvals", base);
   });
 }
-
-
-// ── Granted roles ───────────────────────────────────────────────────────────
-
-const GRANTABLE_ROLES: RoleGrant["role"][] = ["admin", "hr", "finance"];
-
-export function isGrantableRole(role: string): role is RoleGrant["role"] {
-  return (GRANTABLE_ROLES as string[]).includes(role);
-}
-
-export function toRoleGrant(r: Row & { _row: string }): RoleGrant & { _row: string } {
-  return {
-    _row: r._row,
-    email: String(r.email || "").trim().toLowerCase(),
-    role: String(r.role || "").trim().toLowerCase() as RoleGrant["role"],
-    addedBy: r.added_by,
-    addedAt: r.added_at,
-  };
-}
-
-export function fromRoleGrant(g: RoleGrant): Row {
-  return { email: g.email, role: g.role, added_by: g.addedBy, added_at: g.addedAt };
-}
-
-let roleGrantCache: { byEmail: Map<string, Role[]>; at: number } | null = null;
-const ROLE_GRANT_TTL_MS = 30_000;
-
-export function invalidateRoleGrants(): void {
-  roleGrantCache = null;
-}
-
-/**
- * Roles granted by email, read on every authenticated request so a grant or
- * removal takes effect without the person signing in again. A missing or
- * unreadable tab means "no grants" rather than locking everyone out.
- */
-export async function grantedRolesFor(email: string): Promise<Role[]> {
-  if (!roleGrantCache || Date.now() - roleGrantCache.at >= ROLE_GRANT_TTL_MS) {
-    const byEmail = new Map<string, Role[]>();
-    try {
-      for (const g of (await readTab("RoleGrants")).map(toRoleGrant)) {
-        if (!g.email || !isGrantableRole(g.role)) continue;
-        byEmail.set(g.email, [...(byEmail.get(g.email) ?? []), g.role]);
-      }
-    } catch (err) {
-      console.warn("[roles] could not read RoleGrants:", (err as Error).message);
-    }
-    roleGrantCache = { byEmail, at: Date.now() };
-  }
-  return roleGrantCache.byEmail.get(email.trim().toLowerCase()) ?? [];
-}
-
-/**
- * Emails that are always system admins, whatever groups the provider reports
- * or grants say; they cannot be removed from the admin list. Matched against
- * the email on the verified 10MS token. Extra addresses can be added
- * (comma-separated) with DEFAULT_ADMIN_EMAILS.
- */
-export const DEFAULT_ADMIN_EMAILS = new Set(
-  ["fahad@10minuteschool.com", ...String(process.env.DEFAULT_ADMIN_EMAILS || "").split(",")]
-    .map((e) => e.trim().toLowerCase())
-    .filter(Boolean),
-);

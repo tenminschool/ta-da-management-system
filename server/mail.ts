@@ -16,8 +16,6 @@
  * Mail never blocks a claim: a failure is logged and the request goes on.
  */
 import type { MailBatch, RequestRecord } from "../shared/types.js";
-import { readTab } from "./db.js";
-import { DEFAULT_ADMIN_EMAILS, toRoleGrant } from "./store.js";
 
 const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://postal.10minuteschool.com/api/v1/mail/send";
 
@@ -51,20 +49,13 @@ const clean = (e: string | undefined) => String(e || "").trim().toLowerCase();
 type DeskRole = "hr" | "admin" | "finance";
 
 /**
- * Everyone holding the role: granted on Configuration → Roles, listed in the
- * HR_EMAILS / FINANCE_EMAILS settings, or (for admin) always-admin addresses.
+ * Who to email for each desk. 10MS permissions say who may act, but they cannot
+ * be listed from a sign-in, so the addresses to notify are settings:
+ * ADMIN_EMAILS, HR_EMAILS and FINANCE_EMAILS (comma-separated).
  */
-async function roleEmails(role: DeskRole): Promise<string[]> {
-  const fromEnv = role === "admin"
-    ? [...DEFAULT_ADMIN_EMAILS]
-    : String(process.env[role === "hr" ? "HR_EMAILS" : "FINANCE_EMAILS"] || "").split(",").map(clean).filter(Boolean);
-  let granted: string[] = [];
-  try {
-    granted = (await readTab("RoleGrants")).map(toRoleGrant).filter((g) => g.role === role).map((g) => g.email);
-  } catch (err) {
-    console.warn("[mail] could not read RoleGrants:", (err as Error).message);
-  }
-  return [...new Set([...fromEnv, ...granted].map(clean).filter(Boolean))];
+function roleEmails(role: DeskRole): string[] {
+  const name = role === "admin" ? "ADMIN_EMAILS" : role === "hr" ? "HR_EMAILS" : "FINANCE_EMAILS";
+  return [...new Set(String(process.env[name] || "").split(",").map(clean).filter(Boolean))];
 }
 
 function travellersOf(record: RequestRecord) {
@@ -104,7 +95,7 @@ async function recipientsFor(record: RequestRecord, event: ClaimEvent): Promise<
   /** `acts`: the roles whose members have to act now; the rest are only informed. */
   const addDesk = async (roles: DeskRole[], desk: "HR" | "Finance", acts: DeskRole[]) => {
     for (const role of roles) {
-      for (const email of await roleEmails(role)) {
+      for (const email of roleEmails(role)) {
         const r = get(email);
         r.desk = desk;
         r.act = r.act || acts.includes(role);

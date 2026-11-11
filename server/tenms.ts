@@ -245,3 +245,35 @@ export function bandForPosition(position: string | undefined): string {
   console.warn(`[band] no band matches the position "${raw}".`);
   return "";
 }
+
+/**
+ * The permission names the signed-in admin holds, from `/v1/admin/user/permissions`
+ * (the same call the SDK's getPermissions() makes). Only ACTIVE ones count: the
+ * API returns a revoked permission as INACTIVE rather than leaving it out.
+ *
+ * Returns null when the list could not be read, so a failed call is not mistaken
+ * for "this person has no permissions".
+ */
+export async function fetchPermissions(accessToken: string): Promise<string[] | null> {
+  try {
+    const res = await ask("/v1/admin/user/permissions?limit=-1", accessToken);
+    if (!res.ok) {
+      console.warn(`[tenms] permissions request failed (${res.status}).`);
+      return null;
+    }
+    const body = (await res.json()) as { data?: { permissions?: unknown } };
+    const list = body?.data?.permissions;
+    if (!Array.isArray(list)) {
+      console.warn("[tenms] permissions response had no data.permissions list.");
+      return null;
+    }
+    return list
+      .filter((p): p is { name: string; status: string } =>
+        !!p && typeof p === "object" && typeof (p as { name?: unknown }).name === "string"
+        && String((p as { status?: unknown }).status).toUpperCase() === "ACTIVE")
+      .map((p) => p.name.trim());
+  } catch (err) {
+    console.warn("[tenms] permissions request failed:", (err as Error).message);
+    return null;
+  }
+}

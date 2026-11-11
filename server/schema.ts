@@ -124,13 +124,6 @@ export const TABS: TabSpec[] = [
 
   // ── Roles an administrator has granted (admin / hr / finance), by email.
   //    Merged with the identity provider's roles on every request ───────────
-  {
-    title: "RoleGrants",
-    color: AMBER,
-    widths: [260, 110, 260, 170],
-    headers: ["email", "role", "added_by", "added_at"],
-  },
-
   // ── Late-claim windows an administrator has opened, one row per employee ──
   {
     title: "ClaimUnlocks",

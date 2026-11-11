@@ -2,7 +2,7 @@
 
 import { auth } from "./lib/auth.js";
 import type {
-  ApprovalRow, Computation, InsideCityBlockEntry, MailBatch, Policy, RoleGrant, RequestDraft, RequestRecord, SessionUser, UnlockRequest,
+  ApprovalRow, Computation, InsideCityBlockEntry, MailBatch, Policy, RequestDraft, RequestRecord, SessionUser, UnlockRequest,
   VehicleRegistration,
 } from "../shared/types.js";
 import type { ModeOption } from "../shared/policy.js";
@@ -274,7 +274,12 @@ export const api = {
     }
     return pending;
   },
-  me: () => call<{ user: SessionUser }>("/me"),
+  // The 10MS token rides along so the server can read the person's current permissions;
+  // when it does, it answers with a fresh app token carrying those roles.
+  me: async () =>
+    call<{ user: SessionUser; token?: string }>("/me", {
+      headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
+    }),
   saveBkashNumber: (bkashNumber: string) => post<{ ok: boolean; bkashNumber: string }>("/me/bkash", { bkashNumber }),
   saveTeammateBkash: (employeeId: string, bkashNumber: string) =>
     post<{ ok: boolean; employeeId: string; bkashNumber: string }>(`/employees/${encodeURIComponent(employeeId)}/bkash`, { bkashNumber }),
@@ -289,10 +294,6 @@ export const api = {
     }),
   removeInsideCityBlock: (email: string) =>
     call<{ ok: boolean }>(`/admin/inside-city-block/${encodeURIComponent(email)}`, { method: "DELETE" }),
-  roleGrants: () => call<{ grants: RoleGrant[]; defaultAdmins: string[] }>("/admin/roles"),
-  grantRole: (email: string, role: RoleGrant["role"]) => post<{ grant: RoleGrant }>("/admin/roles", { email, role }),
-  revokeRole: (email: string, role: RoleGrant["role"]) =>
-    call<{ ok: boolean }>("/admin/roles", { method: "DELETE", body: JSON.stringify({ email, role }) }),
   employees: async (q: string) =>
     call<{ employees: EmployeeLite[] }>(`/employees?q=${encodeURIComponent(q)}`, {
       // The directory is searched with the person's own 10MS token.

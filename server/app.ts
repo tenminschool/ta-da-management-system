@@ -19,11 +19,11 @@ import {
   withLock, type Row,
 } from "./db.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { bandForPosition, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { bandForPosition, fetchPermissions, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
 import { planClaimMail } from "./mail.js";
 import {
-  DEFAULT_ADMIN_EMAILS, deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRoleGrant, grantedRolesFor, invalidateRoleGrants, isGrantableRole, toRoleGrant, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
+  deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, setClaimUnlock, nextRequestId, nextUnlockRequestId,
   nowISO, parseLinks, STAGE_COLUMN, toApprovalRow, toInsideCityBlockEntry, toRequest, toUnlockRequest, toVehicle,
   upsertApproval,
@@ -34,7 +34,7 @@ import {
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup, type Role } from "../shared/types.js";
 import type {
-  InsideCityBlockEntry, MailBatch, RequestDraft, RequestRecord, RoleGrant, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
+  InsideCityBlockEntry, MailBatch, RequestDraft, RequestRecord, SessionUser, Status, TeamMember, UnlockRequest, VehicleRegistration,
 } from "../shared/types.js";
 
 const app = express();
@@ -53,14 +53,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     res.status(401).json({ error: "Please sign in again." });
     return;
   }
-  // Roles an administrator has granted are applied here, on every request,
-  // so a grant or removal takes effect without signing in again.
-  effectiveRoles(session.email, session.roles)
-    .then((roles) => {
-      (req as AuthedRequest).session = { ...session, roles };
-      next();
-    })
-    .catch(next);
+  (req as AuthedRequest).session = session;
+  next();
 }
 
 /** Wraps an async handler so a rejected promise becomes a 500 instead of a hang. */
@@ -83,20 +77,21 @@ function handler(fn: (req: AuthedRequest, res: Response) => Promise<void>) {
  * Everything about the person comes from the provider's `/v1/admin/me` record;
  * nothing else is consulted.
  */
-const KNOWN_ROLES: Role[] = ["user", "admin", "hr", "finance"];
+/**
+ * Roles come from one place only: the permissions 10MS has granted this person.
+ * The permission names are agreed with the 10MS admin and can be changed with
+ * PERMISSION_ADMIN / PERMISSION_HR / PERMISSION_FINANCE. Everyone is at least a "user".
+ */
+const PERMISSION_FOR_ROLE: [Role, string][] = [
+  ["admin", (process.env.PERMISSION_ADMIN || "tada.role.admin").trim().toLowerCase()],
+  ["hr", (process.env.PERMISSION_HR || "tada.role.hr").trim().toLowerCase()],
+  ["finance", (process.env.PERMISSION_FINANCE || "tada.role.finance").trim().toLowerCase()],
+];
 
-/** The provider's own roles, narrowed to the ones this app understands; everyone is at least a "user". */
-function rolesFrom(groups: unknown): Role[] {
-  const raw = Array.isArray(groups) ? groups.filter((g): g is string => typeof g === "string") : [];
-  const roles = raw.map((r) => r.trim().toLowerCase()).filter((r): r is Role => (KNOWN_ROLES as string[]).includes(r));
-  return roles.length ? [...new Set(roles)] : ["user"];
-}
-
-/** Provider roles + default admins + roles granted in the RoleGrants tab. */
-async function effectiveRoles(email: string, base: Role[]): Promise<Role[]> {
-  const e = (email || "").trim().toLowerCase();
-  const extra: Role[] = [...(await grantedRolesFor(e)), ...(DEFAULT_ADMIN_EMAILS.has(e) ? (["admin"] as Role[]) : [])];
-  return [...new Set<Role>([...base, ...extra])];
+function rolesFromPermissions(permissions: string[] | null): Role[] {
+  const held = new Set((permissions ?? []).map((p) => p.trim().toLowerCase()));
+  const roles = PERMISSION_FOR_ROLE.filter(([, name]) => held.has(name)).map(([role]) => role);
+  return ["user", ...roles];
 }
 
 app.post("/api/auth/tenms", handler(async (req, res) => {
@@ -132,15 +127,16 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   // The HR record names the line manager (`supervisor`) but gives no ID or email, so they are
   // looked up in the directory. That, the granted roles and the "manages anyone" check do not
   // depend on one another, so they run together rather than one after the other.
-  const [boss, roles, manages] = await Promise.all([
+  const [boss, permissions, manages] = await Promise.all([
     // The record carries the manager's ID and email directly; only an older record that has
     // just the name needs the directory lookup.
     hr.supervisor_email
       ? Promise.resolve({ employeeId: hr.supervisor_employee_id || "", email: hr.supervisor_email.trim().toLowerCase() })
       : hr.supervisor ? resolveSupervisor(accessToken, hr.supervisor) : Promise.resolve(null),
-    effectiveRoles(email, rolesFrom(hr.groups)),
+    fetchPermissions(accessToken),
     managesOthers(employeeId),
   ]);
+  const roles = rolesFromPermissions(permissions);
   const lineManagerId = boss?.employeeId || "";
   const lineManagerEmail = boss?.email || "";
   const user: SessionUser = {
@@ -168,8 +164,25 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   // Recomputed rather than read from the token, so a saved bKash number, a
   // claim-window unlock, a hierarchy change etc. all take effect on the next
   // page load rather than requiring the person to sign out and back in.
-  const { expiresAt, ...fresh } = await currentSession(req.session);
-  res.json({ user: { ...fresh, managesOthers: await managesOthers(fresh.employeeId) } });
+  // The browser sends its 10MS token with the page-load check, so the person's roles follow
+  // their current 10MS permissions from the next page load, not only from the next sign-in.
+  // The permission lookup, the session refresh and the "manages anyone" check do not depend on
+  // one another, so they run together rather than one after the other.
+  const tenmsToken = String(req.headers["x-tenms-token"] || "");
+  const [permissions, current, manages] = await Promise.all([
+    tenmsToken ? fetchPermissions(tenmsToken) : Promise.resolve(null),
+    currentSession(req.session),
+    managesOthers(req.session.employeeId),
+  ]);
+  let token: string | undefined;
+  let roles = current.roles;
+  if (permissions) {
+    roles = rolesFromPermissions(permissions);
+    const { expiresAt: _e, ...base } = req.session;
+    token = signToken({ ...base, roles });
+  }
+  const { expiresAt, ...fresh } = current;
+  res.json({ token, user: { ...fresh, roles, managesOthers: manages } });
 }));
 
 /** Saves this employee's own bKash number, so every future claim starts pre-filled with it. */
@@ -1714,7 +1727,7 @@ app.post("/api/requests/:id/advance", requireAuth, handler(async (req, res) => {
 const EDITABLE_TABS = ["Config", "BandPolicy", "Lists"];
 
 app.get("/api/admin/tabs", requireAuth, handler(async (req, res) => {
-  if (!hasRole(req.session, "admin", "hr")) {
+  if (!hasRole(req.session, "admin")) {
     res.status(403).json({ error: "Admin access required." });
     return;
   }
@@ -1966,68 +1979,6 @@ app.delete("/api/admin/inside-city-block/:email", requireAuth, handler(async (re
   res.json({ ok: true });
 }));
 
-// ── Role management: admins grant or remove admin / hr / finance by email ───
-
-app.get("/api/admin/roles", requireAuth, handler(async (req, res) => {
-  if (!hasRole(req.session, "admin")) {
-    res.status(403).json({ error: "Only an administrator can manage roles." });
-    return;
-  }
-  const grants = (await readTab("RoleGrants")).map(toRoleGrant)
-    .filter((g) => g.email && isGrantableRole(g.role))
-    .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
-    .map(({ _row, ...g }) => g);
-  res.json({ grants, defaultAdmins: [...DEFAULT_ADMIN_EMAILS] });
-}));
-
-app.post("/api/admin/roles", requireAuth, handler(async (req, res) => {
-  if (!hasRole(req.session, "admin")) {
-    res.status(403).json({ error: "Only an administrator can manage roles." });
-    return;
-  }
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const role = String(req.body?.role || "").trim().toLowerCase();
-  if (!BLOCK_EMAIL_RE.test(email)) {
-    res.status(400).json({ error: "Enter a valid email address." });
-    return;
-  }
-  if (!isGrantableRole(role)) {
-    res.status(400).json({ error: "Role must be admin, hr or finance." });
-    return;
-  }
-  const rows = (await readTab("RoleGrants")).map(toRoleGrant);
-  if (rows.some((g) => g.email === email && g.role === role)) {
-    res.status(400).json({ error: `${email} already has the ${role} role.` });
-    return;
-  }
-  const grant: RoleGrant = { email, role, addedBy: `${req.session.name} <${req.session.email}>`, addedAt: nowISO() };
-  await appendRow("RoleGrants", fromRoleGrant(grant));
-  invalidateRoleGrants();
-  res.json({ grant });
-}));
-
-app.delete("/api/admin/roles", requireAuth, handler(async (req, res) => {
-  if (!hasRole(req.session, "admin")) {
-    res.status(403).json({ error: "Only an administrator can manage roles." });
-    return;
-  }
-  const email = String(req.body?.email || "").trim().toLowerCase();
-  const role = String(req.body?.role || "").trim().toLowerCase();
-  if (role === "admin" && DEFAULT_ADMIN_EMAILS.has(email)) {
-    res.status(400).json({ error: "A default administrator cannot be removed." });
-    return;
-  }
-  const rows = (await readTab("RoleGrants")).map(toRoleGrant);
-  const row = rows.find((g) => g.email === email && g.role === role);
-  if (!row) {
-    res.status(404).json({ error: "No such role grant." });
-    return;
-  }
-  await clearRow("RoleGrants", row._row);
-  invalidateRoleGrants();
-  res.json({ ok: true });
-}));
-
 // ── Vehicles: register, approve, claim against ──────────────────────────────
 
 /** The signed-in employee's own vehicle registration, whatever state it is in. */
@@ -2134,7 +2085,7 @@ app.post("/api/vehicles/:employeeId/decide", requireAuth, handler(async (req, re
 }));
 
 app.post("/api/admin/tabs/:tab", requireAuth, handler(async (req, res) => {
-  if (!hasRole(req.session, "admin", "hr")) {
+  if (!hasRole(req.session, "admin")) {
     res.status(403).json({ error: "Admin access required." });
     return;
   }
