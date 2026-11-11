@@ -538,7 +538,7 @@ function StepTravelType({
                 <Notice
                   tone="info"
                   items={[
-                    `Your request to unlock ${fmtDate(latestUnlock.requestedFrom)} is with Administration — check back here once they decide.`,
+                    `Your request to unlock ${fmtDate(latestUnlock.requestedFrom)} is with HR and Administration — they have been emailed, and you'll get an email when they decide.`,
                   ]}
                 />
               )}
@@ -737,7 +737,8 @@ function ContactHrModal({
     setBusy(true);
     setError("");
     try {
-      await api.requestUnlock(reason.trim(), requestedFrom);
+      const res = await api.requestUnlock(reason.trim(), requestedFrom);
+      await sendMails(res.mail);
       onDone();
     } catch (err) {
       setError((err as Error).message);

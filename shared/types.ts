@@ -172,6 +172,8 @@ export interface UnlockRequest {
   decisionRemarks: string;
   /** Set once approved — the date actually granted. */
   unlockFrom: string;
+  /** Who to tell about the decision. */
+  email?: string;
 }
 
 /** How an approved claim is paid out. */

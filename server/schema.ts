@@ -107,7 +107,7 @@ export const TABS: TabSpec[] = [
     headers: [
       "request_id", "employee_id", "employee_name", "department", "reason",
       "requested_from", "submitted_at", "status", "decided_by", "decided_at",
-      "decision_remarks", "unlock_from",
+      "decision_remarks", "unlock_from", "email",
     ],
   },
 
@@ -135,6 +135,8 @@ export const TABS: TabSpec[] = [
       "claim_unlock_from",
       // Unlocks exactly this one travel date, set by approving a "Contact HR" request.
       "claim_unlock_exact",
+      // When each unlock lapses and the window goes back to normal (blank = no expiry, older rows).
+      "claim_unlock_from_until", "claim_unlock_exact_until",
     ],
   },
 
@@ -160,6 +162,7 @@ export const TABS: TabSpec[] = [
       ["COMPANY_ARRANGE_NOTICE_DAYS", 2, "Business days of notice required for company-arranged travel", "2026-01-01"],
       ["REQUIRE_DOCUMENT_LINK", "Yes", "Require at least one document link when money is claimed", "2026-01-01"],
       ["CURRENCY", "BDT", "Display currency", "2026-01-01"],
+      ["UNLOCK_DURATION_DAYS", 2, "How many days an unlock stays open after HR or Administration grants it; then the claim window goes back to normal", "2026-01-01"],
       ["CLAIM_WINDOW_DAYS", 7, "Days after travel within which a claim must be submitted. An administrator can unlock a late one.", "2026-01-01"],
       ["ALLOW_BANK_PAYOUT", "No", "Yes to let people be paid into a bank account as well as bKash. No pays everyone by bKash.", "2026-01-01"],
       ["REQUEST_ID_PREFIX", "TA", "Prefix used when generating request numbers", "2026-01-01"],

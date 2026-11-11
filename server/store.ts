@@ -115,7 +115,12 @@ export async function loadPolicy(): Promise<Policy> {
 export async function getClaimUnlock(employeeId: string): Promise<{ from: string; exact: string }> {
   if (!employeeId) return { from: "", exact: "" };
   const r = (await readTab("ClaimUnlocks")).find((x) => x.employee_id === employeeId);
-  return { from: r?.claim_unlock_from || "", exact: r?.claim_unlock_exact || "" };
+  // An unlock lapses by itself once its time is up; a row without a time (older ones) stays open.
+  const open = (until: string | undefined) => !until || Date.now() < Date.parse(until);
+  return {
+    from: open(r?.claim_unlock_from_until) ? r?.claim_unlock_from || "" : "",
+    exact: open(r?.claim_unlock_exact_until) ? r?.claim_unlock_exact || "" : "",
+  };
 }
 
 /** One row per employee; each kind of unlock changes only its own column. */
@@ -126,7 +131,10 @@ export async function setClaimUnlock(employeeId: string, change: Row): Promise<b
     const { _row, ...rest } = row;
     await updateRow("ClaimUnlocks", _row, { ...rest, ...change });
   } else {
-    await appendRow("ClaimUnlocks", { employee_id: employeeId, claim_unlock_from: "", claim_unlock_exact: "", ...change });
+    await appendRow("ClaimUnlocks", {
+      employee_id: employeeId, claim_unlock_from: "", claim_unlock_exact: "",
+      claim_unlock_from_until: "", claim_unlock_exact_until: "", ...change,
+    });
   }
   return true;
 }
@@ -462,6 +470,7 @@ export function toUnlockRequest(r: Row & { _row: string }): UnlockRequest & { _r
     decidedAt: r.decided_at,
     decisionRemarks: r.decision_remarks,
     unlockFrom: r.unlock_from,
+    email: r.email || "",
   };
 }
 
@@ -479,6 +488,7 @@ export function fromUnlockRequest(u: UnlockRequest): Row {
     decided_at: u.decidedAt,
     decision_remarks: u.decisionRemarks,
     unlock_from: u.unlockFrom,
+    email: u.email || "",
   };
 }
 

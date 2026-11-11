@@ -353,9 +353,13 @@ export const api = {
       body: JSON.stringify({ draft, submit }),
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
-  act: (id: string, action: string, remarks: string, approvedAmount?: number) =>
-    post<{ request: RequestRecord; mail?: MailBatch }>(`/requests/${encodeURIComponent(id)}/action`, {
-      action, remarks, approvedAmount,
+  // The 10MS token rides along on the calls that send email, so the server can look up who sits
+  // at each desk (HR, admin, Finance) in the 10MS directory.
+  act: async (id: string, action: string, remarks: string, approvedAmount?: number) =>
+    call<{ request: RequestRecord; mail?: MailBatch }>(`/requests/${encodeURIComponent(id)}/action`, {
+      method: "POST",
+      body: JSON.stringify({ action, remarks, approvedAmount }),
+      headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
   saveCompanyAmounts: (
     id: string,
@@ -377,12 +381,20 @@ export const api = {
   claimUnlock: (employeeId: string, from: string) =>
     post<{ ok: boolean; employeeId: string; from: string }>("/admin/claim-unlock", { employeeId, from }),
 
-  requestUnlock: (reason: string, requestedFrom: string) =>
-    post<{ request: UnlockRequest }>("/unlock-requests", { reason, requestedFrom }),
+  requestUnlock: async (reason: string, requestedFrom: string) =>
+    call<{ request: UnlockRequest; mail?: MailBatch }>("/unlock-requests", {
+      method: "POST",
+      body: JSON.stringify({ reason, requestedFrom }),
+      headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
+    }),
   unlockRequests: (scope: "mine" | "pending" | "all" = "mine") =>
     call<{ requests: UnlockRequest[] }>(`/unlock-requests?scope=${scope}`),
-  decideUnlock: (id: string, action: "approve" | "reject", remarks: string, unlockFrom?: string) =>
-    post<{ request: UnlockRequest }>(`/unlock-requests/${encodeURIComponent(id)}/decide`, { action, remarks, unlockFrom }),
+  decideUnlock: async (id: string, action: "approve" | "reject", remarks: string, unlockFrom?: string) =>
+    call<{ request: UnlockRequest; mail?: MailBatch }>(`/unlock-requests/${encodeURIComponent(id)}/decide`, {
+      method: "POST",
+      body: JSON.stringify({ action, remarks, unlockFrom }),
+      headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
+    }),
 
   myVehicle: () => call<{ vehicle: VehicleRegistration | null }>("/vehicles/mine"),
   registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number; imageLink?: string }) =>

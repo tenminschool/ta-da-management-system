@@ -8,6 +8,8 @@
  * that comes back is used to identify the person.
  */
 
+import type { Role } from "../shared/types.js";
+
 const BASE_URL = (process.env.TENMS_AUTH_BASE_URL || "https://api.10minuteschool.com/auth").replace(/\/$/, "");
 
 export interface TenMSUser {
@@ -251,12 +253,31 @@ export function bandForPosition(position: string | undefined): string {
 }
 
 /**
- * The permission names the signed-in admin holds, from `/v1/admin/user/permissions`
- * (the same call the SDK's getPermissions() makes). Only ACTIVE ones count: the
- * API returns a revoked permission as INACTIVE rather than leaving it out.
- *
- * Returns null when the list could not be read, so a failed call is not mistaken
- * for "this person has no permissions".
+ * The groups the signed-in person belongs to right now (`groups` on `/v1/admin/me`), lower-cased.
+ * This is the single call used to refresh roles on a page load. Returns null if it could not be
+ * read, so a failed call is not mistaken for "belongs to no group".
+ */
+export async function fetchOwnGroups(accessToken: string): Promise<string[] | null> {
+  try {
+    const res = await ask("/v1/admin/me", accessToken);
+    if (!res.ok) {
+      console.warn(`[tenms] groups request failed (${res.status}).`);
+      return null;
+    }
+    const body = (await res.json()) as { data?: { user?: { groups?: unknown } } };
+    const groups = body?.data?.user?.groups;
+    return Array.isArray(groups) ? groups.filter((g): g is string => typeof g === "string").map((g) => g.trim().toLowerCase()) : [];
+  } catch (err) {
+    console.warn("[tenms] groups request failed:", (err as Error).message);
+    return null;
+  }
+}
+
+/**
+ * The permission names the signed-in admin holds, from `/v1/admin/user/permissions` (the same call
+ * the SDK's getPermissions() makes). Only ACTIVE ones count: a revoked permission comes back as
+ * INACTIVE rather than being left out. Returns null when the list could not be read, so a failed
+ * call is not mistaken for "holds no permissions".
  */
 export async function fetchPermissions(accessToken: string): Promise<string[] | null> {
   try {
@@ -275,9 +296,66 @@ export async function fetchPermissions(accessToken: string): Promise<string[] | 
       .filter((p): p is { name: string; status: string } =>
         !!p && typeof p === "object" && typeof (p as { name?: unknown }).name === "string"
         && String((p as { status?: unknown }).status).toUpperCase() === "ACTIVE")
-      .map((p) => p.name.trim());
+      .map((p) => p.name.trim().toLowerCase());
   } catch (err) {
     console.warn("[tenms] permissions request failed:", (err as Error).message);
     return null;
   }
 }
+
+/** The permission that marks each role: tada.role.admin / .hr / .finance (change with PERMISSION_ADMIN / _HR / _FINANCE). */
+export const PERMISSION_FOR_ROLE: [Role, string][] = [
+  ["admin", (process.env.PERMISSION_ADMIN || "tada.role.admin").trim().toLowerCase()],
+  ["hr", (process.env.PERMISSION_HR || "tada.role.hr").trim().toLowerCase()],
+  ["finance", (process.env.PERMISSION_FINANCE || "tada.role.finance").trim().toLowerCase()],
+];
+
+export interface DirectoryMember {
+  email: string;
+  groups: string[];
+}
+
+/**
+ * Everyone in the 10MS admin directory with their groups, read a page at a time. Used to find who
+ * to email at the HR, admin and Finance desks: the people whose groups include the desk's group.
+ * Returns what it could read; an empty list if the directory does not report groups.
+ */
+export async function listDirectoryMembers(accessToken: string): Promise<DirectoryMember[]> {
+  const PAGE = 50;
+  const members: DirectoryMember[] = [];
+  const seen = new Set<string>();
+  for (let page = 0; page < 40; page++) {
+    const res = await ask(`/v1/admin/all?skip=${page * PAGE}&limit=${PAGE}&search=`, accessToken);
+    if (!res.ok) throw new TenMSVerifyError(`The directory could not be read (${res.status}).`, 502);
+    const body = (await res.json()) as { data?: unknown };
+    const data = body?.data as unknown;
+    const list: unknown[] = Array.isArray(data)
+      ? data
+      : (Object.values((data as object) || {}).find((v) => Array.isArray(v)) as unknown[] | undefined) ?? [];
+    let fresh = 0;
+    for (const u of list) {
+      if (!u || typeof u !== "object") continue;
+      const o = u as Record<string, unknown>;
+      const id = String(o.employee_id || o.id || "");
+      const email = String(o.username || o.email || "").trim().toLowerCase();
+      if (!email || seen.has(id || email)) continue;
+      seen.add(id || email);
+      fresh += 1;
+      const groups = Array.isArray(o.groups) ? o.groups.filter((g): g is string => typeof g === "string").map((g) => g.trim().toLowerCase()) : [];
+      members.push({ email, groups });
+    }
+    if (list.length < PAGE || fresh === 0) break;
+  }
+  return members;
+}
+
+/**
+ * Roles come from one place only: the 10MS groups a person belongs to. The group names are
+ * ta_da_admin, ta_da_hr and ta_da_finance, and can be changed with GROUP_ADMIN / GROUP_HR /
+ * GROUP_FINANCE. Everyone is at least a "user".
+ */
+export const GROUP_FOR_ROLE: [Role, string][] = [
+  ["admin", (process.env.GROUP_ADMIN || "ta_da_admin").trim().toLowerCase()],
+  ["hr", (process.env.GROUP_HR || "ta_da_hr").trim().toLowerCase()],
+  ["finance", (process.env.GROUP_FINANCE || "ta_da_finance").trim().toLowerCase()],
+];

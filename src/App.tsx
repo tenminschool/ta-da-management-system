@@ -57,6 +57,7 @@ export default function App() {
   // A link from a notification email arrives as /?request=TA-2026-000033. It is read once,
   // here, before sign-in, so it survives the sign-in step and still opens that claim after.
   const pendingRequest = useRef(new URLSearchParams(window.location.search).get("request") || "");
+  const pendingView = useRef(new URLSearchParams(window.location.search).get("view") || "");
 
   const bootstrap = useCallback(async (signedIn: SessionUser) => {
     setUser(signedIn);
@@ -66,6 +67,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // /?view=admin — from the "unlock request" email — opens the page where HR and admin decide it.
+    if (user && policy && pendingView.current === "admin") {
+      pendingView.current = "";
+      if (user.roles.some((r) => ["admin", "hr"].includes(r))) {
+        setWorkspace("desk");
+        setView({ name: "admin" });
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete("view");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
     if (!user || !policy || !pendingRequest.current) return;
     const requestId = pendingRequest.current;
     pendingRequest.current = "";

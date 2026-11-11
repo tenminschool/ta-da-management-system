@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Save, Trash2 } from "lucide-react";
 import { api, type EmployeeLite } from "../api.js";
 import type { InsideCityBlockEntry, UnlockRequest } from "../../shared/types.js";
+import { sendMails } from "../lib/mail.js";
 import { Card, Notice, Spinner } from "./ui.js";
 
 /**
@@ -337,7 +338,8 @@ function UnlockRequestRow({ request, onDone }: { request: UnlockRequest; onDone:
     setBusy(true);
     setError("");
     try {
-      await api.decideUnlock(request.requestId, action, remarks.trim(), action === "approve" ? unlockFrom : undefined);
+      const res = await api.decideUnlock(request.requestId, action, remarks.trim(), action === "approve" ? unlockFrom : undefined);
+      await sendMails(res.mail);
       onDone();
     } catch (err) {
       setError((err as Error).message);

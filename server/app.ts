@@ -19,9 +19,9 @@ import {
   withLock, type Row,
 } from "./db.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { bandForPosition, fetchPermissions, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { bandForPosition, fetchOwnGroups, fetchPermissions, GROUP_FOR_ROLE, PERMISSION_FOR_ROLE, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
-import { planClaimMail } from "./mail.js";
+import { planClaimMail, planUnlockMail } from "./mail.js";
 import {
   deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, setClaimUnlock, nextRequestId, nextUnlockRequestId,
@@ -77,11 +77,6 @@ function handler(fn: (req: AuthedRequest, res: Response) => Promise<void>) {
  * Everything about the person comes from the provider's `/v1/admin/me` record;
  * nothing else is consulted.
  */
-/**
- * Roles come from one place only: the permissions 10MS has granted this person.
- * The permission names are agreed with the 10MS admin and can be changed with
- * PERMISSION_ADMIN / PERMISSION_HR / PERMISSION_FINANCE. Everyone is at least a "user".
- */
 /** `current_workplace` is normally a plain string; tolerate an object carrying a name. */
 function workplaceOf(value: unknown): string {
   if (typeof value === "string") return value.trim();
@@ -92,15 +87,18 @@ function workplaceOf(value: unknown): string {
   return "";
 }
 
-const PERMISSION_FOR_ROLE: [Role, string][] = [
-  ["admin", (process.env.PERMISSION_ADMIN || "tada.role.admin").trim().toLowerCase()],
-  ["hr", (process.env.PERMISSION_HR || "tada.role.hr").trim().toLowerCase()],
-  ["finance", (process.env.PERMISSION_FINANCE || "tada.role.finance").trim().toLowerCase()],
-];
-
-function rolesFromPermissions(permissions: string[] | null): Role[] {
-  const held = new Set((permissions ?? []).map((p) => p.trim().toLowerCase()));
-  const roles = PERMISSION_FOR_ROLE.filter(([, name]) => held.has(name)).map(([role]) => role);
+/**
+ * A person's roles: any desk role they hold through a 10MS group (ta_da_admin / ta_da_hr /
+ * ta_da_finance) or through a 10MS permission (tada.role.admin / .hr / .finance). Either one is enough.
+ */
+function rolesFor(groups: unknown, permissions: string[] | null): Role[] {
+  const heldGroups = new Set(
+    (Array.isArray(groups) ? groups : []).filter((g): g is string => typeof g === "string").map((g) => g.trim().toLowerCase()),
+  );
+  const heldPermissions = new Set(permissions ?? []);
+  const roles = new Set<Role>();
+  for (const [role, name] of GROUP_FOR_ROLE) if (heldGroups.has(name)) roles.add(role);
+  for (const [role, name] of PERMISSION_FOR_ROLE) if (heldPermissions.has(name)) roles.add(role);
   return ["user", ...roles];
 }
 
@@ -137,16 +135,17 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
   // The HR record names the line manager (`supervisor`) but gives no ID or email, so they are
   // looked up in the directory. That, the granted roles and the "manages anyone" check do not
   // depend on one another, so they run together rather than one after the other.
-  const [boss, permissions, manages] = await Promise.all([
+  const [boss, manages, permissions] = await Promise.all([
     // The record carries the manager's ID and email directly; only an older record that has
     // just the name needs the directory lookup.
     hr.supervisor_email
       ? Promise.resolve({ employeeId: hr.supervisor_employee_id || "", email: hr.supervisor_email.trim().toLowerCase() })
       : hr.supervisor ? resolveSupervisor(accessToken, hr.supervisor) : Promise.resolve(null),
-    fetchPermissions(accessToken),
     managesOthers(employeeId),
+    fetchPermissions(accessToken),
   ]);
-  const roles = rolesFromPermissions(permissions);
+  // The groups come with the profile record read above; the permissions are one more call.
+  const roles = rolesFor(hr.groups, permissions);
   const lineManagerId = boss?.employeeId || "";
   const lineManagerEmail = boss?.email || "";
   const user: SessionUser = {
@@ -180,15 +179,17 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   // The permission lookup, the session refresh and the "manages anyone" check do not depend on
   // one another, so they run together rather than one after the other.
   const tenmsToken = String(req.headers["x-tenms-token"] || "");
-  const [permissions, current, manages] = await Promise.all([
+  const [groups, permissions, current, manages] = await Promise.all([
+    tenmsToken ? fetchOwnGroups(tenmsToken) : Promise.resolve(null),
     tenmsToken ? fetchPermissions(tenmsToken) : Promise.resolve(null),
     currentSession(req.session),
     managesOthers(req.session.employeeId),
   ]);
   let token: string | undefined;
   let roles = current.roles;
-  if (permissions) {
-    roles = rolesFromPermissions(permissions);
+  // Refreshed only when both lists were read, so a failed call never takes a role away.
+  if (groups && permissions) {
+    roles = rolesFor(groups, permissions);
     const { expiresAt: _e, ...base } = req.session;
     token = signToken({ ...base, roles });
   }
@@ -1044,7 +1045,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   });
   const record = await ensureUniqueRequestId(written.built, written.rowNumber, prefix);
 
-  let mail = submit ? await onSubmitted(record, req.session, policy, false, appLink(req)) : undefined;
+  let mail = submit ? await onSubmitted(record, req.session, policy, false, appLink(req), String(req.headers["x-tenms-token"] || "")) : undefined;
 
   // Each teammate's claim waits at their own supervisor, and that supervisor is told.
   if (mail) {
@@ -1055,7 +1056,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
         [{ group: "Manager", status: "Pending", by: "", remarks: "" }],
         { currentStage: "manager_review", lastAction: `Submitted by ${req.session.name} as part of ${record.requestId}` },
       );
-      const childMail = await planClaimMail(child, { kind: "submitted", resubmit: false }, appLink(req));
+      const childMail = await planClaimMail(child, { kind: "submitted", resubmit: false }, appLink(req), String(req.headers["x-tenms-token"] || ""));
       mail = { url: mail.url, jobs: [...mail.jobs, ...childMail.jobs] };
     }
   }
@@ -1116,7 +1117,7 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   });
 
   await updateRow("Requests", row._row, fromRequest(updated));
-  const mail = submit ? await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req)) : undefined;
+  const mail = submit ? await onSubmitted(updated, req.session, policy, existing.status === "returned", appLink(req), String(req.headers["x-tenms-token"] || "")) : undefined;
 
   res.json({ request: updated, computation, mail });
 }));
@@ -1127,6 +1128,7 @@ async function onSubmitted(
   policy: Awaited<ReturnType<typeof loadPolicy>>,
   resubmit = false,
   link = "",
+  token = "",
 ): Promise<MailBatch> {
   await upsertApproval(
     record.requestId,
@@ -1137,7 +1139,7 @@ async function onSubmitted(
       lastAction: resubmit ? `Resubmitted by ${session.name}` : `Submitted by ${session.name}`,
     },
   );
-  return planClaimMail(record, { kind: "submitted", resubmit }, link);
+  return planClaimMail(record, { kind: "submitted", resubmit }, link, token);
 
 }
 
@@ -1284,7 +1286,7 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
     stage,
     by: req.session.name,
     remarks,
-  }, appLink(req));
+  }, appLink(req), String(req.headers["x-tenms-token"] || ""));
 
   res.json({ request: updated, mail });
 }));
@@ -1781,8 +1783,14 @@ app.get("/api/admin/tabs", requireAuth, handler(async (req, res) => {
  * specific date. Shared by the direct Configuration form and by approving an
  * unlock request — the same write either way.
  */
+/** When an unlock granted now lapses, from the UNLOCK_DURATION_DAYS setting (2 days unless changed). */
+async function unlockExpiry(): Promise<string> {
+  const days = cfgNum(await loadPolicy(), "UNLOCK_DURATION_DAYS", 2);
+  return new Date(Date.now() + days * 86_400_000).toISOString();
+}
+
 async function applyClaimUnlock(employeeId: string, from: string): Promise<boolean> {
-  return setClaimUnlock(employeeId, { claim_unlock_from: from });
+  return setClaimUnlock(employeeId, { claim_unlock_from: from, claim_unlock_from_until: from ? await unlockExpiry() : "" });
 }
 
 /**
@@ -1792,7 +1800,7 @@ async function applyClaimUnlock(employeeId: string, from: string): Promise<boole
  * not leave every other late claim that person might file afterward open too.
  */
 async function applyClaimUnlockExact(employeeId: string, exact: string): Promise<boolean> {
-  return setClaimUnlock(employeeId, { claim_unlock_exact: exact });
+  return setClaimUnlock(employeeId, { claim_unlock_exact: exact, claim_unlock_exact_until: exact ? await unlockExpiry() : "" });
 }
 
 app.post("/api/admin/claim-unlock", requireAuth, handler(async (req, res) => {
@@ -1842,9 +1850,10 @@ app.post("/api/unlock-requests", requireAuth, handler(async (req, res) => {
     decidedAt: "",
     decisionRemarks: "",
     unlockFrom: "",
+    email: req.session.email,
   };
   await appendRow("UnlockRequests", fromUnlockRequest(record));
-  res.json({ request: record });
+  res.json({ request: record, mail: await planUnlockMail(record, "requested", appLink(req), String(req.headers["x-tenms-token"] || "")) });
 }));
 
 /** Your own past requests, or — for Admin/HR — the ones waiting on a decision (or every one, for the register). */
@@ -1919,7 +1928,10 @@ app.post("/api/unlock-requests/:id/decide", requireAuth, handler(async (req, res
     unlockFrom,
   };
   await updateRow("UnlockRequests", _row, fromUnlockRequest(updated));
-  res.json({ request: updated });
+  res.json({
+    request: updated,
+    mail: await planUnlockMail(updated, action as "approved" | "rejected", appLink(req), String(req.headers["x-tenms-token"] || ""), cfgNum(await loadPolicy(), "UNLOCK_DURATION_DAYS", 2)),
+  });
 }));
 
 // ── Inside-city restrictions: admin can block an email from raising a new
