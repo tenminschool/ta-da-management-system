@@ -4,12 +4,12 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "vite build && wrangler dev",
+    "dev:client": "vite",
+    "build": "vite build",
+    "deploy": "vite build && wrangler deploy",
     "db:setup": "tsx scripts/setup-db.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && mkdir -p dist/server-assets && cp server/assets/payment-template.xlsx dist/server-assets/",
-    "start": "NODE_ENV=production node dist/server.cjs",
-    "lint": "tsc --noEmit",
-    "vercel-build": "vite build"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@tenminuteschool/auth-admin-react": "^0.8.0",
@@ -29,10 +29,10 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wrangler": "^4.160.0"
   }
 }

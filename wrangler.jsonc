@@ -1,0 +1,37 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "ta-da-management-system",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-07-23",
+  // nodejs_compat lets Express, pg, exceljs and crypto run on Workers, and fills process.env
+  // from the vars and secrets below.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "assets": {
+    // The client build — `vite build` writes it here.
+    "directory": "./dist",
+    // Unknown paths (client-side routes) get index.html.
+    "not_found_handling": "single-page-application",
+    // Only the API runs the Worker; everything else is served straight from the assets.
+    "run_worker_first": ["/api/*"],
+    "binding": "ASSETS"
+  },
+
+  // body-parser's iconv-lite does not start on Workers, and the app does not use body-parser.
+  "alias": { "iconv-lite": "./worker/stubs/iconv-lite.js" },
+
+  // The payment-file template (server/assets/payment-template.xlsx) is imported as bytes.
+  "rules": [{ "type": "Data", "globs": ["**/*.xlsx"], "fallthrough": true }],
+
+  // Plain (non-secret) settings. Secrets go in with `wrangler secret put`, see README.
+  "vars": {
+    // The address emails link to, e.g. https://ta-da.your-domain.com (no trailing slash).
+    "APP_URL": ""
+  }
+
+  // Recommended: Hyperdrive keeps database connections warm and close to the database.
+  //   npx wrangler hyperdrive create ta-da-db --connection-string="<DATABASE_URL>"
+  // then put the returned id below and uncomment:
+  // "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<HYPERDRIVE_ID>" }]
+}

@@ -11,6 +11,7 @@
  * tables is ever touched: this is a shared database.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import pg from "pg";
 import { TAB, TABS } from "./schema.js";
 
@@ -39,21 +40,48 @@ export function resetApiCalls(): void {
 
 let pool: pg.Pool | null = null;
 
-export function dbPool(): pg.Pool {
-  if (pool) return pool;
-  if (!process.env.DATABASE_URL && !process.env.PGHOST) {
+/**
+ * Cloudflare Workers cannot share a socket between requests, so a pool created while serving one
+ * request must not be reused by the next. Each request therefore gets its own small pool, created
+ * on first use and closed when the response ends (see requestPoolMiddleware). Outside a request —
+ * scripts, tests — one shared pool is used as usual.
+ */
+const requestPools = new AsyncLocalStorage<{ pool: pg.Pool | null }>();
+
+export function requestPoolMiddleware(_req: unknown, res: { on(event: "close", fn: () => void): unknown }, next: () => void): void {
+  const store: { pool: pg.Pool | null } = { pool: null };
+  res.on("close", () => {
+    store.pool?.end().catch(() => {});
+    store.pool = null;
+  });
+  requestPools.run(store, next);
+}
+
+function makePool(): pg.Pool {
+  // DB_POOL_URL is the Hyperdrive connection (set by the Worker); DATABASE_URL is the database itself.
+  const url = process.env.DB_POOL_URL || process.env.DATABASE_URL;
+  if (!url && !process.env.PGHOST) {
     throw new Error("The database is not configured. Set DATABASE_URL.");
   }
-  pool = new pg.Pool({
-    ...(process.env.DATABASE_URL ? { connectionString: process.env.DATABASE_URL } : {}),
+  const p = new pg.Pool({
+    ...(url ? { connectionString: url } : {}),
     max: Number(process.env.PG_POOL_MAX) || 5,
     idleTimeoutMillis: 20_000,
     connectionTimeoutMillis: 15_000,
-    // Azure Database for PostgreSQL requires TLS.
+    // Azure Database for PostgreSQL requires TLS. Hyperdrive terminates it itself.
     ssl: String(process.env.PGSSLMODE || "").toLowerCase() === "disable" ? false : { rejectUnauthorized: false },
   });
-  pool.on("error", (err) => console.warn("[db] idle client error:", err.message));
-  return pool;
+  // A request's pool is closed when its response ends; the sockets closing then is expected.
+  p.on("error", (err) => {
+    if (!/socket has been closed|Connection terminated/i.test(err.message)) console.warn("[db] idle client error:", err.message);
+  });
+  return p;
+}
+
+export function dbPool(): pg.Pool {
+  const store = requestPools.getStore();
+  if (store) return (store.pool ??= makePool());
+  return (pool ??= makePool());
 }
 
 /** Lets tests hand in a pool-shaped object instead of a real connection. */

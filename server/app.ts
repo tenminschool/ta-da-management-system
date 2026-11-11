@@ -1,18 +1,13 @@
 /**
  * TA & Per-Diem Management System — the API, as a plain Express app.
  *
- * Deliberately knows nothing about how it is served: `server.ts` wraps it with
- * Vite for local development, and `api/index.ts` exports it as a Vercel
- * serverless function. Keeping Vite out of this file keeps it out of the
- * serverless bundle.
+ * Deliberately knows nothing about how it is served: `worker/index.ts` runs it
+ * as a Cloudflare Worker.
  */
 
-import "dotenv/config";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import express, { type NextFunction, type Request, type Response } from "express";
 import ExcelJS from "exceljs";
+import paymentTemplateBytes from "./assets/payment-template.xlsx";
 
 import {
   apiCalls, appendRow, clearRow, getHeaders, readTab, readTabs, replaceTabRows, resetApiCalls, updateRow,
@@ -38,7 +33,32 @@ import type {
 } from "../shared/types.js";
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+// Express's own JSON parser (body-parser) does not run on Workers, so the body is read here:
+// only JSON, at most 2 MB, parsed into req.body like before.
+app.use(async (req, res, next) => {
+  if (!/^application\/json/i.test(req.headers["content-type"] || "") || ["GET", "HEAD"].includes(req.method)) {
+    next();
+    return;
+  }
+  try {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buf.length;
+      if (size > 2 * 1024 * 1024) {
+        res.status(413).json({ error: "The request is too large." });
+        return;
+      }
+      chunks.push(buf);
+    }
+    const text = Buffer.concat(chunks).toString("utf8");
+    req.body = text ? JSON.parse(text) : {};
+    next();
+  } catch {
+    res.status(400).json({ error: "The request body is not valid JSON." });
+  }
+});
 
 // ── Auth plumbing ───────────────────────────────────────────────────────────
 
@@ -474,24 +494,12 @@ app.get("/api/requests/:id", requireAuth, handler(async (req, res) => {
  * bKash's own bulk-disbursement workbook: Finance fills in Wallet No and
  * Principal Amount on the Client sheet, and every other sheet's formulas
  * (fees, the summary, the final upload format) recalculate from those in
- * Excel. Read once and reused — the template file on disk never changes.
- *
- * This server runs both as plain ESM (`tsx` in dev, and Vercel's function
- * builder) and as an esbuild CJS bundle (the self-hosted build) — and
- * `import.meta.url` comes back empty in that CJS output, so `__dirname` (a
- * real CJS global there) is tried first. The bundle also lands next to
- * Vite's own `dist/assets`, so the self-hosted copy sits in a differently
- * named folder to avoid mixing a server-only file into the public static
- * output — see the "build" script in package.json.
+ * Excel.
  */
-declare const __dirname: string | undefined;
-const PAYMENT_TEMPLATE_PATH = typeof __dirname !== "undefined"
-  ? path.join(__dirname, "server-assets", "payment-template.xlsx")
-  : path.join(path.dirname(fileURLToPath(import.meta.url)), "assets", "payment-template.xlsx");
-let paymentTemplateBuffer: Buffer | null = null;
+// A Worker has no disk to read from, so the template is bundled into the Worker itself
+// (wrangler.jsonc turns *.xlsx files into binary modules).
 async function paymentTemplate(): Promise<Buffer> {
-  if (!paymentTemplateBuffer) paymentTemplateBuffer = await readFile(PAYMENT_TEMPLATE_PATH);
-  return paymentTemplateBuffer;
+  return Buffer.from(paymentTemplateBytes);
 }
 
 app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) => {
@@ -597,7 +605,9 @@ app.post("/api/requests/preview", requireAuth, handler(async (req, res) => {
 function appLink(req: Request): string {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
   const host = req.get("x-forwarded-host") || req.get("host");
-  const proto = (req.get("x-forwarded-proto") || req.protocol || "https").split(",")[0];
+  // Behind Cloudflare the app is always served over https, except on a local machine.
+  const local = /^(localhost|127\.0\.0\.1)(:|$)/.test(host || "");
+  const proto = (req.get("x-forwarded-proto") || (local ? "http" : "https")).split(",")[0];
   return host ? `${proto}://${host}` : "";
 }
 
@@ -828,7 +838,7 @@ function buildRecord(
 
 
 /**
- * Guarantees the request number is unique even across Vercel instances.
+ * Guarantees the request number is unique even across Worker instances.
  *
  * The in-process lock only orders submissions inside one process; serverless
  * runs many, so two people submitting at the same instant can both read the

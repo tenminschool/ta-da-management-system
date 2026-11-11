@@ -21,7 +21,7 @@ function secret(): string {
   const seed = process.env.SESSION_SECRET || process.env.DATABASE_URL;
   if (!seed) {
     // Signing with a published fallback would let anyone mint an admin session.
-    if (process.env.NODE_ENV === "production" || process.env.VERCEL) {
+    if (process.env.NODE_ENV !== "development") {
       throw new Error("DATABASE_URL is not set, so there is nothing to sign sessions with.");
     }
     return crypto.createHash("sha256").update("ta-perdiem-dev-secret").digest("hex");

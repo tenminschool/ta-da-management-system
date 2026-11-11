@@ -1,0 +1,4 @@
+# Copy to .dev.vars (gitignored) for local `wrangler dev`.
+# On Cloudflare these are Worker secrets: `npx wrangler secret put DATABASE_URL`.
+DATABASE_URL=
+# Optional: POSTAL_MAIL_URL, ADMIN_EMAILS, HR_EMAILS, FINANCE_EMAILS, GROUP_*, PERMISSION_*, APP_URL
