@@ -148,6 +148,17 @@ export function personalVehicleRateFor(policy: Policy, user: SessionUser): numbe
   return money(fuel.pricePerLitre / v.mileageKmPerLitre);
 }
 
+/**
+ * One traveller's outside-city Per-Diem, from THEIR OWN band: weekdays at the band's weekday rate
+ * plus weekend days at its weekend rate. On a team trip each person is paid their own band's rate,
+ * so two travellers of different bands do not get the same figure.
+ */
+export function outsidePerDiemFor(policy: Policy, bandName: string, fromDate: string, toDate: string): number {
+  const b = bandPolicy(policy, bandName);
+  const span = daySpan(fromDate, toDate);
+  return money(span.weekday * (b?.outsideTAWeekday ?? 0) + span.weekend * (b?.outsideTAWeekend ?? 0));
+}
+
 /** Whether administrators have opened bank payment as an alternative to bKash. */
 export function bankPayoutAllowed(policy: Policy): boolean {
   return String(cfgStr(policy, "ALLOW_BANK_PAYOUT", "No")).trim().toLowerCase() === "yes";
@@ -401,14 +412,25 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     }
     perDiemEligible = tripDays > 0;
     perDiemDays = tripDays;
+    // Each traveller is paid at their own band's rate.
     const perHead = money(span.weekday * (band?.outsideTAWeekday ?? 0) + span.weekend * (band?.outsideTAWeekend ?? 0));
-    perDiemAmount = money(perHead * teamSize);
+    const travellerBands = [user.band, ...draft.teamMembers.map((m) => m.band)];
+    perDiemAmount = money(
+      travellerBands.reduce((sum, b) => sum + outsidePerDiemFor(policy, b, draft.fromDate, draft.toDate), 0),
+    );
     if (perDiemEligible) {
-      notes.push(
-        `Outside-city Per-Diem for Band ${user.band}: ${span.weekday} weekday × ${band?.outsideTAWeekday ?? 0} + ${span.weekend} weekend × ${band?.outsideTAWeekend ?? 0} = ${perHead} each` +
-        (teamSize > 1 ? `, × ${teamSize} travellers = ${perDiemAmount}` : "") +
-        ". This already covers local transport and 3 meals.",
-      );
+      if (teamSize > 1) {
+        const parts = travellerBands.map((b) => `Band ${b} ${outsidePerDiemFor(policy, b, draft.fromDate, draft.toDate)}`);
+        notes.push(
+          `Outside-city Per-Diem, each traveller at their own band's rate: ${parts.join(" + ")} = ${perDiemAmount}. ` +
+          "This already covers local transport and 3 meals.",
+        );
+      } else {
+        notes.push(
+          `Outside-city Per-Diem for Band ${user.band}: ${span.weekday} weekday × ${band?.outsideTAWeekday ?? 0} + ${span.weekend} weekend × ${band?.outsideTAWeekend ?? 0} = ${perHead} each` +
+          ". This already covers local transport and 3 meals.",
+        );
+      }
     }
   } else {
     const minHours = cfgNum(policy, "PER_DIEM_MIN_HOURS", 5);
@@ -896,16 +918,16 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
   const mealDeduction = cfgNum(policy, "OFFICE_MEAL_DEDUCTION", 75);
   const shortHourAllowance = cfgNum(policy, "SHORT_HOUR_MEAL_ALLOWANCE", 150);
   const insidePerDiemEligible = record.scope === "inside" && record.perDiemDays > 0;
-  const ownPerDiemAndLunch = (mealTaken: boolean) => record.scope !== "inside"
-    ? money((record.perDiemAmount + record.lunchAllowance) / teamSize)
+  const ownPerDiemAndLunch = (mealTaken: boolean, bandName: string) => record.scope !== "inside"
+    ? money(outsidePerDiemFor(policy, bandName, record.fromDate, record.toDate) + record.lunchAllowance / teamSize)
     : insidePerDiemEligible
       ? Math.max(0, money(perDiemRate - (mealTaken ? mealDeduction : 0)))
       : (mealTaken ? 0 : shortHourAllowance);
 
   const requesterOnlyShared = money(record.accommodationAmount + record.otherAmount);
   const requesterMealTaken = record.dualWorkstation ? true : record.officeMealTaken;
-  const requesterOwn = money(perHeadTa + requesterSharedTa + ownPerDiemAndLunch(requesterMealTaken));
-  const memberOwn = (m: (typeof record.teamMembers)[number]) => money(perHeadTa + perHeadSharedTa + ownPerDiemAndLunch(m.officeMealTaken));
+  const requesterOwn = money(perHeadTa + requesterSharedTa + ownPerDiemAndLunch(requesterMealTaken, record.band));
+  const memberOwn = (m: (typeof record.teamMembers)[number]) => money(perHeadTa + perHeadSharedTa + ownPerDiemAndLunch(m.officeMealTaken, m.band));
 
   const claimTotal = money(requesterOwn + record.teamMembers.reduce((s, m) => s + memberOwn(m), 0) + requesterOnlyShared);
   const payableTotal = record.approvedAmount > 0 ? record.approvedAmount : record.totalClaim;

@@ -98,6 +98,8 @@ export interface AdvanceStep {
 /** A row in a list: the claim plus where it currently sits. */
 export interface RequestListItem extends RequestRecord {
   isMine: boolean;
+  /** Set when this claim belongs to a team trip: the team's main claim ID. */
+  groupId: string;
   /** Which desk it is waiting on right now, e.g. "Administration". */
   waitingOn: string;
   lastAction: string;
@@ -113,8 +115,20 @@ export interface LinkedRequest {
   status: string;
 }
 
+export interface GroupMember {
+  requestId: string;
+  employeeName: string;
+  employeeId: string;
+  isSubmitter: boolean;
+  /** This is the claim being viewed. */
+  current: boolean;
+  status: string;
+}
+
 export interface RequestDetail {
   request: RequestRecord;
+  /** Everyone on the same team trip, when this claim is part of one. */
+  group: { groupId: string; members: GroupMember[] } | null;
   approval: ApprovalRow | null;
   canAct: boolean;
   canEdit: boolean;
@@ -280,9 +294,6 @@ export const api = {
     call<{ user: SessionUser; token?: string }>("/me", {
       headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" },
     }),
-  saveBkashNumber: (bkashNumber: string) => post<{ ok: boolean; bkashNumber: string }>("/me/bkash", { bkashNumber }),
-  saveTeammateBkash: (employeeId: string, bkashNumber: string) =>
-    post<{ ok: boolean; employeeId: string; bkashNumber: string }>(`/employees/${encodeURIComponent(employeeId)}/bkash`, { bkashNumber }),
   policy: () => call<Policy>("/policy"),
   insideCityBlock: () => call<{ entries: InsideCityBlockEntry[] }>("/admin/inside-city-block"),
   addInsideCityBlock: (email: string, note: string) =>

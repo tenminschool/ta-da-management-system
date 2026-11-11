@@ -58,11 +58,13 @@ function roleEmails(role: DeskRole): string[] {
   return [...new Set(String(process.env[name] || "").split(",").map(clean).filter(Boolean))];
 }
 
+/**
+ * A claim's mail goes to its own owner and that owner's own supervisor. On a team trip every
+ * traveller has their own claim (see childFromMain), so each one is mailed about theirs, to
+ * their own supervisor — not all together on the submitter's claim.
+ */
 function travellersOf(record: RequestRecord) {
-  return [
-    { name: record.employeeName, email: clean(record.email), supervisorEmail: clean(record.managerEmail) },
-    ...record.teamMembers.map((m) => ({ name: m.name, email: clean(m.email), supervisorEmail: clean(m.supervisorEmail) })),
-  ];
+  return [{ name: record.employeeName, email: clean(record.email), supervisorEmail: clean(record.managerEmail) }];
 }
 
 /** Works out one entry per address for this event. */
@@ -170,15 +172,16 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
     lines.push(`<p>${event.by ? `By: ${esc(event.by)}<br>` : ""}${event.remarks ? `Remark: ${esc(event.remarks)}` : ""}</p>`);
   }
 
-  const travellers = travellersOf(record).map((t) => t.name).filter(Boolean);
+  const travellers = record.teamMembers.map((m) => m.name).filter(Boolean);
   const amount = record.approvedAmount || record.totalClaim;
   const row = (k: string, v: string) =>
     `<tr><td style="padding:4px 12px 4px 0;color:#64748b">${esc(k)}</td><td style="padding:4px 0">${esc(v)}</td></tr>`;
   lines.push(
     `<table style="border-collapse:collapse;font-size:14px">` +
       row("Request", record.requestId) +
-      row("Submitted by", `${record.employeeName}${record.employeeId ? ` (${record.employeeId})` : ""}`) +
-      (travellers.length > 1 ? row("Travellers", travellers.join(", ")) : "") +
+      row(record.linkedTo ? "Claim for" : "Submitted by", `${record.employeeName}${record.employeeId ? ` (${record.employeeId})` : ""}`) +
+      (record.linkedTo ? row("Team trip", `Part of ${record.linkedTo}, filed by a teammate. This is your own claim.`) : "") +
+      (travellers.length ? row("Team members", travellers.join(", ")) : "") +
       row("Trip", [record.fromDate, record.toDate].filter(Boolean).join(" to ")) +
       (record.purpose ? row("Purpose", record.purpose) : "") +
       row("Amount", `${amount.toLocaleString("en-US")} BDT`) +

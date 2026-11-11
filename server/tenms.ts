@@ -132,6 +132,7 @@ export interface TenMSPerson {
   /** Their line manager's display name, as the HR record holds it. */
   supervisor: string;
   supervisorEmail: string;
+  supervisorEmployeeId: string;
 }
 
 /**
@@ -160,6 +161,7 @@ export async function searchAdmins(accessToken: string, q: string, limit = 25): 
       gender: str(u.gender),
       supervisor: str(u.supervisor),
       supervisorEmail: str(u.supervisor_email).toLowerCase(),
+      supervisorEmployeeId: str(u.supervisor_employee_id),
     }))
     .filter((p) => p.employeeId && p.name);
 }

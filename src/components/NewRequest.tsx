@@ -1736,43 +1736,7 @@ function StepDocuments({
   // rather than as a field still waiting to be filled in.
   const [savedBkash, setSavedBkash] = useState(user.accountNumber || "");
   const [editingBkash, setEditingBkash] = useState(!savedBkash);
-  const [savingBkash, setSavingBkash] = useState(false);
-  const [bkashSaveError, setBkashSaveError] = useState("");
 
-  async function saveBkash() {
-    setSavingBkash(true);
-    setBkashSaveError("");
-    try {
-      const { bkashNumber } = await api.saveBkashNumber(draft.bkashNumber);
-      setSavedBkash(bkashNumber);
-      setEditingBkash(false);
-    } catch (err) {
-      setBkashSaveError((err as Error).message);
-    } finally {
-      setSavingBkash(false);
-    }
-  }
-
-  // Saving a teammate's number here writes it to their own record, so it's
-  // there next time without retyping it — they can still open their own
-  // claim form and correct it themselves (the same field/button above, just
-  // for their own account instead of someone else's).
-  const [savingTeammateId, setSavingTeammateId] = useState("");
-  const [teammateSaved, setTeammateSaved] = useState<Record<string, boolean>>({});
-  const [teammateSaveError, setTeammateSaveError] = useState<Record<string, string>>({});
-
-  async function saveTeammateBkash(employeeId: string, bkashNumber: string) {
-    setSavingTeammateId(employeeId);
-    setTeammateSaveError((e) => ({ ...e, [employeeId]: "" }));
-    try {
-      await api.saveTeammateBkash(employeeId, bkashNumber);
-      setTeammateSaved((s) => ({ ...s, [employeeId]: true }));
-    } catch (err) {
-      setTeammateSaveError((e) => ({ ...e, [employeeId]: (err as Error).message }));
-    } finally {
-      setSavingTeammateId("");
-    }
-  }
 
   // Shared by the individual and team layouts — both ask for the submitter's
   // own number, just inside a differently-titled card.
@@ -1808,16 +1772,7 @@ function StepDocuments({
             value={draft.bkashNumber}
             onChange={(e) => set({ bkashNumber: e.target.value })}
           />
-          <button
-            type="button"
-            className="btn-ghost shrink-0 whitespace-nowrap text-xs"
-            disabled={savingBkash || !draft.bkashNumber.trim()}
-            onClick={saveBkash}
-          >
-            {savingBkash ? <Loader2 size={14} className="animate-spin" /> : null} Save this bKash number
-          </button>
         </div>
-        {bkashSaveError && <p className="mt-1.5 text-xs text-rose-600">{bkashSaveError}</p>}
       </Field>
     );
   }
@@ -2033,22 +1988,9 @@ function StepDocuments({
                     onChange={(e) => {
                       const teamMembers = draft.teamMembers.map((x, idx) => (idx === i ? { ...x, bkashNumber: e.target.value } : x));
                       set({ teamMembers });
-                      setTeammateSaved((s) => ({ ...s, [m.employeeId]: false }));
                     }}
                   />
-                  <button
-                    type="button"
-                    className="btn-ghost shrink-0 whitespace-nowrap text-xs"
-                    disabled={savingTeammateId === m.employeeId || !m.bkashNumber.trim()}
-                    onClick={() => saveTeammateBkash(m.employeeId, m.bkashNumber)}
-                  >
-                    {savingTeammateId === m.employeeId ? <Loader2 size={14} className="animate-spin" /> : null} Save to their record
-                  </button>
                 </div>
-                {teammateSaveError[m.employeeId] && <p className="mt-1.5 text-xs text-rose-600">{teammateSaveError[m.employeeId]}</p>}
-                {!teammateSaveError[m.employeeId] && teammateSaved[m.employeeId] && (
-                  <p className="mt-1.5 text-xs text-emerald-600">Saved to their record — they can still edit it themselves.</p>
-                )}
               </Field>
             ))}
           </div>
@@ -2118,6 +2060,7 @@ function LiveSummary({
         ...draft,
         employeeId: user.employeeId,
         employeeName: user.name,
+        band: user.band,
         taAmount: computation.taAmount,
         perDiemAmount: computation.perDiemAmount,
         perDiemDays: computation.perDiemDays,

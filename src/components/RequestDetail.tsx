@@ -4,7 +4,7 @@ import {
   Link as LinkIcon, Pencil, RotateCcw, X,
 } from "lucide-react";
 import { api, type RequestDetail as Detail } from "../api.js";
-import type { ApprovalRow, Policy, RequestDraft, SessionUser } from "../../shared/types.js";
+import type { ApprovalRow, Policy, RequestDraft, SessionUser, Status } from "../../shared/types.js";
 import { STATUS_PROGRESS, TRACK_STAGES } from "../../shared/types.js";
 import { cfgNum, cfgStr, insidePerTravellerAmount, money, todayISO } from "../../shared/policy.js";
 import { documentName } from "../lib/files.js";
@@ -112,6 +112,9 @@ export default function RequestDetail({
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-mono text-base font-bold text-slate-900 sm:text-lg">{r.requestId}</h1>
               <StatusBadge status={r.status} />
+              {detail.group && (
+                <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200">Group claim</span>
+              )}
             </div>
             <p className="mt-1 text-sm text-slate-500">
               {r.employeeName} · Band {r.band} · {r.department} · submitted{" "}
@@ -132,6 +135,28 @@ export default function RequestDetail({
           )}
         </div>
       </div>
+
+      {detail.group && (
+        <Card
+          title="Group claim — travelling together"
+          subtitle={`Part of the team trip filed as ${detail.group.groupId}. Each person's claim has its own supervisor and its own payment.`}
+        >
+          <ul className="divide-y divide-slate-100">
+            {detail.group.members.map((m) => (
+              <li key={m.requestId} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
+                <span className="min-w-0">
+                  <span className="font-medium text-slate-800">{m.employeeName}</span>
+                  <span className="ml-1.5 text-xs text-slate-400">{m.employeeId}</span>
+                  {m.isSubmitter && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">FILED THE TRIP</span>}
+                  {m.current && <span className="ml-1.5 rounded bg-brand-50 px-1.5 py-0.5 text-[10px] font-bold text-brand-700">THIS CLAIM</span>}
+                  <span className="mt-0.5 block font-mono text-xs text-slate-400">{m.requestId}</span>
+                </span>
+                <StatusBadge status={m.status as Status} />
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card>
         <ProgressBar status={r.status} />
@@ -584,8 +609,11 @@ export default function RequestDetail({
                     </div>
                     {linked.map((l) => (
                       <div key={l.requestId} className="flex items-center justify-between gap-3 text-xs">
-                        <span className="min-w-0 truncate text-slate-500">{l.employeeName}</span>
+                        <span className="min-w-0 truncate text-slate-500">
+                          {l.employeeName} <span className="text-slate-400">· {l.requestId}</span>
+                        </span>
                         <span className="flex shrink-0 items-center gap-2">
+                          <StatusBadge status={l.status as Status} />
                           <span className="font-mono text-slate-400">{l.bkashNumber || "—"}</span>
                           <span className="font-semibold text-slate-700"><Money value={l.finalPayable} currency={currency} /></span>
                         </span>

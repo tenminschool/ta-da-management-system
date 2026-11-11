@@ -185,33 +185,6 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   res.json({ token, user: { ...fresh, roles, managesOthers: manages } });
 }));
 
-/** Saves this employee's own bKash number, so every future claim starts pre-filled with it. */
-app.post("/api/me/bkash", requireAuth, handler(async (req, res) => {
-  const bkashNumber = String(req.body?.bkashNumber || "").replace(/[\s-]/g, "");
-  if (!/^01[3-9]\d{8}$/.test(bkashNumber)) {
-    res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
-    return;
-  }
-  // There is no employee table to save into; the number travels with the claim it is typed on.
-  res.json({ ok: true, bkashNumber });
-}));
-
-/**
- * Saves a bKash number against a teammate's own record — used from the
- * team-payout picker, so it's there next time without retyping it. Whoever
- * it actually belongs to can still open their own claim form and correct it
- * (myBkashField, the same control this endpoint's sibling above serves).
- */
-app.post("/api/employees/:id/bkash", requireAuth, handler(async (req, res) => {
-  const bkashNumber = String(req.body?.bkashNumber || "").replace(/[\s-]/g, "");
-  if (!/^01[3-9]\d{8}$/.test(bkashNumber)) {
-    res.status(400).json({ error: "That does not look like a bKash number — 11 digits starting 01, e.g. 01712345678." });
-    return;
-  }
-  // There is no employee table to save into; the number travels with the claim it is typed on.
-  res.json({ ok: true, employeeId: req.params.id, bkashNumber });
-}));
-
 // ── Reference data ──────────────────────────────────────────────────────────
 
 app.get("/api/policy", requireAuth, handler(async (_req, res) => {
@@ -270,10 +243,6 @@ app.post("/api/uploads/session", requireAuth, handler(async (req, res) => {
  * Admin/Finance/HR see the whole pipeline for reporting.
  */
 function canView(session: Session, req: RequestRecord): boolean {
-  // A team-child record is internal bookkeeping split off the main request
-  // so Finance can pay and reconcile each traveller separately — the
-  // teammate it's nominally under never sees it, even by employeeId match.
-  if (req.linkedTo) return hasRole(session, "admin", "finance", "hr");
   if (req.employeeId === session.employeeId) return true;
   if (req.teamMembers.some((m) => m.employeeId === session.employeeId)) return true;
   if (hasRole(session, "admin", "finance", "hr")) return true;
@@ -284,11 +253,6 @@ function canView(session: Session, req: RequestRecord): boolean {
 }
 
 function canActOn(session: Session, req: RequestRecord): boolean {
-  // A child mirrors the main request's status automatically through the
-  // review stages — see the cascade in the action handler — so nobody
-  // approves/rejects/returns it on its own. Once it reaches Finance, though,
-  // each wallet is a separate real transfer, so it's paid independently.
-  if (req.linkedTo && !["payment_processing", "payment_disputed"].includes(req.status)) return false;
   switch (req.status) {
     // A line manager acts only on their own reports; Administration can unblock.
     case "manager_review":
@@ -322,7 +286,7 @@ app.get("/api/requests", requireAuth, handler(async (req, res) => {
   // A team-child record's employeeId is the teammate it's paying, but it is
   // never "theirs" to see — canView already keeps it out of `visible` for
   // them, and this keeps it out of summary counts for the requester too.
-  const isMine = (r: RequestRecord) => r.employeeId === me && !r.linkedTo;
+  const isMine = (r: RequestRecord) => r.employeeId === me;
   const settled = (r: RequestRecord) => ["payment_processing", "paid", "payment_disputed", "completed"].includes(r.status);
   // Once a team claim has split into linked children, its main record is
   // carrying other people's money too — someone filing their own team trip
@@ -380,6 +344,8 @@ app.get("/api/requests", requireAuth, handler(async (req, res) => {
     return {
       ...r,
       isMine: isMine(r),
+      // Set on every claim that belongs to a team trip: the main claim's own ID.
+      groupId: r.linkedTo || (hasChildren.has(r.requestId) ? r.requestId : ""),
       waitingOn: WAITING[r.status] || "",
       lastAction: a?.last_action || "",
       lastActionAt: a?.last_action_at || "",
@@ -456,11 +422,35 @@ app.get("/api/requests/:id", requireAuth, handler(async (req, res) => {
       status: r.status,
     }));
 
+  // Everyone on the same team trip, so whoever opens any one of the claims — a teammate, a
+  // supervisor, HR or Finance — can see who travelled together and where each claim stands.
+  const groupId = record.linkedTo || (linkedRequests.length ? record.requestId : "");
+  const groupRows = groupId
+    ? [row.request_id === groupId ? row : tabs.Requests.find((r) => r.request_id === groupId), ...tabs.Requests.filter((r) => r.linked_to === groupId)]
+    : [];
+  const group = groupId
+    ? {
+        groupId,
+        members: groupRows
+          .filter((r): r is NonNullable<typeof r> => !!r)
+          .map(toRequest)
+          .map((r) => ({
+            requestId: r.requestId,
+            employeeName: r.employeeName,
+            employeeId: r.employeeId,
+            isSubmitter: !r.linkedTo,
+            current: r.requestId === record.requestId,
+            status: r.status,
+          })),
+      }
+    : null;
+
   res.json({
     request: record,
+    group,
     approval: approvalRow ? toApprovalRow(approvalRow) : null,
     canAct: canActOn(req.session, record),
-    canEdit: record.employeeId === req.session.employeeId && ["draft", "returned"].includes(record.status),
+    canEdit: record.employeeId === req.session.employeeId && !record.linkedTo && ["draft", "returned"].includes(record.status),
     advanceStep: await advanceStepFor(req.session, record),
     linkedRequests,
   });
@@ -610,10 +600,20 @@ async function withTeamContacts(draft: RequestDraft, token: string): Promise<Req
     try {
       const found = (await searchAdmins(token, m.name || m.employeeId, 50)).find((p) => p.employeeId === m.employeeId);
       const email = (found?.email || m.email || "").toLowerCase();
-      const supervisorEmail = found?.supervisorEmail
-        || (found?.supervisor ? (await resolveSupervisor(token, found.supervisor))?.email : "")
-        || m.supervisorEmail || "";
-      return { ...m, email, supervisorEmail };
+      // The record carries the supervisor's ID and email; only a record with just the name
+      // needs the directory lookup.
+      let supervisorEmail = found?.supervisorEmail || "";
+      let supervisorId = found?.supervisorEmployeeId || "";
+      if (!supervisorEmail && found?.supervisor) {
+        const boss = await resolveSupervisor(token, found.supervisor);
+        supervisorEmail = boss?.email || "";
+        supervisorId = boss?.employeeId || supervisorId;
+      }
+      return {
+        ...m, email,
+        supervisorEmail: supervisorEmail || m.supervisorEmail || "",
+        supervisorId: supervisorId || m.supervisorId || "",
+      };
     } catch (err) {
       console.warn(`[mail] could not look up team member ${m.employeeId}:`, (err as Error).message);
       return m;
@@ -899,7 +899,7 @@ async function awaitingAcknowledgement(employeeId: string): Promise<string[]> {
     // A team-child record is invisible to the teammate it's under and never
     // shows them a "did you get paid" prompt, so it can't be what's blocking
     // them either.
-    .filter((r) => r.employeeId === employeeId && r.status === "paid" && !r.paymentAck && !r.linkedTo)
+    .filter((r) => r.employeeId === employeeId && r.status === "paid" && !r.paymentAck)
     .map((r) => r.requestId);
 }
 
@@ -907,9 +907,9 @@ async function awaitingAcknowledgement(employeeId: string): Promise<string[]> {
  * A team claim's payout, split off into one independent record per
  * teammate — see teamPayoutSplit. Everything about the trip is copied over
  * for context; what's genuinely theirs (identity, bKash number, their own
- * share) replaces the requester's. It mirrors the main record's status
- * automatically (see the cascade in the action handler) and is invisible
- * to the teammate it's under — canView/canActOn gate on `linkedTo`.
+ * share) replaces the requester's. It is the teammate's own claim: it goes
+ * to THEIR line manager and then through HR and Finance on its own, so one
+ * supervisor's decision never settles another traveller's claim.
  */
 function childFromMain(main: RequestRecord, member: TeamMember, amount: number, requestId: string, now: string): RequestRecord {
   return {
@@ -917,7 +917,10 @@ function childFromMain(main: RequestRecord, member: TeamMember, amount: number, 
     requestId,
     employeeId: member.employeeId,
     employeeName: member.name,
-    email: "",
+    email: member.email || "",
+    managerId: member.supervisorId || "",
+    managerEmail: member.supervisorEmail || "",
+    status: "manager_review",
     band: member.band,
     department: member.department,
     designation: member.designation,
@@ -981,6 +984,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   // people submitting at the same instant would otherwise read the same
   // highest number and both be issued it.
   const prefix = cfgStr(policy, "REQUEST_ID_PREFIX", "TA");
+  const children: RequestRecord[] = [];
   const written = await withLock(async () => {
     const requestId = await nextRequestId(prefix);
     let built = buildRecord(draft, computation, session, policy, {
@@ -1021,6 +1025,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
         const childId = await nextRequestId(prefix);
         const child = childFromMain(built, built.teamMembers[i], share, childId, now);
         await appendRow("Requests", fromRequest(child));
+        children.push(child);
       }
     }
 
@@ -1028,7 +1033,21 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   });
   const record = await ensureUniqueRequestId(written.built, written.rowNumber, prefix);
 
-  const mail = submit ? await onSubmitted(record, req.session, policy, false, appLink(req)) : undefined;
+  let mail = submit ? await onSubmitted(record, req.session, policy, false, appLink(req)) : undefined;
+
+  // Each teammate's claim waits at their own supervisor, and that supervisor is told.
+  if (mail) {
+    for (const child of children) {
+      await upsertApproval(
+        child.requestId,
+        child.employeeName,
+        [{ group: "Manager", status: "Pending", by: "", remarks: "" }],
+        { currentStage: "manager_review", lastAction: `Submitted by ${req.session.name} as part of ${record.requestId}` },
+      );
+      const childMail = await planClaimMail(child, { kind: "submitted", resubmit: false }, appLink(req));
+      mail = { url: mail.url, jobs: [...mail.jobs, ...childMail.jobs] };
+    }
+  }
 
   res.json({ request: record, computation, mail });
 }));
@@ -1043,6 +1062,10 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   const existing = toRequest(row);
   if (existing.employeeId !== req.session.employeeId) {
     res.status(403).json({ error: "You can only edit your own request." });
+    return;
+  }
+  if (existing.linkedTo) {
+    res.status(400).json({ error: `This claim is your share of team claim ${existing.linkedTo}. Ask whoever filed the team claim to change it.` });
     return;
   }
   if (!["draft", "returned"].includes(existing.status)) {
@@ -1131,6 +1154,12 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
   }
   if (!["approve", "reject", "return", "request_docs"].includes(action)) {
     res.status(400).json({ error: "Unknown action." });
+    return;
+  }
+  // A teammate's share cannot be sent back for correction — nobody can edit it. It is
+  // approved or rejected; changes are made on the team claim by whoever filed it.
+  if (record.linkedTo && (action === "return" || action === "request_docs")) {
+    res.status(400).json({ error: `This is a teammate's share of ${record.linkedTo}, so it cannot be returned. Approve or reject it, and ask the person who filed the team claim to correct it.` });
     return;
   }
   // Payment is a Finance stage too, so a second Finance user could otherwise
@@ -1222,16 +1251,6 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
       : record.advanceStatus,
   };
   await updateRow("Requests", row._row, fromRequest(updated));
-
-  // A team claim's linked children mirror the main record's status
-  // automatically — one decision on the main request governs the whole
-  // trip. Their own finalPayable/totalClaim (each traveller's own share,
-  // set once at creation) is untouched; only status moves with them.
-  const childRows = rows.filter((r) => r.linked_to === record.requestId);
-  for (const childRow of childRows) {
-    const child = toRequest(childRow);
-    await updateRow("Requests", childRow._row, fromRequest({ ...child, status: next, updatedAt: nowISO() }));
-  }
 
   // This desk's decision and the next desk's "Pending" go into the same row in
   // one write.

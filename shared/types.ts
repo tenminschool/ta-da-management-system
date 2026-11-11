@@ -203,6 +203,8 @@ export interface TeamMember {
   email?: string;
   /** Their own line manager's email, resolved when the claim is submitted. */
   supervisorEmail?: string;
+  /** Their own line manager's employee ID — the person who approves this traveller's own claim. */
+  supervisorId?: string;
 }
 
 /** One email, ready to send. */

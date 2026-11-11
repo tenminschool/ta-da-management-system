@@ -298,6 +298,7 @@ export default function RequestList({
                       <div className="min-w-0">
                         <span className="font-mono text-xs font-semibold text-slate-700">{r.requestId}</span>
                         {r.isMine && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">YOU</span>}
+                        {r.groupId && <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">GROUP CLAIM</span>}
                         {showEmployee && (
                           <span className="mt-0.5 block truncate text-sm font-medium text-slate-800">
                             {r.employeeName} <span className="text-xs font-normal text-slate-400">{r.employeeId}</span>
@@ -366,6 +367,7 @@ export default function RequestList({
                       <td className="px-3 py-3">
                         <span className="font-mono text-xs font-semibold text-slate-700">{r.requestId}</span>
                         {r.isMine && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">YOU</span>}
+                        {r.groupId && <span className="ml-1.5 rounded bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">GROUP CLAIM</span>}
                         <span className="mt-0.5 block text-xs text-slate-400">{r.fromDate}</span>
                       </td>
                       {showEmployee && (
