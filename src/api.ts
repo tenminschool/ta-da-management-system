@@ -188,6 +188,27 @@ export interface EmployeeLite {
  * http(s) string found.
  */
 function findFileUrl(value: unknown): string {
+  // The file service answers with both an `object_url` (the raw storage address) and a `cdn_url`
+  // (the public CDN address). The CDN one is the link to keep, wherever it sits in the response,
+  // and even if it comes without the https:// in front.
+  const cdn = (v: unknown): string => {
+    if (Array.isArray(v)) {
+      for (const x of v) { const f = cdn(x); if (f) return f; }
+    } else if (v && typeof v === "object") {
+      for (const [k, x] of Object.entries(v)) {
+        if (/^cdn_?url$/i.test(k) && typeof x === "string") {
+          const t = x.trim();
+          if (/^https?:\/\//i.test(t)) return t;
+          if (t.startsWith("//")) return `https:${t}`;
+          if (/^[a-z0-9-]+(\.[a-z0-9-]+)+\//i.test(t)) return `https://${t}`;
+        }
+      }
+      for (const x of Object.values(v)) { const f = cdn(x); if (f) return f; }
+    }
+    return "";
+  };
+  const fromCdn = cdn(value);
+  if (fromCdn) return fromCdn;
   const isUrl = (v: unknown): v is string => typeof v === "string" && /^https?:\/\//i.test(v);
   const preferred = /^(url|location|link|cdn_?url|public_?url|file_?url|path)$/i;
   const walk = (v: unknown, onlyPreferred: boolean): string => {
