@@ -8,7 +8,7 @@
  */
 
 import crypto from "crypto";
-import { appendRow, readTab, readTabs, updateRow, withLock, type Row } from "./db.js";
+import { appendRow, readTab, readTabs, rowExists, updateRow, withLock, type Row } from "./db.js";
 import type {
   ApprovalRow, InsideCityBlockEntry, Leg, Policy, RequestRecord, SessionUser, StageKey, Status, TeamMember, UnlockRequest,
   VehicleRegistration,
@@ -148,7 +148,7 @@ export async function managesOthers(employeeId: string): Promise<boolean> {
   if (!employeeId) return false;
   // Who reports to whom is known from the claims themselves: a request is
   // routed to its submitter's supervisor when it is filed.
-  return (await readTab("Requests")).some((r) => r.supervisor === employeeId && r.employee_id !== employeeId);
+  return rowExists("Requests", { supervisor: employeeId }, { employee_id: employeeId });
 }
 
 /**
