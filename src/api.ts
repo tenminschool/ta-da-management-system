@@ -367,11 +367,11 @@ export const api = {
   ) =>
     post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/company-amounts`, { entries }),
   pay: (id: string, payload: Record<string, unknown>) =>
-    post<{ request: RequestRecord }>(`/requests/${encodeURIComponent(id)}/payment`, payload),
+    post<{ request: RequestRecord; mail?: MailBatch }>(`/requests/${encodeURIComponent(id)}/payment`, payload),
   reconcilePreview: (contentBase64: string) =>
     post<ReconcileResult>("/requests/payment-reconcile/preview", { contentBase64 }),
   reconcileConfirm: (filename: string, matches: ReconcileMatch[]) =>
-    post<{ results: { requestId: string; ok: boolean; error?: string }[] }>(
+    post<{ results: { requestId: string; ok: boolean; error?: string }[]; mail?: MailBatch }>(
       "/requests/payment-reconcile/confirm",
       { filename, matches },
     ),

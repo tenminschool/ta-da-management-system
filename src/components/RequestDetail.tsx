@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft, Banknote, Check, CircleDot, Clock, ExternalLink, FileText, HandCoins,
   Link as LinkIcon, Pencil, RotateCcw, X,
@@ -12,9 +12,11 @@ import { sendMails } from "../lib/mail.js";
 import { Card, Empty, Field, Modal, Money, Notice, ProgressBar, Spinner, StatusBadge } from "./ui.js";
 
 export default function RequestDetail({
-  requestId, user, policy, onBack, onEdit, onChanged,
+  requestId, user, policy, onBack, onEdit, onChanged, autoAck = false,
 }: {
   requestId: string;
+  /** Opened from the "Yes, I received it" button in the payment email: record the receipt. */
+  autoAck?: boolean;
   user: SessionUser;
   policy: Policy;
   onBack: () => void;
@@ -46,6 +48,22 @@ export default function RequestDetail({
   }
 
   useEffect(() => { load(); }, [requestId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The payment email's "Yes, I received it" lands here. It only counts for the person who
+  // claimed it, while the claim is still waiting for their answer; otherwise the claim just opens.
+  const autoAckDone = useRef(false);
+  useEffect(() => {
+    if (!autoAck || autoAckDone.current || !detail) return;
+    const rec = detail.request;
+    if (rec.employeeId !== user.employeeId || rec.status !== "paid" || rec.paymentAck) return;
+    autoAckDone.current = true;
+    setAcking(true);
+    setAckError("");
+    api.acknowledge(rec.requestId, true)
+      .then(async () => { await load(); onChanged(); })
+      .catch((err) => setAckError((err as Error).message))
+      .finally(() => setAcking(false));
+  }, [autoAck, detail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <Spinner />;
   if (error || !detail) return <Notice tone="error" items={[error || "Request not found."]} />;
@@ -1067,7 +1085,9 @@ function PaymentModal({
     setBusy(true);
     setError("");
     try {
-      await api.pay(requestId, { paymentMode, transactionId, amount: paid, paymentDate, note });
+      const res = await api.pay(requestId, { paymentMode, transactionId, amount: paid, paymentDate, note });
+      // Tells the employee and their supervisor; a failed mail never undoes the payment.
+      await sendMails(res.mail);
       onDone();
     } catch (err) {
       setError((err as Error).message);
