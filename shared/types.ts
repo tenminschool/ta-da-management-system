@@ -221,6 +221,8 @@ export interface MailJob {
 /** The emails a claim event produces, and where to post them. */
 export interface MailBatch {
   url: string;
+  /** The sender address mails go out from. */
+  from: string;
   jobs: MailJob[];
 }
 

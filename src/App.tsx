@@ -28,7 +28,7 @@ type Workspace = "self" | "desk";
 
 type View =
   | { name: "new"; editing?: { draft: RequestDraft; requestId: string } }
-  | { name: "detail"; requestId: string }
+  | { name: "detail"; requestId: string; ack?: boolean }
   // `name` is a plain string on the catch-all, so the group has to live there
   // too — TypeScript cannot discriminate a union on a non-literal.
   | { name: string; group?: StatusGroup };
@@ -58,6 +58,8 @@ export default function App() {
   // here, before sign-in, so it survives the sign-in step and still opens that claim after.
   const pendingRequest = useRef(new URLSearchParams(window.location.search).get("request") || "");
   const pendingView = useRef(new URLSearchParams(window.location.search).get("view") || "");
+  // ...&ack=received comes from the payment email's "Yes, I received it" button.
+  const pendingAck = useRef(new URLSearchParams(window.location.search).get("ack") === "received");
 
   const bootstrap = useCallback(async (signedIn: SessionUser) => {
     setUser(signedIn);
@@ -83,10 +85,15 @@ export default function App() {
     pendingRequest.current = "";
     const approver = user.roles.some((r) => ["admin", "hr", "finance"].includes(r)) || !!user.managesOthers;
     setWorkspace(approver ? "desk" : "self");
-    setView({ name: "detail", requestId });
-    // Drop the parameter so a refresh or a copied address does not reopen it.
+    // Confirming a payment is the employee's own job, so that link opens it on their side.
+    const ack = pendingAck.current;
+    pendingAck.current = false;
+    if (ack) setWorkspace("self");
+    setView({ name: "detail", requestId, ack });
+    // Drop the parameters so a refresh or a copied address does not reopen it or confirm again.
     const url = new URL(window.location.href);
     url.searchParams.delete("request");
+    url.searchParams.delete("ack");
     window.history.replaceState(null, "", url.pathname + url.search + url.hash);
   }, [user, policy]);
 
@@ -468,6 +475,7 @@ export default function App() {
           {view.name === "detail" && (
             <RequestDetail
               requestId={(view as { requestId: string }).requestId}
+              autoAck={!!(view as { ack?: boolean }).ack}
               user={user}
               policy={policy}
               onBack={() => setView({ name: workspace === "self" ? "dashboard" : deskHome })}

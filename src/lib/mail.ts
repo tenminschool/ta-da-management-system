@@ -24,7 +24,7 @@ export async function sendMails(batch: MailBatch | undefined): Promise<string> {
       const res = await fetch(batch.url, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "mail", to: [job.to], cc: [], bcc: [], subject: job.subject, body: job.body, html: true }),
+        body: JSON.stringify({ type: "mail", from: batch.from, to: [job.to], cc: [], bcc: [], subject: job.subject, body: job.body, html: true }),
       });
       if (!res.ok) throw new Error(`${res.status} ${(await res.text().catch(() => "")).slice(0, 160)}`);
     } catch (err) {

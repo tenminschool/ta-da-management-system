@@ -8,6 +8,7 @@
  *   HR approved        → Finance (to act), the travellers and their supervisors
  *   Finance approved   → HR, the travellers and their supervisors
  *   rejected / returned → the travellers
+ *   paid               → the travellers (asked to confirm the money arrived) and their supervisors
  *
  * "Travellers" are the submitter plus every team member on the claim. Each
  * address gets exactly one mail per event: a supervisor with two people on the
@@ -20,10 +21,14 @@ import { GROUP_FOR_ROLE, listDirectoryMembers, type DirectoryMember } from "./te
 
 const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://postal.10minuteschool.com/api/v1/mail/send";
 
+/** The address the claim mails come from. */
+const MAIL_FROM = process.env.POSTAL_MAIL_FROM || "peopleops@10minuteschool.com";
+
 export type ClaimEvent =
   | { kind: "submitted"; resubmit: boolean }
   | { kind: "approved"; stage: string; by: string; remarks: string }
-  | { kind: "rejected" | "returned"; stage: string; by: string; remarks: string };
+  | { kind: "rejected" | "returned"; stage: string; by: string; remarks: string }
+  | { kind: "paid"; amount: number; mode: string; transactionId: string; date: string; repaid: boolean };
 
 const STAGE_NAME: Record<string, string> = {
   manager_review: "Supervisor",
@@ -143,6 +148,9 @@ async function recipientsFor(record: RequestRecord, event: ClaimEvent, token: st
       addSupervisors();
       await addDesk(["admin", "hr"], "HR", []);
     }
+  } else if (event.kind === "paid") {
+    addTravellers();
+    addSupervisors();
   } else {
     addTravellers();
     // A rejection also tells the supervisors, whoever rejected it.
@@ -157,6 +165,7 @@ const esc = (s: unknown) =>
 function headline(record: RequestRecord, event: ClaimEvent): string {
   const id = record.requestId;
   if (event.kind === "submitted") return `${id} ${event.resubmit ? "resubmitted" : "submitted"} by ${record.employeeName}`;
+  if (event.kind === "paid") return `${id} ${event.repaid ? "paid again" : "paid"} — please confirm you received it`;
   const stage = STAGE_NAME[event.stage] || event.stage;
   if (event.kind === "approved") {
     return event.stage === "finance_review" ? `${id} approved by Finance — payment is next` : `${id} approved by ${stage}`;
@@ -165,6 +174,11 @@ function headline(record: RequestRecord, event: ClaimEvent): string {
 }
 
 function nextStepFor(record: RequestRecord, event: ClaimEvent, r: Recipient): string {
+  if (event.kind === "paid") {
+    return r.traveller
+      ? "Please confirm the money reached you. You cannot raise a new claim until this one is answered."
+      : `Finance has paid it; ${record.employeeName} now needs to confirm the money arrived.`;
+  }
   if (r.act) {
     if (event.kind === "submitted") return "This claim is waiting for your approval as supervisor.";
     return `This claim is waiting for your review as ${r.desk}.`;
@@ -189,7 +203,13 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
   if (r.reports.length) about.push(`your team member${r.reports.length > 1 ? "s" : ""} ${esc(r.reports.join(", "))} ${r.reports.length > 1 ? "are" : "is"} on this claim`);
   if (about.length) lines.push(`<p>You are getting this because ${about.join(", and ")}.</p>`);
 
-  if (event.kind !== "submitted" && (event.by || event.remarks)) {
+  if (event.kind === "paid") {
+    lines.push(
+      `<p>Paid: <b>${esc(event.amount.toLocaleString("en-US"))} BDT</b>` +
+        `${event.mode ? ` by ${esc(event.mode)}` : ""}${event.date ? ` on ${esc(event.date)}` : ""}` +
+        `${event.transactionId ? `<br>Transaction ID: ${esc(event.transactionId)}` : ""}</p>`,
+    );
+  } else if (event.kind !== "submitted" && (event.by || event.remarks)) {
     lines.push(`<p>${event.by ? `By: ${esc(event.by)}<br>` : ""}${event.remarks ? `Remark: ${esc(event.remarks)}` : ""}</p>`);
   }
 
@@ -211,7 +231,20 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
 
   const next = nextStepFor(record, event, r);
   if (next) lines.push(`<p>${esc(next)}</p>`);
-  if (link) {
+  if (link && event.kind === "paid" && r.traveller) {
+    // "Yes" signs the person in, opens the claim and records the receipt. Nothing happens on
+    // the link alone (a mail scanner opening it cannot sign in), so it is safe to put in a mail.
+    const base = `${link.replace(/\/$/, "")}/?request=${encodeURIComponent(record.requestId)}`;
+    const yes = `${base}&ack=received`;
+    lines.push(
+      `<p style="margin:20px 0 6px"><a href="${esc(yes)}" style="display:inline-block;background:#15803d;color:#ffffff;` +
+        `text-decoration:none;font-weight:600;font-size:14px;padding:11px 20px;border-radius:8px">` +
+        `Yes, I received it</a></p>` +
+        `<p style="color:#64748b;font-size:12px;margin:0">Didn't get it? <a href="${esc(base)}">Open the claim</a> and choose ` +
+        `"No, it never arrived" so Finance can look into it.</p>` +
+        `<p style="color:#64748b;font-size:12px;margin:4px 0 0">Button not working? Open ${esc(yes)}</p>`,
+    );
+  } else if (link) {
     // Straight to this claim; the app asks the person to sign in first if they have to.
     const target = `${link.replace(/\/$/, "")}/?request=${encodeURIComponent(record.requestId)}`;
     lines.push(
@@ -239,11 +272,17 @@ export async function planClaimMail(record: RequestRecord, event: ClaimEvent, li
     const subject = `[TA/DA] ${headline(record, event)}`;
     return {
       url: MAIL_URL,
-      jobs: [...recipients].map(([to, r]) => ({ to, subject, body: bodyFor(record, event, r, link) })),
+      from: MAIL_FROM,
+      jobs: [...recipients].map(([to, r]) => ({
+        to,
+        // Only the person paid is asked to confirm; their supervisor is just told it was paid.
+        subject: event.kind === "paid" && !r.traveller ? `[TA/DA] ${record.requestId} paid to ${record.employeeName}` : subject,
+        body: bodyFor(record, event, r, link),
+      })),
     };
   } catch (err) {
     console.warn(`[mail] ${record.requestId} could not prepare notifications:`, (err as Error).message);
-    return { url: MAIL_URL, jobs: [] };
+    return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
   }
 }
 
@@ -288,11 +327,11 @@ export async function planUnlockMail(
         `</table><p>Approve or reject it under Unlocks &amp; Blocks.</p>` +
         button("?view=admin", "Review the request"),
       );
-      return { url: MAIL_URL, jobs: to.map((email) => ({ to: email, subject: `[TA/DA] Unlock request from ${request.employeeName}`, body })) };
+      return { url: MAIL_URL, from: MAIL_FROM, jobs: to.map((email) => ({ to: email, subject: `[TA/DA] Unlock request from ${request.employeeName}`, body })) };
     }
 
     const to = clean(request.email);
-    if (!to) return { url: MAIL_URL, jobs: [] };
+    if (!to) return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
     const approved = kind === "approved";
     const body = frame(
       `<p>Hello ${esc(request.employeeName)},</p>` +
@@ -308,9 +347,9 @@ export async function planUnlockMail(
         : `<p>You can send a new request from the New Request form if you need to.</p>`) +
       button("", approved ? "File your claim" : "Open the TA/DA system"),
     );
-    return { url: MAIL_URL, jobs: [{ to, subject: `[TA/DA] Your unlock request was ${approved ? "approved" : "rejected"}`, body }] };
+    return { url: MAIL_URL, from: MAIL_FROM, jobs: [{ to, subject: `[TA/DA] Your unlock request was ${approved ? "approved" : "rejected"}`, body }] };
   } catch (err) {
     console.warn(`[mail] unlock request ${request.requestId} could not be prepared:`, (err as Error).message);
-    return { url: MAIL_URL, jobs: [] };
+    return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
   }
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CheckCircle2, Upload } from "lucide-react";
 import { api, type ReconcileResult } from "../api.js";
 import { Modal, Money, Notice, Spinner } from "./ui.js";
+import { sendMails } from "../lib/mail.js";
 
 const CONFIDENCE: Record<string, { text: string; cls: string }> = {
   exact: { text: "Exact", cls: "bg-emerald-50 text-emerald-700" },
@@ -61,7 +62,9 @@ export default function PaymentReconcileModal({
     setError("");
     try {
       const picked = result.matches.filter((m) => selected.has(m.requestId));
-      const { results } = await api.reconcileConfirm(filename, picked);
+      const { results, mail } = await api.reconcileConfirm(filename, picked);
+      // One "please confirm" mail per paid claim, to the employee and their supervisor.
+      await sendMails(mail);
       setSummary({
         ok: results.filter((r) => r.ok).length,
         errors: results.filter((r) => !r.ok).map((r) => `${r.requestId}: ${r.error}`),

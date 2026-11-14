@@ -1067,7 +1067,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
         { currentStage: "manager_review", lastAction: `Submitted by ${req.session.name} as part of ${record.requestId}` },
       );
       const childMail = await planClaimMail(child, { kind: "submitted", resubmit: false }, appLink(req), String(req.headers["x-tenms-token"] || ""));
-      mail = { url: mail.url, jobs: [...mail.jobs, ...childMail.jobs] };
+      mail = { ...mail, jobs: [...mail.jobs, ...childMail.jobs] };
     }
   }
 
@@ -1435,7 +1435,13 @@ app.post("/api/requests/:id/payment", requireAuth, handler(async (req, res) => {
     },
   );
 
-  res.json({ request: updated });
+  const mail = await planClaimMail(
+    updated,
+    { kind: "paid", amount, mode: paymentMode, transactionId, date: paymentDate, repaid: answeringDispute },
+    appLink(req),
+    String(req.headers["x-tenms-token"] || ""),
+  );
+  res.json({ request: updated, mail });
 }));
 
 // ── Finance: bulk payment reconciliation ────────────────────────────────────
@@ -1504,6 +1510,7 @@ app.post("/api/requests/payment-reconcile/confirm", requireAuth, handler(async (
   }
 
   const results: { requestId: string; ok: boolean; error?: string }[] = [];
+  const mail: MailBatch = { url: "", from: "", jobs: [] };
   for (const m of picked) {
     const requestId = String(m?.requestId || "");
     const receiptNo = String(m?.receiptNo || "").trim();
@@ -1556,11 +1563,20 @@ app.post("/api/requests/payment-reconcile/confirm", requireAuth, handler(async (
         },
       );
       results.push({ requestId, ok: true });
+      const paidMail = await planClaimMail(
+        updated,
+        { kind: "paid", amount: fileAmount, mode: "bKash", transactionId: receiptNo, date: completionDate, repaid: answeringDispute },
+        appLink(req),
+        String(req.headers["x-tenms-token"] || ""),
+      );
+      mail.url = paidMail.url;
+      mail.from = paidMail.from;
+      mail.jobs.push(...paidMail.jobs);
     } catch (err) {
       results.push({ requestId, ok: false, error: (err as Error).message });
     }
   }
-  res.json({ results });
+  res.json({ results, mail });
 }));
 
 /**
