@@ -179,7 +179,7 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   // The permission lookup, the session refresh and the "manages anyone" check do not depend on
   // one another, so they run together rather than one after the other.
   const tenmsToken = String(req.headers["x-tenms-token"] || "");
-  const [groups, permissions, current, manages] = await Promise.all([
+  const [own, permissions, current, manages] = await Promise.all([
     tenmsToken ? fetchOwnGroups(tenmsToken) : Promise.resolve(null),
     tenmsToken ? fetchPermissions(tenmsToken) : Promise.resolve(null),
     currentSession(req.session),
@@ -187,9 +187,12 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   ]);
   let token: string | undefined;
   let roles = current.roles;
-  // Refreshed only when both lists were read, so a failed call never takes a role away.
-  if (groups && permissions) {
-    roles = rolesFor(groups, permissions);
+  // Refreshed only when both lists were read, so a failed call never takes a role away, and only
+  // when the 10MS token is this person's own: roles never come from someone else's token.
+  const sameAccount = !!own && own.email === String(req.session.email || "").trim().toLowerCase();
+  if (own && !sameAccount) console.warn(`[me] 10MS token belongs to ${own.email || "unknown"}, not ${req.session.email}; roles left as they were.`);
+  if (own && sameAccount && permissions) {
+    roles = rolesFor(own.groups, permissions);
     const { expiresAt: _e, ...base } = req.session;
     token = signToken({ ...base, roles });
   }
@@ -265,6 +268,8 @@ function canView(session: Session, req: RequestRecord): boolean {
 }
 
 function canActOn(session: Session, req: RequestRecord): boolean {
+  // Nobody decides or pays their own claim, whatever roles they hold: someone else always has to.
+  if (req.employeeId === session.employeeId) return false;
   switch (req.status) {
     // A line manager acts only on their own reports; Administration can unblock.
     case "manager_review":
@@ -533,7 +538,9 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
           employeeId: record.employeeId,
           name: record.employeeName,
           bkashNumber: record.bkashNumber,
-          amount: record.approvedAmount > 0 ? record.approvedAmount : record.finalPayable,
+          // finalPayable already follows the approved figure and takes off any advance paid out,
+          // the same figure "Mark paid" offers and the statement reconciliation expects.
+          amount: record.finalPayable,
         }];
     let any = false;
     for (const p of rowsToPay) {
@@ -1194,7 +1201,9 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
   const currency = cfgStr(policy, "CURRENCY", "BDT");
   const stage = record.status;
   const stageLabel = policy.approvalFlow.find((f) => f.stage === stage)?.label || stage;
-  const group = STAGE_COLUMN[stage];
+  // A disputed payment is still the Payment step, so a decision on it lands in the Payment column
+  // of the approval trail rather than being dropped.
+  const group = STAGE_COLUMN[stage === "payment_disputed" ? "payment_processing" : stage];
 
   let next: Status = record.status;
   let stageStatus = "";
@@ -1214,6 +1223,11 @@ app.post("/api/requests/:id/action", requireAuth, handler(async (req, res) => {
     const amount = Number(req.body.approvedAmount);
     if (!Number.isFinite(amount) || amount < 0) {
       res.status(400).json({ error: "Enter a valid approved amount." });
+      return;
+    }
+    // 0 reads as "no approved figure" everywhere downstream, which would pay the full claim.
+    if (amount === 0) {
+      res.status(400).json({ error: "To pay nothing on this claim, reject it instead of approving 0." });
       return;
     }
     const current = record.approvedAmount || record.totalClaim;
@@ -1363,6 +1377,10 @@ app.post("/api/requests/:id/payment", requireAuth, handler(async (req, res) => {
     return;
   }
   const record = toRequest(row);
+  if (record.employeeId === req.session.employeeId) {
+    res.status(403).json({ error: "You cannot record a payment on your own claim. Another Finance member has to do it." });
+    return;
+  }
   if (!["payment_processing", "payment_disputed"].includes(record.status)) {
     res.status(400).json({ error: "This request is not ready for payment." });
     return;
@@ -1519,6 +1537,10 @@ app.post("/api/requests/payment-reconcile/confirm", requireAuth, handler(async (
         continue;
       }
       const record = toRequest(row);
+      if (record.employeeId === req.session.employeeId) {
+        results.push({ requestId, ok: false, error: "Your own claim — another Finance member has to mark it paid." });
+        continue;
+      }
       if (!["payment_processing", "payment_disputed"].includes(record.status)) {
         results.push({ requestId, ok: false, error: `Already at "${record.status}" — skipped.` });
         continue;
@@ -1645,6 +1667,8 @@ async function advanceStepFor(
   r: RequestRecord,
 ): Promise<{ action: string; label: string } | null> {
   if (!r.advanceRequested || r.settledAt) return null;
+  // Your own advance is never at your desk; the advance endpoint refuses it too.
+  if (r.employeeId === session.employeeId) return null;
   if (r.advanceStatus === "approved") {
     return hasRole(session, "finance", "hr", "admin") ? { action: "settle", label: "Record settlement" } : null;
   }
@@ -1694,6 +1718,10 @@ app.post("/api/requests/:id/advance", requireAuth, handler(async (req, res) => {
   const record = toRequest(row);
   if (record.advanceRequested <= 0) {
     res.status(400).json({ error: "This request has no advance." });
+    return;
+  }
+  if (record.employeeId === req.session.employeeId) {
+    res.status(403).json({ error: "You cannot approve or settle the advance on your own claim." });
     return;
   }
 
