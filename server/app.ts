@@ -584,10 +584,11 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
 // ── Live policy preview (no writes) ─────────────────────────────────────────
 
 app.post("/api/requests/preview", requireAuth, handler(async (req, res) => {
-  const policy = await loadPolicy();
+  // Independent lookups, so they run together: this is called as the person fills in the form.
+  const [policy, session] = await Promise.all([loadPolicy(), currentSession(req.session)]);
   const draft = normaliseDraft(req.body?.draft);
   res.json({
-    computation: computeRequest(policy, draft, await currentSession(req.session)),
+    computation: computeRequest(policy, draft, session),
     modes: eligibleModes(policy, {
       band: req.session.band,
       gender: req.session.gender,

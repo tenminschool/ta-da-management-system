@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useTenMSAuth } from "@tenminuteschool/auth-admin-react";
 import {
   BadgeCheck, Banknote, CircleDollarSign, Clock, RotateCcw, XCircle,
 } from "lucide-react";
@@ -33,13 +32,6 @@ export default function Dashboard({
   const [summary, setSummary] = useState<Summary | null>(null);
   const [requests, setRequests] = useState<RequestRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const { auth } = useTenMSAuth();
-
-  useEffect(() => {
-    auth.getMyProfile()
-      .then((profile) => console.log("getMyProfile:", profile))
-      .catch((err) => console.error("getMyProfile failed:", err));
-  }, [auth]);
 
   useEffect(() => {
     api.requests("mine")

@@ -227,6 +227,28 @@ export async function readTabs(tabs: string[]): Promise<Record<string, (Row & { 
   return Object.fromEntries(entries);
 }
 
+/**
+ * True when some row matches every `column = value` given, and none of the `not` ones. Asks the
+ * database for one row instead of reading the whole table, for checks made on every page load.
+ */
+export async function rowExists(tab: string, where: Row, not: Row = {}): Promise<boolean> {
+  await ensureSchema();
+  const { headers } = spec(tab);
+  const params: string[] = [];
+  const clause = (entries: [string, string][], op: string) => entries.map(([col, val]) => {
+    if (!headers.includes(col)) throw new Error(`"${col}" is not a column of ${tab}.`);
+    params.push(val);
+    return `${q(col)} ${op} $${params.length}`;
+  });
+  const conds = [...clause(Object.entries(where), "="), ...clause(Object.entries(not), "<>")];
+  apiCalls.reads += 1;
+  const res = await dbPool().query(
+    `SELECT 1 FROM ${q(tableName(tab))}${conds.length ? ` WHERE ${conds.join(" AND ")}` : ""} LIMIT 1`,
+    params,
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 /** Appends a row and returns its id. */
 export async function appendRow(tab: string, record: Row): Promise<number> {
   await ensureSchema();
