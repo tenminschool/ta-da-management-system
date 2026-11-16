@@ -143,9 +143,17 @@ export interface TenMSPerson {
  * Searches the 10MS admin directory (`/v1/admin/all`) on behalf of the signed-in
  * person, using their own token. The list sits somewhere under `data` and the
  * response shape is not documented, so the first array found there is used.
+ * `coreTeamOnly` asks the directory for core team members only
+ * (`is_core_team_member=true`), which is what the team-member picker wants.
  */
-export async function searchAdmins(accessToken: string, q: string, limit = 25): Promise<TenMSPerson[]> {
-  const res = await ask(`/v1/admin/all?skip=0&limit=${limit}&search=${encodeURIComponent(q)}`, accessToken);
+export async function searchAdmins(
+  accessToken: string,
+  q: string,
+  limit = 25,
+  { coreTeamOnly = false }: { coreTeamOnly?: boolean } = {},
+): Promise<TenMSPerson[]> {
+  const core = coreTeamOnly ? "&is_core_team_member=true" : "";
+  const res = await ask(`/v1/admin/all?skip=0&limit=${limit}${core}&search=${encodeURIComponent(q)}`, accessToken);
   if (!res.ok) throw new TenMSVerifyError(`The employee directory could not be searched (${res.status}).`, res.status === 401 ? 401 : 502);
   const body = (await res.json()) as { data?: unknown };
   const data = body?.data as unknown;

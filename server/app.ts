@@ -218,7 +218,8 @@ app.get("/api/employees", requireAuth, handler(async (req, res) => {
     return;
   }
   try {
-    const people = await searchAdmins(token, q);
+    // The 10MS core-team directory search, 50 at a time, so teammates are found by name, email or ID.
+    const people = await searchAdmins(token, q, 50, { coreTeamOnly: true });
     res.json({ employees: people.filter((p) => p.employeeId !== req.session.employeeId) });
   } catch (err) {
     const e = err as TenMSVerifyError;
