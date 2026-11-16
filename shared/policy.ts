@@ -159,6 +159,14 @@ export function outsidePerDiemFor(policy: Policy, bandName: string, fromDate: st
   return money(span.weekday * (b?.outsideTAWeekday ?? 0) + span.weekend * (b?.outsideTAWeekend ?? 0));
 }
 
+/**
+ * Whether someone must confirm their last paid claim reached them before raising a new one.
+ * On unless an administrator sets SETTLE_BEFORE_NEW_CLAIM to No.
+ */
+export function settleBeforeNewClaim(policy: Policy): boolean {
+  return String(cfgStr(policy, "SETTLE_BEFORE_NEW_CLAIM", "Yes")).trim().toLowerCase() !== "no";
+}
+
 /** Whether administrators have opened bank payment as an alternative to bKash. */
 export function bankPayoutAllowed(policy: Policy): boolean {
   return String(cfgStr(policy, "ALLOW_BANK_PAYOUT", "No")).trim().toLowerCase() === "yes";
