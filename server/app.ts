@@ -24,7 +24,7 @@ import {
   upsertApproval,
 } from "./store.js";
 import {
-  addBusinessDays, cfgNum, cfgStr, computeRequest, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit, todayISO,
+  addBusinessDays, cfgNum, cfgStr, computeRequest, settleBeforeNewClaim, eligibleModes, money, personalVehicleRateFor, teamPayoutSplit, todayISO,
 } from "../shared/policy.js";
 import { matchSettlement, normalizeBkash, parseSettlementSheet } from "./reconcile.js";
 import { STATUS_GROUPS, type StatusGroup, type Role } from "../shared/types.js";
@@ -990,7 +990,7 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
   const session = await currentSession(req.session);
   const computation = computeRequest(policy, draft, session);
 
-  if (submit) {
+  if (submit && settleBeforeNewClaim(policy)) {
     const waiting = await awaitingAcknowledgement(req.session.employeeId);
     if (waiting.length) {
       res.status(400).json({
@@ -1107,7 +1107,7 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   const submit = req.body?.submit !== false;
   const normalised = normaliseDraft({ ...req.body?.draft, requestId: existing.requestId });
   const draft = submit ? await withTeamContacts(normalised, String(req.headers["x-tenms-token"] || "")) : normalised;
-  if (submit) {
+  if (submit && settleBeforeNewClaim(policy)) {
     const waiting = (await awaitingAcknowledgement(req.session.employeeId))
       .filter((id) => id !== existing.requestId);
     if (waiting.length) {

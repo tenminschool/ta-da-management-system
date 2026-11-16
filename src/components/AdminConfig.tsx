@@ -79,6 +79,69 @@ function BranchManager({
   );
 }
 
+const SETTLE_KEY = "SETTLE_BEFORE_NEW_CLAIM";
+
+/**
+ * The SETTLE_BEFORE_NEW_CLAIM switch in the Config tab: whether a paid claim has to be confirmed
+ * received before the same person can submit another. A missing row counts as Yes.
+ */
+function SettleRule({
+  rows, cols, onSaved,
+}: { rows: Record<string, string>[]; cols: string[]; onSaved: (rows: Record<string, string>[]) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const row = rows.find((r) => r.key === SETTLE_KEY);
+  const on = String(row?.value ?? "Yes").trim().toLowerCase() !== "no";
+
+  async function set(next: boolean) {
+    if (next === on) return;
+    setBusy(true);
+    setError("");
+    const value = next ? "Yes" : "No";
+    const updated = row
+      ? rows.map((r) => (r === row ? { ...r, value } : r))
+      : [...rows, {
+          key: SETTLE_KEY, value,
+          description: "Yes: a new claim can't be submitted until the last paid one is confirmed received. No: claims can be submitted any time.",
+          effective_from: new Date().toISOString().slice(0, 10),
+        }];
+    try {
+      await api.saveTab("Config", updated.map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? ""]))));
+      onSaved(updated);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Settle before a new claim"
+      subtitle="Yes: after a claim is paid, the person has to confirm they received it before they can submit another one. No: they can submit new claims any time."
+    >
+      {error && <div className="mb-3"><Notice tone="error" items={[error]} /></div>}
+      <div className="flex items-center gap-2" role="radiogroup" aria-label="Settle before a new claim">
+        {[true, false].map((v) => (
+          <button
+            key={String(v)}
+            role="radio"
+            aria-checked={on === v}
+            disabled={busy}
+            onClick={() => void set(v)}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${
+              on === v ? "bg-brand-600 text-white" : "bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {v ? "Yes" : "No"}
+          </button>
+        ))}
+        {busy && <Loader2 size={16} className="animate-spin text-slate-400" />}
+      </div>
+    </Card>
+  );
+}
+
 const DESCRIPTIONS: Record<string, string> = {
   Config: "Rates, limits and thresholds. Change a value here and every calculation follows it immediately.",
   BandPolicy: "Per-band transport lists (male / female), outside-city weekday & weekend rates, accommodation limit, flight and car-pool eligibility.",
@@ -157,6 +220,13 @@ export default function AdminConfig({ canEditPolicy = true }: { canEditPolicy?: 
       <UnlockRequestsQueue />
       <ClaimUnlock />
       <InsideCityBlockManager />
+      {canEditPolicy && headers.Config && (
+        <SettleRule
+          rows={data.Config || []}
+          cols={headers.Config}
+          onSaved={(next) => setData((d) => ({ ...d, Config: next }))}
+        />
+      )}
       {canEditPolicy && headers.Lists && (
         <BranchManager
           rows={data.Lists || []}
