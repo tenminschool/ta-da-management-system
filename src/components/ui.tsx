@@ -54,7 +54,9 @@ export function SearchInput({
       />
       <input
         type="search"
-        className="field pl-9 pr-9"
+        className="field"
+        // Inline because .field sets its own padding, which beat the utility classes and left the text under the icon.
+        style={{ paddingLeft: "2.25rem", paddingRight: "2.25rem" }}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
