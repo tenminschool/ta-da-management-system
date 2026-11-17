@@ -79,6 +79,83 @@ function BranchManager({
   );
 }
 
+/**
+ * Who gets the mail when a claim reaches HR or Finance: addresses typed here (HR_MAIL_TO,
+ * FINANCE_MAIL_TO in the Config tab). Blank falls back to the 10MS groups. Mail only: roles and
+ * permissions still come from 10MS.
+ */
+function DeskMailRecipients({
+  rows, cols, onSaved,
+}: { rows: Record<string, string>[]; cols: string[]; onSaved: (rows: Record<string, string>[]) => void }) {
+  const KEYS = [
+    { key: "HR_MAIL_TO", label: "HR desk", hint: "Gets the mail after the supervisor approves, and when someone asks to unlock an older date." },
+    { key: "FINANCE_MAIL_TO", label: "Finance desk", hint: "Gets the mail after HR approves, when a claim is ready for payment." },
+  ];
+  const current = (k: string) => rows.find((r) => r.key === k)?.value ?? "";
+  const [values, setValues] = useState<Record<string, string>>({
+    HR_MAIL_TO: current("HR_MAIL_TO"), FINANCE_MAIL_TO: current("FINANCE_MAIL_TO"),
+  });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    const bad = KEYS.flatMap(({ key, label }) =>
+      values[key].split(/[\s,;]+/).filter(Boolean).filter((e) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)).map((e) => `${label}: "${e}" is not an email address`));
+    if (bad.length) { setError(bad.join(". ")); return; }
+    setBusy(true);
+    setError("");
+    setSaved(false);
+    let updated = rows;
+    for (const { key } of KEYS) {
+      const value = values[key].split(/[\s,;]+/).filter(Boolean).join(", ");
+      const row = updated.find((r) => r.key === key);
+      updated = row
+        ? updated.map((r) => (r === row ? { ...r, value } : r))
+        : [...updated, { key, value, description: "Mail recipients (comma-separated). Blank = everyone in the matching 10MS group.", effective_from: new Date().toISOString().slice(0, 10) }];
+    }
+    try {
+      await api.saveTab("Config", updated.map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? ""]))));
+      onSaved(updated);
+      setSaved(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Who gets the HR and Finance emails"
+      subtitle="Type the email addresses that should be mailed at each desk, separated by commas. Leave one blank to mail everyone in that 10MS group instead. This is only about email — roles and permissions still come from 10MS."
+    >
+      {error && <div className="mb-3"><Notice tone="error" items={[error]} /></div>}
+      {saved && <div className="mb-3"><Notice tone="info" items={["Saved — new mails use these addresses."]} /></div>}
+      <div className="space-y-4">
+        {KEYS.map(({ key, label, hint }) => (
+          <label key={key} className="block">
+            <span className="mb-1 block text-sm font-semibold text-slate-700">{label}</span>
+            <textarea
+              className="field !h-auto min-h-20"
+              rows={2}
+              placeholder="name@10minuteschool.com, other@10minuteschool.com"
+              value={values[key]}
+              onChange={(e) => { setValues((v) => ({ ...v, [key]: e.target.value })); setSaved(false); }}
+            />
+            <span className="mt-1 block text-xs text-slate-500">{hint}</span>
+          </label>
+        ))}
+      </div>
+      <div className="mt-4">
+        <button className="btn-primary" onClick={() => void save()} disabled={busy}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
+        </button>
+      </div>
+    </Card>
+  );
+}
+
 const SETTLE_KEY = "SETTLE_BEFORE_NEW_CLAIM";
 
 /**
@@ -222,6 +299,13 @@ export default function AdminConfig({ canEditPolicy = true }: { canEditPolicy?: 
       <InsideCityBlockManager />
       {canEditPolicy && headers.Config && (
         <SettleRule
+          rows={data.Config || []}
+          cols={headers.Config}
+          onSaved={(next) => setData((d) => ({ ...d, Config: next }))}
+        />
+      )}
+      {canEditPolicy && headers.Config && (
+        <DeskMailRecipients
           rows={data.Config || []}
           cols={headers.Config}
           onSaved={(next) => setData((d) => ({ ...d, Config: next }))}

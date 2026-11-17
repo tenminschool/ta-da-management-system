@@ -18,6 +18,8 @@
  */
 import type { MailBatch, RequestRecord, UnlockRequest } from "../shared/types.js";
 import { GROUP_FOR_ROLE, listDirectoryMembers, type DirectoryMember } from "./tenms.js";
+import { loadPolicy } from "./store.js";
+import { cfgStr } from "../shared/policy.js";
 
 const MAIL_URL = process.env.POSTAL_MAIL_URL || "https://postal.10minuteschool.com/api/v1/mail/send";
 
@@ -59,11 +61,23 @@ type DeskRole = "hr" | "admin" | "finance";
  * ta_da_finance), found by reading the 10MS directory with the signed-in person's token. The
  * answer is kept for a few minutes. ADMIN_EMAILS / HR_EMAILS / FINANCE_EMAILS (comma-separated)
  * add to that, and stand in if the directory cannot be read.
+ *
+ * An administrator can instead type the addresses in the Config tab (HR_MAIL_TO, FINANCE_MAIL_TO).
+ * When one is filled in, the desk's mail goes to exactly those addresses and the directory is not
+ * read at all. This is only about who gets mail: roles and permissions still come from 10MS.
  */
 let directoryCache: { at: number; members: DirectoryMember[] } | null = null;
 const DIRECTORY_TTL_MS = 10 * 60_000;
 
+/** The addresses typed into a Config row, split on commas, semicolons, spaces or new lines. */
+function configuredEmails(value: string): string[] {
+  return [...new Set(value.split(/[\s,;]+/).map(clean).filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)))];
+}
+
 async function roleEmails(role: DeskRole, token: string): Promise<string[]> {
+  // HR's desk is the admin and HR roles together, so both use the HR list.
+  const typed = configuredEmails(cfgStr(await loadPolicy(), role === "finance" ? "FINANCE_MAIL_TO" : "HR_MAIL_TO", ""));
+  if (typed.length) return typed;
   const envName = role === "admin" ? "ADMIN_EMAILS" : role === "hr" ? "HR_EMAILS" : "FINANCE_EMAILS";
   const fromEnv = String(process.env[envName] || "").split(",").map(clean).filter(Boolean);
   let fromGroup: string[] = [];
