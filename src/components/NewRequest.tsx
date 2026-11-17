@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, Check, ChevronDown, FileText, FileUp, Loader2, Plus, Send, Trash2, Users,
+  ArrowLeft, ArrowRight, Check, ChevronDown, FileText, FileUp, Loader2, Plus, Send, Trash2, Users, X,
 } from "lucide-react";
 import { api } from "../api.js";
 import {
@@ -292,6 +292,18 @@ function StepTravelType({
   const refreshMyUnlocks = () => api.unlockRequests("mine").then((r) => setMyUnlocks(r.requests)).catch(() => {});
   useEffect(() => { refreshMyUnlocks(); }, []);
   const latestUnlock = myUnlocks[0];
+  // A declined unlock can be closed. Remembered per request in this browser, so it stays gone after a
+  // refresh, while a newer decision (a different request) still shows.
+  const dismissKey = latestUnlock ? `unlock-declined-dismissed:${latestUnlock.requestId}` : "";
+  const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
+  const declinedDismissed = !!dismissKey && (dismissedKeys.includes(dismissKey) || (() => {
+    try { return localStorage.getItem(dismissKey) === "1"; } catch { return false; }
+  })());
+  function dismissDeclined() {
+    if (!dismissKey) return;
+    setDismissedKeys((k) => [...k, dismissKey]);
+    try { localStorage.setItem(dismissKey, "1"); } catch { /* the notice just comes back next visit */ }
+  }
   const destination = destinationOptions.find((d) => d.value === draft.destinationType);
   const destinationNeeds = destination?.needs;
   const destinationLabel = destination?.label || "";
@@ -542,13 +554,23 @@ function StepTravelType({
                   ]}
                 />
               )}
-              {latestUnlock?.status === "rejected" && (
-                <Notice
-                  tone="warn"
-                  items={[
-                    `Your last request was declined${latestUnlock.decidedBy ? ` by ${latestUnlock.decidedBy.replace(/<.*>/, "").trim()}` : ""}: ${latestUnlock.decisionRemarks}`,
-                  ]}
-                />
+              {latestUnlock?.status === "rejected" && !declinedDismissed && (
+                <div className="relative [&_li]:pr-8">
+                  <Notice
+                    tone="warn"
+                    items={[
+                      `Your last request was declined${latestUnlock.decidedBy ? ` by ${latestUnlock.decidedBy.replace(/<.*>/, "").trim()}` : ""}: ${latestUnlock.decisionRemarks}`,
+                    ]}
+                  />
+                  <button
+                    type="button"
+                    onClick={dismissDeclined}
+                    aria-label="Dismiss"
+                    className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-lg text-amber-800/70 hover:bg-amber-100 hover:text-amber-900"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
               )}
               {latestUnlock?.status !== "pending" && (
                 <button type="button" className="btn-ghost text-xs" onClick={() => setContactHrOpen(true)}>
