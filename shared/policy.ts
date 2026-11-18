@@ -31,6 +31,24 @@ export function money(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+/** Seniority, most senior first. */
+const BAND_SENIORITY = ["A", "B", "C1", "C2", "D", "E"];
+
+/**
+ * The band a trip is judged by. Alone, it is the traveller's own. On a team trip it is the most
+ * senior band in the party, so the submitter being junior never costs the team an entitlement the
+ * senior traveller has (accommodation limit, flight, car pool, transport options). Per-Diem is
+ * the exception: each person is still paid at their own band's rate.
+ */
+export function partyBand(userBand: string, travelType: string, memberBands: string[] = []): string {
+  if (travelType !== "team") return userBand;
+  const rank = (b: string) => {
+    const i = BAND_SENIORITY.indexOf(String(b || "").trim().toUpperCase());
+    return i === -1 ? BAND_SENIORITY.length : i;
+  };
+  return [userBand, ...memberBands].reduce((best, b) => (b && rank(b) < rank(best) ? b : best), userBand);
+}
+
 export function bandPolicy(policy: Policy, band: string): BandPolicy | undefined {
   return policy.bands.find((b) => b.band.toUpperCase() === String(band || "").toUpperCase());
 }
@@ -349,6 +367,9 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
 
   const band = bandPolicy(policy, user.band);
   if (!band) errors.push(`No policy is configured for Band "${user.band}". Contact Administration.`);
+  // What the trip is entitled to is judged by its most senior traveller; see partyBand.
+  const tripBandName = partyBand(user.band, draft.travelType, draft.teamMembers.map((m) => m.band));
+  const tripBand = bandPolicy(policy, tripBandName);
 
   // An administrator can restrict one person from raising new inside-city
   // claims specifically — they can still see every claim as normal, and
@@ -489,7 +510,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const nights = draft.checkIn && draft.checkOut
     ? Math.max(1, Math.round((new Date(`${draft.checkOut}T00:00:00`).getTime() - new Date(`${draft.checkIn}T00:00:00`).getTime()) / 86_400_000))
     : 0;
-  const perNightLimit = band?.accommodationLimit ?? 0;
+  const perNightLimit = tripBand?.accommodationLimit ?? 0;
   const accommodationLimit = money(perNightLimit * (nights || 1));
   // Company Arrangement is paid by the company directly — the employee has
   // nothing to claim, so no hotel details are asked for or required.
@@ -513,11 +534,13 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
         if (!draft.checkIn || !draft.checkOut) errors.push("Check-in and check-out dates are required for an accommodation claim.");
       }
       if (accommodationAmount > accommodationLimit && accommodationLimit > 0) {
-        errors.push(
-          `Accommodation ${accommodationAmount} exceeds the Band ${user.band} limit of ${perNightLimit}/night × ${nights || 1} night(s) = ${accommodationLimit}.`,
+        // Not an error: the claim is simply held at the limit, the way a rent-a-car fare is.
+        warnings.push(
+          `Accommodation ${accommodationAmount} is over the Band ${tripBandName} limit of ${perNightLimit}/night × ${nights || 1} night(s) = ${accommodationLimit}, so ${accommodationLimit} is claimed.`,
         );
+        accommodationAmount = accommodationLimit;
       } else if (accommodationLimit > 0) {
-        notes.push(`Accommodation within the Band ${user.band} limit (${perNightLimit}/night × ${nights || 1} = ${accommodationLimit}).`);
+        notes.push(`Accommodation within the Band ${tripBandName} limit (${perNightLimit}/night × ${nights || 1} = ${accommodationLimit}).`);
       }
     }
   }
@@ -535,8 +558,8 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     const femaleParty = femaleTravelling(user.gender, draft.travelType, draft.teamMembers.map((m) => m.gender));
     if (draft.travelType !== "team") {
       errors.push("Rent-a-car needs a team pooling together — not available for individual travel.");
-    } else if (!band?.carPoolEligible && !femaleParty) {
-      errors.push(`Rent-a-car pooling is not available for Band ${user.band}.`);
+    } else if (!tripBand?.carPoolEligible && !femaleParty) {
+      errors.push(`Rent-a-car pooling is not available for Band ${tripBandName}.`);
     } else if (head < minHead) {
       errors.push(`Rent-a-car needs at least ${minHead} employees — ${head} entered. Request rejected by policy.`);
     } else if (rentACarLegs.some((l) => Number(l.amount) > limit)) {
@@ -549,8 +572,8 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   // ── Flight ────────────────────────────────────────────────────────────────
   const flightLegs = draft.legs.filter((l) => l.mode === "Flight");
   const flightAmount = money(flightLegs.reduce((s, l) => s + (Number(l.amount) || 0) * (teamSize > 1 ? teamSize : 1), 0));
-  if (flightLegs.length && !band?.flightEligible) {
-    errors.push(`Flight is not available for Band ${user.band}.`);
+  if (flightLegs.length && !tripBand?.flightEligible) {
+    errors.push(`Flight is not available for Band ${tripBandName}.`);
   }
 
   const otherAmount = money(Number(draft.otherAmount) || 0);
@@ -827,7 +850,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
   const usedModes = new Set(draft.legs.map((l) => l.mode).filter(Boolean));
   if (usedModes.size) {
     const opts = eligibleModes(policy, {
-      band: user.band,
+      band: tripBandName,
       gender: user.gender,
       scope: draft.scope,
       travelType: draft.travelType,
@@ -838,7 +861,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     });
     for (const m of usedModes) {
       const chosen = opts.find((o) => o.mode === m);
-      if (!chosen) errors.push(`${m} is not available for Band ${user.band}.`);
+      if (!chosen) errors.push(`${m} is not available for Band ${tripBandName}.`);
       else if (!chosen.enabled) errors.push(chosen.reason);
     }
   }
