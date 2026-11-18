@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import {
-  addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft,
+  addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, partyBand,
   impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, teamPayoutSplit, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, RequestRecord, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
@@ -82,7 +82,7 @@ export default function NewRequest({
   );
   const modes = useMemo(
     () => eligibleModes(policy, {
-      band: user.band,
+      band: partyBand(user.band, draft.travelType, draft.teamMembers.map((m) => m.band)),
       gender: user.gender,
       scope: draft.scope,
       travelType: draft.travelType,
@@ -1508,6 +1508,10 @@ function StepAllowances({
 }) {
   const inside = draft.scope === "inside";
   const minHours = cfgNum(policy, "PER_DIEM_MIN_HOURS", 5);
+  // The trip's most senior traveller sets the accommodation limit; see partyBand.
+  const tripBandName = partyBand(user.band, draft.travelType, draft.teamMembers.map((m) => m.band));
+  const tripBand = policy.bands.find((b) => b.band === tripBandName);
+  // Per-Diem is each person's own band, so the rate shown stays the claimant's.
   const band = policy.bands.find((b) => b.band === user.band);
 
   // "Full amount" tracks the claim total live, so it stays correct as the
@@ -1557,7 +1561,7 @@ function StepAllowances({
         </p>
       </Card>
 
-      <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${band?.accommodationLimit ?? 0} per night for Band ${user.band}.`}>
+      <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${tripBand?.accommodationLimit ?? 0} per night for Band ${tripBandName}${tripBandName !== user.band ? " (the most senior traveller)" : ""}. A bill above the limit is claimed at the limit.`}>
         {draft.arrangement === "company" ? (
           <Notice
             tone="info"
