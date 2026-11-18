@@ -125,8 +125,24 @@ export interface GroupMember {
   status: string;
 }
 
+export interface TeamClaim {
+  requestId: string;
+  employeeId: string;
+  employeeName: string;
+  isSubmitter: boolean;
+  bkashNumber: string;
+  totalClaim: number;
+  finalPayable: number;
+  status: string;
+}
+
 export interface RequestDetail {
   request: RequestRecord;
+  /**
+   * The whole team trip's money, when this claim is part of one. `parent` is the submitter's claim
+   * (without payout details), sent only when the claim being viewed is a teammate's own.
+   */
+  team: { parent: RequestRecord | null; claims: TeamClaim[] } | null;
   /** Everyone on the same team trip, when this claim is part of one. */
   group: { groupId: string; members: GroupMember[] } | null;
   approval: ApprovalRow | null;

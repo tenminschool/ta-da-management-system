@@ -77,29 +77,35 @@ export default function RequestDetail({
   // person's own cut comes from their own "office meal taken?" answer —
   // never a team total divided evenly. Outside-city Per-Diem doesn't vary by
   // traveller, so it's still shared out evenly there.
-  const isTeam = r.travelType === "team" && r.teamMembers.length > 0;
-  const ownPerDiem = (mealTaken: boolean) => r.scope === "inside"
-    ? insidePerTravellerAmount(policy, r.workingHours, mealTaken)
-    : (r.teamSize > 0 ? money((r.perDiemAmount + r.lunchAllowance) / r.teamSize) : 0);
-  const requesterPerDiem = ownPerDiem(r.dualWorkstation ? true : r.officeMealTaken);
-  const teamPerDiemBreakdown = isTeam && (r.perDiemAmount > 0 || r.lunchAllowance > 0);
-  const perDiemBreakdownLabel = r.perDiemAmount > 0 ? `Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}` : "Lunch allowance";
-  const perDiemBreakdownTotal = r.perDiemAmount > 0 ? r.perDiemAmount : r.lunchAllowance;
+  // A teammate's own claim only holds their share; the trip-wide figures (transport, everyone's
+  // Per-Diem) sit on the submitter's claim, which the server sends along as team.parent. `b` is
+  // whichever of the two describes the whole trip, so every traveller sees the same breakdown.
+  const team = detail.team;
+  const b = team?.parent ?? r;
+  const ownClaim = team?.claims.find((c) => c.employeeId === user.employeeId);
+  const isTeam = b.travelType === "team" && b.teamMembers.length > 0;
+  const ownPerDiem = (mealTaken: boolean) => b.scope === "inside"
+    ? insidePerTravellerAmount(policy, b.workingHours, mealTaken)
+    : (b.teamSize > 0 ? money((b.perDiemAmount + b.lunchAllowance) / b.teamSize) : 0);
+  const requesterPerDiem = ownPerDiem(b.dualWorkstation ? true : b.officeMealTaken);
+  const teamPerDiemBreakdown = isTeam && (b.perDiemAmount > 0 || b.lunchAllowance > 0);
+  const perDiemBreakdownLabel = b.perDiemAmount > 0 ? `Per-Diem${b.perDiemDays > 1 ? ` · ${b.perDiemDays} days` : ""}` : "Lunch allowance";
+  const perDiemBreakdownTotal = b.perDiemAmount > 0 ? b.perDiemAmount : b.lunchAllowance;
   // Company-arranged costs are logged per traveller — the requester's own
   // figure plus whatever each team member cost, since one person can differ
   // from the rest (an extra night, say).
-  const companyTransportTotal = (r.companyTransportAmount || 0) + r.teamMembers.reduce((s, m) => s + (m.companyTransportAmount || 0), 0);
-  const companyAccommodationTotal = (r.companyAccommodationAmount || 0) + r.teamMembers.reduce((s, m) => s + (m.companyAccommodationAmount || 0), 0);
+  const companyTransportTotal = (b.companyTransportAmount || 0) + b.teamMembers.reduce((s, m) => s + (m.companyTransportAmount || 0), 0);
+  const companyAccommodationTotal = (b.companyAccommodationAmount || 0) + b.teamMembers.reduce((s, m) => s + (m.companyAccommodationAmount || 0), 0);
   // Rent-a-car and Flight are trips too, so their cost is already folded
   // into Transportation — listing them again here would look charged twice.
   const lines: [string, number][] = [
-    ["Transportation (TA)", r.taAmount],
+    ["Transportation (TA)", b.taAmount],
     ...(isTeam ? [] : [
-      [`Per-Diem${r.perDiemDays > 1 ? ` · ${r.perDiemDays} days` : ""}`, r.perDiemAmount] as [string, number],
-      ["Lunch allowance", r.lunchAllowance] as [string, number],
+      [`Per-Diem${b.perDiemDays > 1 ? ` · ${b.perDiemDays} days` : ""}`, b.perDiemAmount] as [string, number],
+      ["Lunch allowance", b.lunchAllowance] as [string, number],
     ]),
-    ["Accommodation", r.accommodationAmount],
-    ["Other", r.otherAmount],
+    ["Accommodation", b.accommodationAmount],
+    ["Other", b.otherAmount],
     ["Company transportation (arranged)", companyTransportTotal],
     ["Company accommodation (arranged)", companyAccommodationTotal],
   ];
@@ -540,17 +546,27 @@ export default function RequestDetail({
               <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Claim summary</p>
             </div>
             <div className="space-y-2 px-5 py-4 text-sm">
+              {/* Whoever opens a team claim, a traveller sees their own payment first and clearly. */}
+              {team && ownClaim && (
+                <div className="rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
+                  <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Your payment</p>
+                  <p className="mt-0.5 text-2xl font-bold text-emerald-700"><Money value={ownClaim.finalPayable} currency={currency} /></p>
+                  <p className="mt-0.5 text-xs text-emerald-800/80">
+                    {ownClaim.bkashNumber ? `bKash ${ownClaim.bkashNumber} · ` : ""}{ownClaim.requestId} · {ownClaim.status.replace(/_/g, " ")}
+                  </p>
+                </div>
+              )}
               {teamPerDiemBreakdown && (
                 <div>
                   <span className="mb-1 block text-slate-600">{perDiemBreakdownLabel}</span>
                   <div className="space-y-1 border-l-2 border-slate-100 pl-3">
                     <div className="flex justify-between gap-3 text-xs">
-                      <span className="text-slate-500">{r.employeeName}{isMine ? " (you)" : ""}</span>
+                      <span className="text-slate-500">{b.employeeName}{b.employeeId === user.employeeId ? " (you)" : ""}</span>
                       <span className="text-slate-700"><Money value={requesterPerDiem} currency={currency} /></span>
                     </div>
-                    {r.teamMembers.map((m, i) => (
+                    {b.teamMembers.map((m, i) => (
                       <div key={m.employeeId || i} className="flex justify-between gap-3 text-xs">
-                        <span className="text-slate-500">{m.name || `Team member ${i + 1}`}</span>
+                        <span className="text-slate-500">{m.name || `Team member ${i + 1}`}{m.employeeId && m.employeeId === user.employeeId ? " (you)" : ""}</span>
                         <span className="text-slate-700"><Money value={ownPerDiem(m.officeMealTaken)} currency={currency} /></span>
                       </div>
                     ))}
@@ -568,7 +584,7 @@ export default function RequestDetail({
                 </div>
               ))}
               <div className="flex justify-between border-t border-slate-200 pt-3">
-                <span className="font-semibold text-slate-700">Total claim</span>
+                <span className="font-semibold text-slate-700">{team ? "Your total claim" : "Total claim"}</span>
                 <span className={`font-bold ${r.approvedAmount ? "text-slate-400 line-through" : "text-slate-900"}`}>
                   <Money value={displayTotalClaim} currency={currency} />
                 </span>
@@ -583,7 +599,7 @@ export default function RequestDetail({
                   approver decided to pay instead. */}
               {r.approvedAmount > 0 && (
                 <div className="flex justify-between">
-                  <span className="font-semibold text-amber-700">Approved amount</span>
+                  <span className="font-semibold text-amber-700">{team ? "Your approved amount" : "Approved amount"}</span>
                   <span className="font-bold text-amber-700"><Money value={r.approvedAmount} currency={currency} /></span>
                 </div>
               )}
@@ -594,49 +610,48 @@ export default function RequestDetail({
                 </div>
               )}
               <div className="flex justify-between border-t border-slate-200 pt-2">
-                <span className="font-semibold text-slate-700">Final payable</span>
+                <span className="font-semibold text-slate-700">{team ? "Your payable" : "Final payable"}</span>
                 <span className="font-bold text-emerald-600"><Money value={r.finalPayable} currency={currency} /></span>
               </div>
               {r.bkashNumber && r.payoutMethod !== "bank" && (
                 <div className="flex justify-between gap-3 border-t border-slate-200 pt-2">
-                  <span className="text-slate-600">Pay to (bKash){linked.length ? " — your own share" : ""}</span>
+                  <span className="text-slate-600">Pay to (bKash){team ? " — your own share" : ""}</span>
                   <span className="font-mono font-semibold text-slate-800">{r.bkashNumber}</span>
                 </div>
               )}
-              {linked.length > 0 && (
+              {team && team.claims.length > 1 && (
                 <div className="border-t border-slate-200 pt-2">
                   <div className="flex justify-between">
                     <span className="font-semibold text-slate-700">Combined trip total</span>
                     <span className="font-bold text-slate-900">
-                      <Money value={r.totalClaim + linked.reduce((s, l) => s + l.totalClaim, 0)} currency={currency} />
+                      <Money value={team.claims.reduce((s, c) => s + c.totalClaim, 0)} currency={currency} />
                     </span>
                   </div>
                   <div className="mt-1 flex justify-between">
                     <span className="text-slate-600">Combined payable</span>
                     <span className="font-semibold text-slate-800">
-                      <Money value={r.finalPayable + linked.reduce((s, l) => s + l.finalPayable, 0)} currency={currency} />
+                      <Money value={team.claims.reduce((s, c) => s + c.finalPayable, 0)} currency={currency} />
                     </span>
                   </div>
                   <div className="mt-2 space-y-1.5 border-t border-slate-100 pt-2">
-                    <div className="flex items-center justify-between gap-3 text-xs">
-                      <span className="min-w-0 truncate text-slate-500">{r.employeeName}{isMine ? " (you)" : ""}</span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        <span className="font-mono text-slate-400">{r.bkashNumber || "—"}</span>
-                        <span className="font-semibold text-slate-700"><Money value={r.finalPayable} currency={currency} /></span>
-                      </span>
-                    </div>
-                    {linked.map((l) => (
-                      <div key={l.requestId} className="flex items-center justify-between gap-3 text-xs">
-                        <span className="min-w-0 truncate text-slate-500">
-                          {l.employeeName} <span className="text-slate-400">· {l.requestId}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <StatusBadge status={l.status as Status} />
-                          <span className="font-mono text-slate-400">{l.bkashNumber || "—"}</span>
-                          <span className="font-semibold text-slate-700"><Money value={l.finalPayable} currency={currency} /></span>
-                        </span>
-                      </div>
-                    ))}
+                    {team.claims.map((c) => {
+                      const mine = c.employeeId === user.employeeId;
+                      return (
+                        <div
+                          key={c.requestId}
+                          className={`flex items-center justify-between gap-3 text-xs ${mine ? "-mx-2 rounded-lg bg-emerald-50 px-2 py-1.5 ring-1 ring-emerald-200" : ""}`}
+                        >
+                          <span className={`min-w-0 truncate ${mine ? "font-semibold text-emerald-800" : "text-slate-500"}`}>
+                            {c.employeeName}{mine ? " (you)" : ""} <span className="text-slate-400">· {c.requestId}</span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-2">
+                            <StatusBadge status={c.status as Status} />
+                            {c.bkashNumber && <span className="font-mono text-slate-400">{c.bkashNumber}</span>}
+                            <span className={mine ? "font-bold text-emerald-700" : "font-semibold text-slate-700"}><Money value={c.finalPayable} currency={currency} /></span>
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
