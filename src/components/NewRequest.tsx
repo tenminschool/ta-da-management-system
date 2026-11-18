@@ -1514,6 +1514,14 @@ function StepAllowances({
   // Per-Diem is each person's own band, so the rate shown stays the claimant's.
   const band = policy.bands.find((b) => b.band === user.band);
 
+  // A hotel bill above the band limit snaps to the limit, the way a rent-a-car fare does. Only once
+  // both dates are in, because the limit is per night and a bill typed first would be cut to one night.
+  const accLimit = computation.accommodationLimit;
+  const accCapped = draft.scope === "outside" && draft.accommodationType === "hotel" && !!draft.checkIn && !!draft.checkOut && accLimit > 0;
+  useEffect(() => {
+    if (accCapped && draft.accommodationAmount > accLimit) set({ accommodationAmount: accLimit });
+  }, [accCapped, accLimit, draft.accommodationAmount]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // "Full amount" tracks the claim total live, so it stays correct as the
   // claimant fills in the rest of the form after choosing it.
   useEffect(() => {
@@ -1599,7 +1607,10 @@ function StepAllowances({
                     min={0}
                     className="field"
                     value={draft.accommodationAmount || ""}
-                    onChange={(e) => set({ accommodationAmount: Number(e.target.value) })}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      set({ accommodationAmount: accCapped ? Math.min(v, accLimit) : v });
+                    }}
                   />
                 </Field>
                 <Field label="Check-in" required>
