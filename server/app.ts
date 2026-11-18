@@ -483,9 +483,42 @@ app.get("/api/requests/:id", requireAuth, handler(async (req, res) => {
       }
     : null;
 
+  // The whole trip's money for anyone looking at one of its claims, so a teammate sees the same
+  // breakdown the submitter does. A teammate (not the submitter) is not shown other people's
+  // payout numbers; the submitter entered them all, and the desks need them.
+  const teamRecords = groupRows.filter((r): r is NonNullable<typeof r> => !!r).map(toRequest);
+  const teamParent = record.linkedTo ? teamRecords.find((t) => !t.linkedTo) : undefined;
+  const viewerIsTeammate = teamRecords.some((t) => t.employeeId === req.session.employeeId)
+    && !teamRecords.some((t) => !t.linkedTo && t.employeeId === req.session.employeeId);
+  const team = groupId
+    ? {
+        // The submitter's claim carries the trip-wide figures (transport, per-person Per-Diem); for a
+        // teammate's own claim it is sent along without anyone's bank or bKash details.
+        parent: teamParent
+          ? {
+              ...teamParent,
+              bkashNumber: "", bankName: "", bankAccountName: "", bankAccountNumber: "", bankRoutingNumber: "", bankBranch: "",
+              employeeNote: "", documentLinks: [],
+              teamMembers: teamParent.teamMembers.map((m) => ({ ...m, bkashNumber: "" })),
+            }
+          : null,
+        claims: teamRecords.map((t) => ({
+          requestId: t.requestId,
+          employeeId: t.employeeId,
+          employeeName: t.employeeName,
+          isSubmitter: !t.linkedTo,
+          bkashNumber: viewerIsTeammate && t.employeeId !== req.session.employeeId ? "" : t.bkashNumber,
+          totalClaim: t.totalClaim,
+          finalPayable: t.finalPayable,
+          status: t.status,
+        })),
+      }
+    : null;
+
   res.json({
     request: record,
     group,
+    team,
     approval: approvalRow ? toApprovalRow(approvalRow) : null,
     canAct: canActOn(req.session, record),
     canEdit: record.employeeId === req.session.employeeId && !record.linkedTo && ["draft", "returned"].includes(record.status),
