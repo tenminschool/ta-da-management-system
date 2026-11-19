@@ -309,8 +309,11 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
       continue;
     }
     if (s.mode === "RentACar") {
+      const minTravellers = cfgNum(policy, "RENT_A_CAR_MIN_HEADCOUNT", 3);
       if (ctx.travelType !== "team") {
         push("RentACar", false, "Rent-a-car needs a team pooling together — not available for individual travel.");
+      } else if (ctx.teamSize < minTravellers) {
+        push("RentACar", false, `Rent-a-car needs at least ${minTravellers} travellers — currently ${ctx.teamSize}.`);
       } else if (band?.carPoolEligible || femaleTravelling(ctx.gender, ctx.travelType, ctx.teamGenders) || ctx.exceptionClaimed) {
         push("RentACar", true);
       } else {
@@ -558,8 +561,10 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     const femaleParty = femaleTravelling(user.gender, draft.travelType, draft.teamMembers.map((m) => m.gender));
     if (draft.travelType !== "team") {
       errors.push("Rent-a-car needs a team pooling together — not available for individual travel.");
+    } else if (teamSize < minHead) {
+      errors.push(`Rent-a-car needs at least ${minHead} travellers on the trip — there are ${teamSize}.`);
     } else if (!tripBand?.carPoolEligible && !femaleParty) {
-      errors.push(`Rent-a-car pooling is not available for Band ${tripBandName}.`);
+      errors.push(`Rent-a-car pooling is not available for Band ${tripBandName}, the most senior band in the team.`);
     } else if (head < minHead) {
       errors.push(`Rent-a-car needs at least ${minHead} employees — ${head} entered. Request rejected by policy.`);
     } else if (rentACarLegs.some((l) => Number(l.amount) > limit)) {
