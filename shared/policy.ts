@@ -655,6 +655,20 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
   if (draft.scope === "inside" && draft.fromDate && draft.fromDate > todayISO()) {
     errors.push("An inside-city claim can be filed for today or a past date only — a future date is not allowed.");
   }
+  // Getting between home and your own fixed workplace is a commute, not a claim: neither the trip
+  // from home to it nor the trip from it back home is paid. Home to any other office is fine.
+  if (user.workplace) {
+    const norm = (v: string) => String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    const wp = norm(user.workplace);
+    const isHome = (v: string) => norm(v) === "home";
+    const kind = policy.destinationTypes.find((d) => d.value === draft.destinationType);
+    const toOwnWorkplace = draft.scope === "inside" && kind?.needs === "office" && norm(draft.purpose) === wp;
+    const commute = (draft.startFrom === "home" && toOwnWorkplace)
+      || draft.legs.some((l) => (isHome(l.travelFrom) && norm(l.travelTo) === wp) || (norm(l.travelFrom) === wp && isHome(l.travelTo)));
+    if (commute) {
+      errors.push(`Travel between your home and your own workplace (${user.workplace}) can't be claimed. Home to a different office, or any other trip, can.`);
+    }
+  }
   if (draft.startFrom === "home" && !user.homeAddress) {
     errors.push("Your home address is not in the system. Please update it in the system, then come back to claim a trip from home.");
   }
@@ -749,7 +763,7 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
     if (draft.scope === "outside" && draft.legs.some((l) => l.mode === "PersonalVehicle")) {
       errors.push("A personal vehicle can only be claimed for inside-city travel.");
     }
-    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft, user.workplace || "", user.homeAddress || "").length) {
+    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft, user.workplace || "").length) {
       errors.push("More Ways needs at least one more trip — use “Add another trip”.");
     }
   }
@@ -1000,7 +1014,7 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
  * Only the fare is genuinely new information, so that is all this leaves to
  * fill in. Extra hops can still be added by hand on top of these.
  */
-export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = "", homeAddress = ""): Leg[] {
+export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = ""): Leg[] {
   // Mode is picked per trip now, on the leg itself — the trip (and its first
   // leg) exists before that choice is made, so nothing here waits for it.
   const leg = (travelDate: string, travelFrom: string, travelTo: string, mode = ""): Leg =>
@@ -1013,13 +1027,13 @@ export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = "",
     if (kind?.needs === "office") {
       const office = draft.purpose || kind.label;
       // The trip starts from home when they say so, otherwise from wherever they work now.
-      const start = (draft.startFrom === "home" ? homeAddress : workplace) || workplace || "HQ";
+      const start = draft.startFrom === "home" ? "Home" : workplace || "HQ";
       const outward = leg(draft.fromDate, start, office);
       if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, office, start)];
       return [outward];
     }
     const there = draft.destination || kind?.label || "";
-    const start = (draft.startFrom === "home" ? homeAddress : workplace) || workplace || draft.city;
+    const start = draft.startFrom === "home" ? "Home" : workplace || draft.city;
     const outward = leg(draft.fromDate, start, there);
     // Two-way is the same day back to where they started — a second fare, priced
     // separately, not the outward one doubled.
@@ -1032,7 +1046,7 @@ export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = "",
   // rest to be chained on by hand.
   const route = policy.routes.find((r) => r.value === draft.route);
   // From home when they say so, otherwise the route's own starting point (a 10MS office).
-  const from = (draft.startFrom === "home" && homeAddress ? homeAddress : route?.from) || "";
+  const from = (draft.startFrom === "home" ? "Home" : route?.from) || "";
   const to = draft.city || route?.to || "";
   const outward = leg(draft.fromDate, from, to);
   if (draft.tripDirection === "two_way") {

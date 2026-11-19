@@ -96,8 +96,8 @@ export default function NewRequest({
   // The journey the form already knows about, kept in step with it. Fares are
   // carried across so editing a date never wipes what has been typed, and any
   // extra hops added by hand are left alone at the end of the list.
-  const implied = useMemo(() => impliedLegs(policy, draft, user.workplace || "", user.homeAddress || ""), [
-    policy, user.workplace, user.homeAddress, draft.startFrom, draft.scope, draft.fromDate, draft.toDate,
+  const implied = useMemo(() => impliedLegs(policy, draft, user.workplace || ""), [
+    policy, user.workplace, draft.startFrom, draft.scope, draft.fromDate, draft.toDate,
     draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection, draft.purpose,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
@@ -306,11 +306,8 @@ function Stepper({ step, onStep }: { step: number; onStep: (n: number) => void }
 
 /** Under a "Travelling from: Home" choice: the address being used, or what to do when there is none. */
 function HomeStart({ user }: { user: SessionUser }) {
-  return user.homeAddress ? (
-    <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
-      <span className="font-semibold text-slate-700">Home address:</span> {user.homeAddress}
-    </p>
-  ) : (
+  // The address itself is never shown: the trip just reads "Home".
+  return user.homeAddress ? null : (
     <Notice tone="warn" items={["Your home address is not in the system. Please update it in the system first, then come back to claim a trip from home."]} />
   );
 }
@@ -1715,8 +1712,8 @@ function StepDocuments({
       <Field label="Give your personal bKash number" required={required} hint="11 digits starting with 01.">
         {!user.accountNumber && (
           <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Your bKash number is not on your 10 Minute School profile. Please ask HR to update your information —
-            until then, type it here for this claim.
+            Your bKash number is not on your 10 Minute School profile. Please update your bKash number from your
+            Employee Profile — until then, type it here for this claim.
           </p>
         )}
         <div className="flex flex-col gap-2 sm:flex-row">
