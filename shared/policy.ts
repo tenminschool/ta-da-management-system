@@ -642,6 +642,13 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
 
   // ── Cross-field validation ────────────────────────────────────────────────
   if (!draft.fromDate) errors.push("Travel date is required.");
+  // Inside-city claims are for travel that has happened: today or earlier, never a future date.
+  if (draft.scope === "inside" && draft.fromDate && draft.fromDate > todayISO()) {
+    errors.push("An inside-city claim can be filed for today or a past date only — a future date is not allowed.");
+  }
+  if (draft.scope === "inside" && draft.startFrom === "home" && !user.homeAddress) {
+    errors.push("Your home address is not in the system. Please update it in the system, then come back to claim a trip from home.");
+  }
 
   // A claim has to be filed while the trip is still fresh — counted from the
   // day travel ended, so a five-day trip gets its window after the return.
@@ -731,7 +738,7 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     if (draft.scope === "outside" && draft.legs.some((l) => l.mode === "PersonalVehicle")) {
       errors.push("A personal vehicle can only be claimed for inside-city travel.");
     }
-    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft, user.workplace || "").length) {
+    if (draft.tripDirection === "more_ways" && draft.legs.length <= impliedLegs(policy, draft, user.workplace || "", user.homeAddress || "").length) {
       errors.push("More Ways needs at least one more trip — use “Add another trip”.");
     }
   }
@@ -982,7 +989,7 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
  * Only the fare is genuinely new information, so that is all this leaves to
  * fill in. Extra hops can still be added by hand on top of these.
  */
-export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = ""): Leg[] {
+export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = "", homeAddress = ""): Leg[] {
   // Mode is picked per trip now, on the leg itself — the trip (and its first
   // leg) exists before that choice is made, so nothing here waits for it.
   const leg = (travelDate: string, travelFrom: string, travelTo: string, mode = ""): Leg =>
@@ -994,14 +1001,14 @@ export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = "")
     // draft — the destination is the specific office picked, not a place name.
     if (kind?.needs === "office") {
       const office = draft.purpose || kind.label;
-      // The trip starts from wherever this person works now.
-      const start = workplace || "HQ";
+      // The trip starts from home when they say so, otherwise from wherever they work now.
+      const start = (draft.startFrom === "home" ? homeAddress : workplace) || workplace || "HQ";
       const outward = leg(draft.fromDate, start, office);
       if (draft.tripDirection === "two_way") return [outward, leg(draft.fromDate, office, start)];
       return [outward];
     }
     const there = draft.destination || kind?.label || "";
-    const start = workplace || draft.city;
+    const start = (draft.startFrom === "home" ? homeAddress : workplace) || workplace || draft.city;
     const outward = leg(draft.fromDate, start, there);
     // Two-way is the same day back to where they started — a second fare, priced
     // separately, not the outward one doubled.
@@ -1028,6 +1035,7 @@ export function emptyDraft(scope: Scope = "inside"): RequestDraft & { carSpecial
   const today = todayISO();
   return {
     scope,
+    startFrom: "office",
     city: scope === "inside" ? "Dhaka" : "",
     claimType: "both",
     travelType: "individual",

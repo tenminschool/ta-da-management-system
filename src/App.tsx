@@ -316,7 +316,7 @@ export default function App() {
         <UserMenu
           name={tenmsUser?.name || user.name}
           email={user.email}
-          subtitle={user.band ? `Band ${user.band}` : undefined}
+          subtitle={[user.band ? `Band ${user.band}` : "", user.gender].filter(Boolean).join(" · ") || undefined}
           details={[user.designation, user.workplace, user.department].filter(Boolean) as string[]}
           picture={user.picture}
           // The host owns the session when this panel is embedded — signing
