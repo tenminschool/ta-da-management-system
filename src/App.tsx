@@ -49,6 +49,8 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [workspace, setWorkspace] = useState<Workspace>("self");
   const [view, setView] = useState<View>({ name: "dashboard" });
+  // Where a claim was opened from, so Back returns there instead of always going home.
+  const [backTo, setBackTo] = useState<View | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [inbox, setInbox] = useState(0);
@@ -218,6 +220,11 @@ export default function App() {
     setMenuOpen(false);
   };
   const refresh = () => setRefreshKey((k) => k + 1);
+  // Opening a claim from one that is already open keeps the original place to go back to.
+  const openDetail = (requestId: string) => {
+    if (view.name !== "detail") setBackTo(view);
+    setView({ name: "detail", requestId });
+  };
 
   async function signOut() {
     clearToken();
@@ -374,7 +381,7 @@ export default function App() {
           {view.name === "dashboard" && (
             <Dashboard
               user={user}
-              onOpen={(requestId) => setView({ name: "detail", requestId })}
+              onOpen={openDetail}
               onGoto={go}
             />
           )}
@@ -384,7 +391,7 @@ export default function App() {
               user={user}
               policy={policy}
               editing={(view as { editing?: { draft: RequestDraft; requestId: string } }).editing}
-              onDone={(requestId) => { refresh(); setView({ name: "detail", requestId }); }}
+              onDone={(requestId) => { refresh(); setBackTo({ name: "my-requests" }); setView({ name: "detail", requestId }); }}
               onCancel={() => setView({ name: "dashboard" })}
             />
           )}
@@ -397,13 +404,13 @@ export default function App() {
               group={(view as { group?: StatusGroup }).group}
               title="My Requests"
               subtitle="Every claim you have raised, with its live status."
-              onOpen={(requestId) => setView({ name: "detail", requestId })}
+              onOpen={openDetail}
               onClearGroup={() => setView({ name: "my-requests" })}
             />
           )}
 
           {view.name === "my-advance" && (
-            <Advances scope="mine" policy={policy} onOpen={(requestId) => setView({ name: "detail", requestId })} />
+            <Advances scope="mine" policy={policy} onOpen={openDetail} />
           )}
 
           {view.name === "my-payments" && (
@@ -413,7 +420,7 @@ export default function App() {
               refreshKey={refreshKey}
               title="My Payments"
               subtitle="Your claims that reached payment — processing, paid and completed."
-              onOpen={(requestId) => setView({ name: "detail", requestId })}
+              onOpen={openDetail}
             />
           )}
 
@@ -427,12 +434,12 @@ export default function App() {
               showFilters
               title="Pending Approvals"
               subtitle="Other people's requests waiting on your decision right now."
-              onOpen={(requestId) => setView({ name: "detail", requestId })}
+              onOpen={openDetail}
             />
           )}
 
           {view.name === "desk-advances" && (
-            <Advances scope="desk" policy={policy} onOpen={(requestId) => setView({ name: "detail", requestId })} />
+            <Advances scope="desk" policy={policy} onOpen={openDetail} />
           )}
 
           {view.name === "desk-vehicles" && <VehicleRegistrations policy={policy} />}
@@ -449,12 +456,12 @@ export default function App() {
               ]}
               title="Payments"
               subtitle="Claims waiting on Finance — to approve, to pay, and already paid."
-              onOpen={(requestId) => setView({ name: "detail", requestId })}
+              onOpen={openDetail}
             />
           )}
 
           {view.name === "desk-reports" && (
-            <Reports policy={policy} user={user} onOpen={(requestId) => setView({ name: "detail", requestId })} />
+            <Reports policy={policy} user={user} onOpen={openDetail} />
           )}
 
           {view.name === "desk-all" && (
@@ -466,7 +473,7 @@ export default function App() {
               refreshKey={refreshKey}
               title="All Claims"
               subtitle="Every claim you oversee, newest first. Filter by department, stage or person."
-              onOpen={(requestId) => setView({ name: "detail", requestId })}
+              onOpen={openDetail}
             />
           )}
 
@@ -478,7 +485,7 @@ export default function App() {
               autoAck={!!(view as { ack?: boolean }).ack}
               user={user}
               policy={policy}
-              onBack={() => setView({ name: workspace === "self" ? "dashboard" : deskHome })}
+              onBack={() => setView(backTo ?? { name: workspace === "self" ? "dashboard" : deskHome })}
               onEdit={(draft, requestId) => {
                 setWorkspace("self");
                 setView({ name: "new", editing: { draft, requestId } });
