@@ -293,15 +293,16 @@ function canView(session: Session, req: RequestRecord): boolean {
   return false;
 }
 
-function canActOn(session: Session, req: RequestRecord): boolean {
+export function canActOn(session: Session, req: RequestRecord): boolean {
   // Nobody decides or pays their own claim, whatever roles they hold: someone else always has to.
   if (req.employeeId === session.employeeId) return false;
   switch (req.status) {
     // A line manager acts only on their own reports; Administration can unblock.
     case "manager_review":
       return req.managerId === session.employeeId || hasRole(session, "admin");
+    // After the line manager, HR and Administration are both on this step: either can decide it.
     case "admin_review":
-      return hasRole(session, "admin");
+      return hasRole(session, "admin", "hr");
     case "finance_review":
     case "payment_processing":
     // The employee says the money never arrived — Finance has to answer that.

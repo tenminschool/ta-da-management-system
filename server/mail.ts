@@ -153,8 +153,8 @@ async function recipientsFor(record: RequestRecord, event: ClaimEvent, token: st
   } else if (event.kind === "approved") {
     addTravellers();
     if (event.stage === "manager_review") {
-      // HR's desk is acted on by admins; HR-role holders are kept informed.
-      await addDesk(["admin", "hr"], "HR", ["admin"]);
+      // After the line manager, both HR-role and admin-role holders can decide it.
+      await addDesk(["admin", "hr"], "HR", ["admin", "hr"]);
     } else if (event.stage === "admin_review") {
       addSupervisors();
       await addDesk(["finance"], "Finance", ["finance"]);
