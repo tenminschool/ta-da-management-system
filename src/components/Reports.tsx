@@ -161,7 +161,7 @@ export default function Reports({
     <div className="space-y-5 print:space-y-4">
       {/* Title, filters and the four cards stay in place on desktop while the
           rankings and the claims table scroll underneath. */}
-      <div className="z-20 space-y-5 bg-[var(--main-gray)] lg:sticky lg:top-12 lg:-mx-6 lg:px-6 lg:pb-4 lg:pt-2 print:static print:space-y-4">
+      <div className="z-20 space-y-5 bg-[var(--main-gray)] lg:sticky lg:top-14 lg:-mx-8 lg:px-8 lg:pb-4 lg:pt-2 print:static print:space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-bold text-slate-900 sm:text-xl">Dashboard</h1>

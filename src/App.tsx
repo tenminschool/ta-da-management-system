@@ -255,10 +255,10 @@ export default function App() {
   };
 
   const WorkspaceSwitch = ({ compact = false }: { compact?: boolean }) => (
-    <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-0.5">
+    <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1">
       <button
         onClick={() => switchWorkspace("self")}
-        className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+        className={`flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition ${
           workspace === "self" ? "bg-white text-brand-700 shadow-sm" : "text-slate-500"
         }`}
       >
@@ -266,7 +266,7 @@ export default function App() {
       </button>
       <button
         onClick={() => switchWorkspace("desk")}
-        className={`relative flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold transition ${
+        className={`relative flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold transition ${
           workspace === "desk" ? "bg-white text-brand-700 shadow-sm" : "text-slate-500"
         }`}
       >
@@ -283,7 +283,7 @@ export default function App() {
   return (
     <div className="flex min-h-full flex-col">
       {/* Navbar — full width, its own row above the sidebar rather than sharing a border with it */}
-      <header className="sticky top-0 z-40 flex h-12 shrink-0 items-center gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:px-4 lg:px-6">
+      <header className="sticky top-0 z-40 flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:px-4 lg:px-8">
         <button
           className="-ml-1 shrink-0 rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700 lg:hidden"
           onClick={() => setMenuOpen(true)}
@@ -296,11 +296,11 @@ export default function App() {
           <img
             src="/logo.png"
             alt="10 Minute School"
-            width={28}
-            height={28}
-            className="size-7 shrink-0 rounded-md object-contain"
+            width={32}
+            height={32}
+            className="size-8 shrink-0 rounded-lg object-contain"
           />
-          <span className="hidden text-[13px] font-semibold tracking-tight text-slate-800 sm:inline">
+          <span className="hidden text-sm font-semibold tracking-tight text-slate-800 sm:inline">
             TA &amp; Per-Diem
           </span>
         </div>
@@ -308,7 +308,7 @@ export default function App() {
         <div aria-hidden className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" />
 
         <div className="min-w-0 flex-1">
-          <span className="hidden truncate text-[13px] font-semibold tracking-tight text-slate-500 sm:inline">
+          <span className="hidden truncate text-sm font-semibold tracking-tight text-slate-500 sm:inline">
             {nav.find((n) => n.key === view.name)?.label ?? (workspace === "self" ? "My Claims" : "Approval Desk")}
           </span>
         </div>
@@ -328,32 +328,32 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         {/* Sidebar — a drawer on phones, always-on from lg up */}
         <aside
-          className={`fixed inset-x-0 top-12 bottom-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:sticky lg:top-12 lg:self-start lg:inset-auto lg:h-[calc(100dvh-3rem)] lg:w-56 lg:max-w-none lg:translate-x-0 ${
+          className={`fixed inset-x-0 top-14 bottom-0 left-0 z-50 flex w-72 max-w-[85vw] shrink-0 flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:sticky lg:top-14 lg:self-start lg:inset-auto lg:h-[calc(100dvh-3.5rem)] lg:w-64 lg:max-w-none lg:translate-x-0 ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
           {isApprover && (
-          <div className="border-b border-slate-200 p-2.5">
-            <p className="mb-1 px-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Workspace</p>
+          <div className="border-b border-slate-200 p-3">
+            <p className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Workspace</p>
             <WorkspaceSwitch />
           </div>
         )}
 
-        <nav className="min-h-0 flex-1 space-y-0.5 overflow-y-auto p-2">
+        <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
           {nav.map(({ key, label, icon: Icon, badge }) => (
             <button
               key={key}
               onClick={() => go(key)}
-              className={`flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition ${
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition ${
                 key === "new"
                   ? "mb-2 bg-slate-900 text-white shadow-sm hover:bg-slate-800"
                   : view.name === key ? "bg-brand-50 text-brand-700" : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              <Icon size={15} />
+              <Icon size={16} />
               <span className="flex-1 text-left">{label}</span>
               {badge ? (
-                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold leading-none text-amber-700">{badge}</span>
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">{badge}</span>
               ) : null}
             </button>
           ))}
@@ -362,7 +362,7 @@ export default function App() {
 
       {menuOpen && (
         <div
-          className="fixed inset-x-0 top-12 bottom-0 z-40 bg-slate-900/40 lg:hidden"
+          className="fixed inset-x-0 top-14 bottom-0 z-40 bg-slate-900/40 lg:hidden"
           onClick={() => setMenuOpen(false)}
         />
       )}
@@ -376,7 +376,7 @@ export default function App() {
           </div>
         )}
 
-        <main className="mx-auto w-full max-w-[1500px] flex-1 p-3 pb-24 sm:p-4 lg:p-6 lg:pb-6">
+        <main className="mx-auto w-full max-w-6xl flex-1 p-3 pb-24 sm:p-4 lg:p-8 lg:pb-8">
           {/* ── My Claims workspace ── */}
           {view.name === "dashboard" && (
             <Dashboard
