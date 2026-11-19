@@ -148,7 +148,7 @@ export default function RequestDetail({
         </div>
         <div className="flex w-full gap-2 sm:w-auto">
           {detail.canEdit && (
-            <button className="btn-ghost flex-1 sm:flex-none" onClick={() => onEdit(toDraft(r), r.requestId)}>
+            <button className="btn-ghost flex-1 sm:flex-none" onClick={() => onEdit(toDraft(r, user.homeAddress || ""), r.requestId)}>
               <Pencil size={16} /> Edit & resubmit
             </button>
           )}
@@ -1228,10 +1228,12 @@ export function AdvanceModal({
 }
 
 /** Rebuilds an editable draft from a stored request, for "Edit & resubmit". */
-function toDraft(r: Detail["request"]): RequestDraft {
+function toDraft(r: Detail["request"], homeAddress = ""): RequestDraft {
   return {
     requestId: r.requestId,
     scope: r.scope,
+    // A claim does not store where the trip began; the first trip's start tells it apart.
+    startFrom: homeAddress && r.legs?.[0]?.travelFrom === homeAddress ? "home" : "office",
     city: r.city,
     claimType: r.claimType,
     travelType: r.travelType,

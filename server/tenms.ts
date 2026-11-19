@@ -121,8 +121,23 @@ export interface TenMSRecord {
   profile_img?: string;
   /** Where the person works now, e.g. an office name. */
   current_workplace?: unknown;
+  /** Their home address, as the record holds it: a plain string, or an object of address parts. */
+  present_address?: unknown;
   groups?: string[];
   teams?: { id: string; name: string }[];
+}
+
+/** `present_address` as one line: a plain string, or the parts of an address object joined in order. */
+export function addressOf(value: unknown): string {
+  if (typeof value === "string") return value.trim().replace(/\s+/g, " ");
+  if (value && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    return Object.values(o)
+      .filter((v): v is string | number => (typeof v === "string" && v.trim() !== "") || typeof v === "number")
+      .map((v) => String(v).trim())
+      .join(", ");
+  }
+  return "";
 }
 
 export interface TenMSPerson {
@@ -265,20 +280,21 @@ export function bandForPosition(position: string | undefined): string {
  * This is the single call used to refresh roles on a page load. Returns null if it could not be
  * read, so a failed call is not mistaken for "belongs to no group".
  */
-export async function fetchOwnGroups(accessToken: string): Promise<{ email: string; groups: string[] } | null> {
+export async function fetchOwnGroups(accessToken: string): Promise<{ email: string; groups: string[]; homeAddress: string } | null> {
   try {
     const res = await ask("/v1/admin/me", accessToken);
     if (!res.ok) {
       console.warn(`[tenms] groups request failed (${res.status}).`);
       return null;
     }
-    const body = (await res.json()) as { data?: { user?: { groups?: unknown; username?: unknown; email?: unknown } } };
+    const body = (await res.json()) as { data?: { user?: { groups?: unknown; username?: unknown; email?: unknown; present_address?: unknown } } };
     const user = body?.data?.user;
     const groups = user?.groups;
     // Who the token belongs to, so the caller can check it is the person signed in.
     const email = String(user?.username || user?.email || "").trim().toLowerCase();
     return {
       email,
+      homeAddress: addressOf(user?.present_address),
       groups: Array.isArray(groups) ? groups.filter((g): g is string => typeof g === "string").map((g) => g.trim().toLowerCase()) : [],
     };
   } catch (err) {

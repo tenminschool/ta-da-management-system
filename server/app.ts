@@ -19,7 +19,7 @@ import {
   withLock, type Row,
 } from "./db.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { bandForPosition, fetchOwnGroups, fetchPermissions, GROUP_FOR_ROLE, PERMISSION_FOR_ROLE, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { addressOf, bandForPosition, fetchOwnGroups, fetchPermissions, GROUP_FOR_ROLE, PERMISSION_FOR_ROLE, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
 import { planClaimMail, planUnlockMail } from "./mail.js";
 import {
@@ -157,6 +157,7 @@ app.post("/api/auth/tenms", handler(async (req, res) => {
     department: hr.department || hr.current_department || "",
     designation: hr.current_hr_position || hr.designation || hr.job_role || "",
     workplace: workplaceOf(hr.current_workplace),
+    homeAddress: addressOf(hr.present_address),
     picture: /^https?:\/\//i.test(hr.profile_img || profile.picture || "") ? (hr.profile_img || profile.picture || "") : "",
     lineManagerId,
     lineManagerEmail,
@@ -191,13 +192,17 @@ app.get("/api/me", requireAuth, handler(async (req, res) => {
   // when the 10MS token is this person's own: roles never come from someone else's token.
   const sameAccount = !!own && own.email === String(req.session.email || "").trim().toLowerCase();
   if (own && !sameAccount) console.warn(`[me] 10MS token belongs to ${own.email || "unknown"}, not ${req.session.email}; roles left as they were.`);
+  // The home address follows the 10MS record too, so someone who has just added it there does not
+  // have to sign out and in again. Only read from the person's own token, like the roles.
+  let homeAddress = current.homeAddress || "";
+  if (own && sameAccount) homeAddress = own.homeAddress;
   if (own && sameAccount && permissions) {
     roles = rolesFor(own.groups, permissions);
     const { expiresAt: _e, ...base } = req.session;
-    token = signToken({ ...base, roles });
+    token = signToken({ ...base, roles, homeAddress });
   }
   const { expiresAt, ...fresh } = current;
-  res.json({ token, user: { ...fresh, roles, managesOthers: manages } });
+  res.json({ token, user: { ...fresh, roles, homeAddress, managesOthers: manages } });
 }));
 
 // ── Reference data ──────────────────────────────────────────────────────────
@@ -685,6 +690,7 @@ function normaliseDraft(raw: unknown): RequestDraft {
   return {
     requestId: d.requestId || "",
     scope: d.scope === "outside" ? "outside" : "inside",
+    startFrom: d.startFrom === "home" ? "home" : "office",
     city: d.city || "",
     claimType: (["ta", "perdiem", "both"].includes(String(d.claimType)) ? d.claimType : "both") as RequestDraft["claimType"],
     travelType: d.travelType === "team" ? "team" : "individual",

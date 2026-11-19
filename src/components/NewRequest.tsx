@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import {
-  addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, partyBand,
+  addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, isWeekend, partyBand,
   impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, teamPayoutSplit, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, RequestRecord, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
@@ -96,8 +96,8 @@ export default function NewRequest({
   // The journey the form already knows about, kept in step with it. Fares are
   // carried across so editing a date never wipes what has been typed, and any
   // extra hops added by hand are left alone at the end of the list.
-  const implied = useMemo(() => impliedLegs(policy, draft, user.workplace || ""), [
-    policy, user.workplace, draft.scope, draft.fromDate, draft.toDate,
+  const implied = useMemo(() => impliedLegs(policy, draft, user.workplace || "", user.homeAddress || ""), [
+    policy, user.workplace, user.homeAddress, draft.startFrom, draft.scope, draft.fromDate, draft.toDate,
     draft.city, draft.route, draft.destination, draft.destinationType, draft.tripDirection, draft.purpose,
   ]);
   const impliedKey = implied.map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo].join("|")).join("\n");
@@ -441,6 +441,33 @@ function StepTravelType({
           </Field>
           )}
 
+          {/* Where an inside-city trip starts: the office they work from, or home. */}
+          {draft.scope === "inside" && (
+            <>
+              <Field label="Travelling from" required>
+                <select
+                  className="field"
+                  value={draft.startFrom || "office"}
+                  onChange={(e) => set({ startFrom: e.target.value === "home" ? "home" : "office" })}
+                >
+                  <option value="office">Office{user.workplace ? ` — ${user.workplace}` : ""}</option>
+                  <option value="home">Home</option>
+                </select>
+              </Field>
+              {draft.startFrom === "home" && (
+                <div className="sm:col-span-2">
+                  {user.homeAddress ? (
+                    <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
+                      <span className="font-semibold text-slate-700">Home address:</span> {user.homeAddress}
+                    </p>
+                  ) : (
+                    <Notice tone="warn" items={["Your home address is not in the system. Please update it in the system first, then come back to claim a trip from home."]} />
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
           {/* Inside-city trips name where they went right here, next to the
               city. Outside-city keeps the free-text pair on Trip details. */}
           {draft.scope === "inside" && draft.city && (
@@ -521,8 +548,16 @@ function StepTravelType({
               className="field"
               value={draft.fromDate}
               min={!outside ? earliestClaimableDate || undefined : undefined}
+              // Inside-city is for travel that has happened, so a future date is locked.
+              max={!outside ? todayISO() : undefined}
               onChange={(e) => set({ fromDate: e.target.value, toDate: outside ? draft.toDate : e.target.value })}
             />
+            {!outside && draft.fromDate && (
+              <p className="mt-1 text-xs text-slate-500">
+                {new Date(`${draft.fromDate}T00:00:00`).toLocaleDateString(undefined, { weekday: "long" })}
+                {" — "}{isWeekend(draft.fromDate) ? "weekend" : "working day"}
+              </p>
+            )}
           </Field>
           {outside && (
             <Field

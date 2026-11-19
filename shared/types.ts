@@ -91,6 +91,8 @@ export interface SessionUser {
   designation: string;
   /** Where this person works now (`current_workplace` on the 10MS record) — the start of an inside-city trip. */
   workplace?: string;
+  /** Their home address (`present_address` on the 10MS record) — the start of an inside-city trip made from home. */
+  homeAddress?: string;
   /** Link to the profile photo on the 10MS record (`profile_img`); blank when there is none. */
   picture?: string;
   lineManagerId: string;
@@ -238,6 +240,8 @@ export interface Leg {
 export interface RequestDraft {
   requestId?: string;
   scope: Scope;
+  /** Inside-city: whether the trip starts from the office (their workstation) or from home. */
+  startFrom?: "office" | "home";
   city: string;
   claimType: ClaimType;
   travelType: TravelType;
