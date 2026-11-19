@@ -353,6 +353,11 @@ export const api = {
       `/requests?scope=${scope}`,
     ),
   request: (id: string) => call<RequestDetail>(`/requests/${encodeURIComponent(id)}`),
+  /** Existing claims that already cover this trip's dates for the person (or their teammates). */
+  dateCheck: (draft: RequestDraft, excludeId = "") =>
+    post<{ duplicates: { requestId: string; employeeId: string; employeeName: string; date: string; you: boolean }[] }>(
+      "/requests/date-check", { draft, excludeId },
+    ),
   preview: (draft: RequestDraft) =>
     post<{ computation: Computation; modes: ModeOption[] }>("/requests/preview", { draft }),
   // The 10MS token rides along so the server can look up each teammate's
