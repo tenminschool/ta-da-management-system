@@ -651,9 +651,10 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
 
   // ── Cross-field validation ────────────────────────────────────────────────
   if (!draft.fromDate) errors.push("Travel date is required.");
-  // Inside-city claims are for travel that has happened: today or earlier, never a future date.
-  if (draft.scope === "inside" && draft.fromDate && draft.fromDate > todayISO()) {
-    errors.push("An inside-city claim can be filed for today or a past date only — a future date is not allowed.");
+  // Every claim is a reimbursement for travel that has happened: today or earlier, never a future date.
+  const lastDay = draft.scope === "outside" ? draft.toDate || draft.fromDate : draft.fromDate;
+  if ((draft.fromDate && draft.fromDate > todayISO()) || (lastDay && lastDay > todayISO())) {
+    errors.push("A claim can be filed for today or a past date only — a future date is not allowed.");
   }
   // Getting between home and your own fixed workplace is a commute, not a claim: neither the trip
   // from home to it nor the trip from it back home is paid. Home to any other office is fine.
