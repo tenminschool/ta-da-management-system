@@ -619,6 +619,55 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
   res.send(Buffer.from(buffer));
 }));
 
+// ── One claim per person per date ───────────────────────────────────────────
+
+interface DuplicateClaim { requestId: string; employeeId: string; employeeName: string; date: string; you: boolean }
+
+/**
+ * Claims that already cover any of this trip's dates for the person filing it, or for anyone they
+ * are adding to the trip. A draft or a rejected claim does not count: nothing was claimed. A claim
+ * that is under review, returned, paid or completed does, so one trip's dates cannot be claimed
+ * twice, by the same person or by a teammate who is on the trip.
+ */
+export async function duplicateDateClaims(draft: RequestDraft, selfId: string, excludeId = ""): Promise<DuplicateClaim[]> {
+  const from = draft.fromDate;
+  if (!from) return [];
+  const to = draft.scope === "outside" ? (draft.toDate || from) : from;
+  const people = new Map<string, string>([[selfId, ""]]);
+  for (const m of draft.travelType === "team" ? draft.teamMembers : []) if (m.employeeId) people.set(m.employeeId, m.name);
+
+  const all = (await readTab("Requests")).map(toRequest);
+  const hasChildren = new Set(all.map((r) => r.linkedTo).filter(Boolean));
+  const found: DuplicateClaim[] = [];
+  const seen = new Set<string>();
+  for (const r of all) {
+    if (r.requestId === excludeId || ["draft", "rejected"].includes(r.status)) continue;
+    const rFrom = r.fromDate;
+    const rTo = r.scope === "outside" ? (r.toDate || rFrom) : rFrom;
+    if (!rFrom || rFrom > to || from > rTo) continue;
+    // The person it belongs to; an older team claim with no per-person records also lists its travellers.
+    const owners: [string, string][] = [[r.employeeId, r.employeeName]];
+    if (!r.linkedTo && !hasChildren.has(r.requestId)) for (const m of r.teamMembers) if (m.employeeId) owners.push([m.employeeId, m.name]);
+    for (const [id, name] of owners) {
+      if (!people.has(id) || seen.has(`${id}|${r.requestId}`)) continue;
+      seen.add(`${id}|${r.requestId}`);
+      found.push({ requestId: r.requestId, employeeId: id, employeeName: name || people.get(id) || "", date: rFrom > from ? rFrom : from, you: id === selfId });
+    }
+  }
+  return found;
+}
+
+function duplicateMessage(d: DuplicateClaim[]): string {
+  return d.map((x) => (x.you
+    ? `You already claimed for ${x.date} in ${x.requestId}.`
+    : `${x.employeeName || x.employeeId} is already on a claim for ${x.date} (${x.requestId}).`)).join(" ");
+}
+
+app.post("/api/requests/date-check", requireAuth, handler(async (req, res) => {
+  const draft = normaliseDraft(req.body?.draft);
+  res.json({ duplicates: await duplicateDateClaims(draft, req.session.employeeId, String(req.body?.excludeId || "")) });
+}));
+
 // ── Live policy preview (no writes) ─────────────────────────────────────────
 
 app.post("/api/requests/preview", requireAuth, handler(async (req, res) => {
@@ -1038,6 +1087,13 @@ app.post("/api/requests", requireAuth, handler(async (req, res) => {
     res.status(400).json({ error: computation.errors[0], computation });
     return;
   }
+  if (submit) {
+    const duplicates = await duplicateDateClaims(draft, req.session.employeeId);
+    if (duplicates.length) {
+      res.status(409).json({ error: duplicateMessage(duplicates), duplicates });
+      return;
+    }
+  }
 
   const now = nowISO();
 
@@ -1157,6 +1213,13 @@ app.put("/api/requests/:id", requireAuth, handler(async (req, res) => {
   if (submit && computation.errors.length) {
     res.status(400).json({ error: computation.errors[0], computation });
     return;
+  }
+  if (submit) {
+    const duplicates = await duplicateDateClaims(draft, req.session.employeeId, existing.requestId);
+    if (duplicates.length) {
+      res.status(409).json({ error: duplicateMessage(duplicates), duplicates });
+      return;
+    }
   }
 
   const updated = buildRecord(draft, computation, session, policy, {

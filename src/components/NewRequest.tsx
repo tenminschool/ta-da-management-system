@@ -123,6 +123,21 @@ export default function NewRequest({
   // More Ways is a chain of stops: Next stays off on the trips step until one has been added by hand.
   const needsMoreTrips = step === 1 && draft.tripDirection === "more_ways" && draft.legs.length <= implied.length;
 
+  // One claim per person per date: asked as the dates or teammates change, so the person is told
+  // straight away, with a link to the claim already covering that date. The server enforces it too.
+  const [dupes, setDupes] = useState<{ requestId: string; employeeId: string; employeeName: string; date: string; you: boolean }[]>([]);
+  const teamKey = draft.travelType === "team" ? draft.teamMembers.map((m) => m.employeeId).join(",") : "";
+  useEffect(() => {
+    if (!draft.fromDate) { setDupes([]); return; }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      api.dateCheck(draft, editing?.requestId || "")
+        .then((r) => { if (!cancelled) setDupes(r.duplicates); })
+        .catch(() => { if (!cancelled) setDupes([]); });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [draft.fromDate, draft.toDate, draft.scope, draft.travelType, teamKey, editing?.requestId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function save(submit: boolean) {
     setBusy(true);
     setError("");
@@ -157,6 +172,29 @@ export default function NewRequest({
       </div>
 
       <Stepper step={step} onStep={setStep} />
+
+      {dupes.length > 0 && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <p className="font-semibold">This date is already claimed — you can't claim it again.</p>
+          <ul className="mt-1.5 space-y-1">
+            {dupes.map((d) => (
+              <li key={`${d.employeeId}-${d.requestId}`}>
+                {d.you ? "You already claimed" : `${d.employeeName || d.employeeId} is already on a claim`} for {fmtDate(d.date)} in{" "}
+                <a
+                  href={`/?request=${encodeURIComponent(d.requestId)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono font-semibold underline underline-offset-2"
+                >
+                  {d.requestId}
+                </a>
+                .
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-xs text-rose-800/80">Pick a different date{draft.travelType === "team" ? " or take that person off this trip" : ""}.</p>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-5">
@@ -214,8 +252,8 @@ export default function NewRequest({
                 <button
                   className="btn-primary flex-1 sm:flex-none"
                   onClick={() => setStep((s) => s + 1)}
-                  disabled={needsMoreTrips}
-                  title={needsMoreTrips ? "Add at least one more trip for More Ways" : undefined}
+                  disabled={needsMoreTrips || dupes.length > 0}
+                  title={dupes.length > 0 ? "This date is already claimed" : needsMoreTrips ? "Add at least one more trip for More Ways" : undefined}
                 >
                   Next <ArrowRight size={16} />
                 </button>
@@ -223,7 +261,7 @@ export default function NewRequest({
                 <button
                   className="btn-primary flex-1 whitespace-nowrap sm:flex-none"
                   onClick={() => save(true)}
-                  disabled={busy || computation.errors.length > 0}
+                  disabled={busy || computation.errors.length > 0 || dupes.length > 0}
                 >
                   {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Submit request
                 </button>
