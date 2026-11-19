@@ -324,13 +324,6 @@ function StepTravelType({
       ? `Administration has unlocked exactly ${fmtDate(user.claimUnlockExact)} for you — no other older date.`
       : "";
 
-  // Company Arrangement chosen against one date can go stale if the date is
-  // pushed closer — dropped back to Self rather than left selected behind a
-  // disabled option nobody notices.
-  useEffect(() => {
-    if (draft.arrangement === "company" && !computation.noticeOK) set({ arrangement: "self" });
-  }, [computation.noticeOK]); // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
     <>
       <Card title="What type of travel are you making?">
@@ -630,44 +623,6 @@ function StepTravelType({
               ]}
             />
           </div>
-
-          {draft.scope === "outside" && (
-            <Field label="Travel arrangement" required>
-              <select
-                className="field"
-                value={draft.arrangement}
-                // Company Arrangement means the company books the hotel
-                // directly, so any hotel figures already entered no longer
-                // apply.
-                onChange={(e) => {
-                  const arrangement = e.target.value as RequestDraft["arrangement"];
-                  set(
-                    arrangement === "company"
-                      ? { arrangement, accommodationType: "", hotelName: "", checkIn: "", checkOut: "", accommodationAmount: 0 }
-                      : { arrangement },
-                  );
-                }}
-              >
-                <option value="self">Self Arrangement</option>
-                <option value="company" disabled={!computation.noticeOK}>
-                  Company Arrangement{!computation.noticeOK ? " — needs more notice" : ""}
-                </option>
-              </select>
-            </Field>
-          )}
-
-          {draft.scope === "outside" && !computation.noticeOK && (
-            <div className="sm:col-span-2">
-              <Notice
-                tone="warn"
-                items={[
-                  `Company Arrangement and a travel advance both need at least ${computation.noticeDaysRequired} business ` +
-                  `days' notice before travel${draft.fromDate ? ` — this trip is only ${computation.noticeGiven} business day(s) away` : ""}. ` +
-                  "Choose Self Arrangement, or contact Administration if this cannot wait.",
-                ]}
-              />
-            </div>
-          )}
 
           {/* Inside-city says where it went above, beside the city. */}
           {outside && (
@@ -1037,20 +992,6 @@ function StepTransport({
   const juniorMale = inside && !String(user.gender).toLowerCase().startsWith("f") &&
     modes.some((m) => m.mode === "Car" && !m.enabled && m.reason.includes("pre-approval"));
   const anyLegNeedsReceipt = draft.legs.some((l) => modes.find((m) => m.mode === l.mode)?.requiresReceipt);
-
-  if (draft.scope === "outside" && draft.arrangement === "company") {
-    return (
-      <Card title="Transportation">
-        <Notice
-          tone="info"
-          items={[
-            "Company Arrangement — the company books your transport directly, so there's nothing to pick or claim here. " +
-            "Got a ticket or other paperwork? Attach it on the Documents step instead.",
-          ]}
-        />
-      </Card>
-    );
-  }
 
   return (
     <>
@@ -1558,14 +1499,6 @@ function StepAllowances({
     if (accCapped && draft.accommodationAmount > accLimit) set({ accommodationAmount: accLimit });
   }, [accCapped, accLimit, draft.accommodationAmount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // "Full amount" tracks the claim total live, so it stays correct as the
-  // claimant fills in the rest of the form after choosing it.
-  useEffect(() => {
-    if (draft.advanceWanted && draft.advanceType === "full" && draft.advanceRequested !== computation.totalClaim) {
-      set({ advanceRequested: computation.totalClaim });
-    }
-  }, [draft.advanceWanted, draft.advanceType, computation.totalClaim]);
-
   if (inside) {
     return (
       <>
@@ -1587,7 +1520,6 @@ function StepAllowances({
   }
 
   // Outside city.
-  const advanceMinDays = cfgNum(policy, "ADVANCE_MIN_TRIP_DAYS", 3);
   return (
     <>
       <Card title="Per-Diem" subtitle="Loaded automatically from your band — no manual calculation.">
@@ -1606,15 +1538,7 @@ function StepAllowances({
       </Card>
 
       <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${tripBand?.accommodationLimit ?? 0} per night${draft.travelType === "team" ? " per traveller" : ""} for Band ${tripBandName}${tripBandName !== user.band ? " (the most senior traveller)" : ""}. A bill above the limit is claimed at the limit.`}>
-        {draft.arrangement === "company" ? (
-          <Notice
-            tone="info"
-            items={[
-              "Company Arrangement — the company books your hotel directly, so there's nothing to claim here. " +
-              "Got a receipt or other paperwork? Attach it on the Documents step instead.",
-            ]}
-          />
-        ) : (
+        {(
           <>
             <ChoiceGrid
               value={draft.accommodationType}
@@ -1659,103 +1583,6 @@ function StepAllowances({
             )}
           </>
         )}
-      </Card>
-
-      <Card
-        title="Travel advance"
-        subtitle={
-          computation.advanceAvailable
-            ? `This trip is ${computation.tripDays} days, so you are eligible for a travel advance.`
-            : !computation.noticeOK
-              ? `An advance needs at least ${computation.noticeDaysRequired} business days' notice before travel.`
-              : `An advance is only offered for outside-city trips of ${advanceMinDays} days or more.`
-        }
-      >
-        {computation.advanceAvailable ? (
-          <>
-            <ChoiceGrid
-              value={draft.advanceWanted ? "yes" : "no"}
-              // Declining clears any figure already typed, so nothing is
-              // requested by accident.
-              onChange={(v) =>
-                set({
-                  advanceWanted: v === "yes",
-                  advanceType: v === "yes" ? draft.advanceType : "",
-                  advanceRequested: v === "yes" ? draft.advanceRequested : 0,
-                })
-              }
-              options={[
-                { value: "yes", label: "Yes, I want an advance", description: "Paid before you travel, settled against this claim afterwards." },
-                { value: "no", label: "No, thanks", description: "Pay your own way and claim it all back after the trip." },
-              ]}
-            />
-            {draft.advanceWanted ? (
-              <div className="mt-5 space-y-5">
-                <ChoiceGrid
-                  value={draft.advanceType}
-                  onChange={(v) =>
-                    set({
-                      advanceType: v === "full" ? "full" : "partial",
-                      advanceRequested: v === "full" ? computation.totalClaim : draft.advanceRequested,
-                    })
-                  }
-                  options={[
-                    { value: "full", label: "Full amount", description: "The whole claim total is requested as your advance." },
-                    { value: "partial", label: "Partial amount", description: "Type in the specific amount you need up front." },
-                  ]}
-                />
-                {draft.advanceType === "full" ? (
-                  <Field label={`Advance needed (${currency})`}>
-                    <input type="number" className="field" value={computation.totalClaim} disabled readOnly />
-                  </Field>
-                ) : draft.advanceType === "partial" ? (
-                  <Field label={`Advance needed (${currency})`}>
-                    <input
-                      type="number"
-                      min={0}
-                      className="field"
-                      value={draft.advanceRequested || ""}
-                      onChange={(e) => set({ advanceRequested: Number(e.target.value) })}
-                    />
-                  </Field>
-                ) : null}
-              </div>
-            ) : (
-              <div className="mt-5">
-                <Notice
-                  tone="info"
-                  items={[
-                    `You are eligible but have declined. Nothing is paid up front — spend your own money on the trip and the full ${currency} amount comes back to you once this claim is approved.`,
-                  ]}
-                />
-              </div>
-            )}
-          </>
-        ) : !computation.noticeOK ? (
-          <Notice
-            tone="warn"
-            items={[
-              `Applied ${computation.noticeGiven} business day(s) before travel — an advance needs ` +
-              `${computation.noticeDaysRequired} or more. There is not enough time left to pay one out before this trip. ` +
-              "Contact Administration if it cannot wait.",
-            ]}
-          />
-        ) : (
-          <p className="text-sm text-slate-500">
-            Advances start at {advanceMinDays}-day trips. This one is {computation.tripDays} day(s).
-          </p>
-        )}
-        {computation.requiresDeptHeadApproval && (
-          <div className="mt-3">
-            <Notice
-              tone="warn"
-              items={[
-                `Above ${currency} ${cfgNum(policy, "ADVANCE_AUTO_LIMIT", 10000)}, this advance also needs Department Head approval.`,
-              ]}
-            />
-          </div>
-        )}
-
       </Card>
     </>
   );
