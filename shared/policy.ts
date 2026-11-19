@@ -363,7 +363,10 @@ export function insidePerTravellerAmount(policy: Policy, hours: number, officeMe
   return 0;
 }
 
-export function computeRequest(policy: Policy, draft: RequestDraft, user: SessionUser): Computation {
+export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: SessionUser): Computation {
+  // Every claim is a reimbursement, outside city included: no company arrangement and no advance,
+  // whatever an older draft or a hand-made request says.
+  const draft: RequestDraft = { ...rawDraft, arrangement: "self", advanceWanted: false, advanceType: "", advanceRequested: 0 };
   const notes: string[] = [];
   const errors: string[] = [];
   const warnings: string[] = [];
