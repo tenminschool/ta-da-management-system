@@ -1775,10 +1775,7 @@ function StepDocuments({
       >
         <div className="space-y-4">
           {!needsReceipt && !showUploader && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-4 py-3">
-              <p className="text-sm text-slate-600">
-                Nothing to attach — a rickshaw fare or a personal-vehicle trip has no receipt.
-              </p>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
               <button type="button" className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => setShowUploader(true)}>
                 Attach something anyway
               </button>
