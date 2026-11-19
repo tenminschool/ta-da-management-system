@@ -595,8 +595,8 @@ function StepTravelType({
               className="field"
               value={draft.fromDate}
               min={!outside ? earliestClaimableDate || undefined : undefined}
-              // Inside-city is for travel that has happened, so a future date is locked.
-              max={!outside ? todayISO() : undefined}
+              // Every claim is a reimbursement for travel that has happened, so a future date is locked.
+              max={todayISO()}
               onChange={(e) => set({ fromDate: e.target.value, toDate: outside ? draft.toDate : e.target.value })}
             />
             {!outside && draft.fromDate && (
@@ -621,6 +621,7 @@ function StepTravelType({
                 className="field"
                 value={draft.toDate}
                 min={earliestClaimableDate || undefined}
+                max={todayISO()}
                 onChange={(e) => set({ toDate: e.target.value })}
               />
             </Field>
