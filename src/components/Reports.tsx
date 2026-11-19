@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Coins, FileText, Printer, Scissors, Wallet } from "lucide-react";
+import { Coins, FileDown, FileSpreadsheet, FileText, Loader2, Scissors, Wallet } from "lucide-react";
 import { api, type RequestListItem } from "../api.js";
 import type { Policy, SessionUser } from "../../shared/types.js";
 import { cfgStr } from "../../shared/policy.js";
 import { Card, Empty, Money, Notice, SearchInput, Spinner } from "./ui.js";
+import { downloadCsv, downloadPdf, type ReportInput } from "../lib/reportExport.js";
 
 /**
  * What the money did, for Administration, HR and Finance.
@@ -39,6 +40,8 @@ export default function Reports({
   const [department, setDepartment] = useState("");
   const [member, setMember] = useState(""); // employeeId
   const [memberQuery, setMemberQuery] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const currency = cfgStr(policy, "CURRENCY", "BDT");
 
   // A department someone no longer belongs to (or clearing the department
@@ -148,6 +151,33 @@ export default function Reports({
 
   const period = from || to ? `${from || "the beginning"} to ${to || "today"}` : "all time";
   const ranking = department ? topMembers : topTeams;
+
+  // What the downloaded PDF and CSV are built from: the claims left after every filter above.
+  const reportInput: ReportInput = {
+    claims,
+    currency,
+    generatedBy: `${user.name} (${user.employeeId})`,
+    filters: [
+      ["Claims counted by", BASIS[basis].label],
+      ["Period", period],
+      ["Department", department || "All departments"],
+      ...(selectedMember ? [["Member", selectedMember.name] as [string, string]] : []),
+    ],
+    dateLabel: BASIS[basis].label,
+    dateOf: BASIS[basis].of,
+  };
+  async function exportAs(kind: "pdf" | "csv") {
+    setExporting(true);
+    setExportError("");
+    try {
+      if (kind === "csv") downloadCsv(reportInput);
+      else await downloadPdf(reportInput);
+    } catch (err) {
+      setExportError((err as Error).message || "The report could not be created.");
+    } finally {
+      setExporting(false);
+    }
+  }
   const biggest = ranking[0]?.claimed || 0;
 
   const cards = [
@@ -173,11 +203,15 @@ export default function Reports({
             {department ? ` · ${department}` : " · all departments"}
           </p>
         </div>
-        {/* The browser's own print dialogue saves a PDF — no plugin, and the
-            page is laid out for paper rather than screenshotted. */}
-        <button className="btn-ghost !px-3 !py-1.5 text-xs print:hidden" onClick={() => window.print()}>
-          <Printer size={14} /> Download PDF
-        </button>
+        {/* A real report file, built from the filtered claims — not a print of this page. */}
+        <div className="flex gap-2 print:hidden">
+          <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void exportAs("csv")} disabled={exporting}>
+            <FileSpreadsheet size={14} /> Download CSV
+          </button>
+          <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void exportAs("pdf")} disabled={exporting}>
+            {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} Download PDF
+          </button>
+        </div>
       </div>
 
       {/* One slim row: the filters sit above the figures on every scroll, so they stay small. */}
@@ -323,6 +357,8 @@ export default function Reports({
           )}
         </Card>
       )}
+
+      {exportError && <Notice tone="error" items={[exportError]} />}
 
       <Card title="Claims in this report" subtitle={`${claims.length} claim(s), newest first.`}>
         {!claims.length ? (
