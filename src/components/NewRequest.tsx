@@ -607,27 +607,19 @@ function StepTravelType({
             )}
           </Field>
           {outside && (
-            <Field
-              label="Return date"
-              required
-              hint={
-                claimWindowUnlocked
-                  ? unlockHint
-                  : `Claims must be filed within ${claimWindowDays} days of your return, so the calendar only goes back to ${fmtDate(earliestClaimableDate)}. Need an older date? Reach out to Administration.`
-              }
-            >
+            <Field label="Return date" required>
               <input
                 type="date"
                 className="field"
                 value={draft.toDate}
-                min={earliestClaimableDate || undefined}
+                // Outside city has no filing window: the only lock is that a future date can't be chosen.
                 max={todayISO()}
                 onChange={(e) => set({ toDate: e.target.value })}
               />
             </Field>
           )}
 
-          {!claimWindowUnlocked && (
+          {!claimWindowUnlocked && !outside && (
             <div className="sm:col-span-2 space-y-2">
               {latestUnlock?.status === "pending" && (
                 <Notice
