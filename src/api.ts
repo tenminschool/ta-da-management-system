@@ -361,7 +361,7 @@ export const api = {
   request: (id: string) => call<RequestDetail>(`/requests/${encodeURIComponent(id)}`),
   /** Existing claims that already cover this trip's dates for the person (or their teammates). */
   dateCheck: (draft: RequestDraft, excludeId = "") =>
-    post<{ duplicates: { requestId: string; employeeId: string; employeeName: string; date: string; you: boolean }[] }>(
+    post<{ duplicates: { requestId: string; employeeId: string; employeeName: string; date: string; fromDate: string; toDate: string; you: boolean }[] }>(
       "/requests/date-check", { draft, excludeId },
     ),
   preview: (draft: RequestDraft) =>

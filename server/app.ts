@@ -659,7 +659,7 @@ app.post("/api/requests/payment-export", requireAuth, handler(async (req, res) =
 
 // ── One claim per person per date ───────────────────────────────────────────
 
-interface DuplicateClaim { requestId: string; employeeId: string; employeeName: string; date: string; you: boolean }
+interface DuplicateClaim { requestId: string; employeeId: string; employeeName: string; date: string; fromDate: string; toDate: string; you: boolean }
 
 /**
  * Claims that already cover any of this trip's dates for the person filing it, or for anyone they
@@ -689,16 +689,17 @@ export async function duplicateDateClaims(draft: RequestDraft, selfId: string, e
     for (const [id, name] of owners) {
       if (!people.has(id) || seen.has(`${id}|${r.requestId}`)) continue;
       seen.add(`${id}|${r.requestId}`);
-      found.push({ requestId: r.requestId, employeeId: id, employeeName: name || people.get(id) || "", date: rFrom > from ? rFrom : from, you: id === selfId });
+      found.push({ requestId: r.requestId, employeeId: id, employeeName: name || people.get(id) || "", date: rFrom > from ? rFrom : from, fromDate: rFrom, toDate: rTo, you: id === selfId });
     }
   }
   return found;
 }
 
 function duplicateMessage(d: DuplicateClaim[]): string {
+  const span = (x: DuplicateClaim) => (x.toDate && x.toDate !== x.fromDate ? `${x.fromDate} to ${x.toDate}` : x.fromDate);
   return d.map((x) => (x.you
-    ? `You already claimed for ${x.date} in ${x.requestId}.`
-    : `${x.employeeName || x.employeeId} is already on a claim for ${x.date} (${x.requestId}).`)).join(" ");
+    ? `You are on a trip or have already claimed for these dates: ${x.requestId} covers ${span(x)}.`
+    : `${x.employeeName || x.employeeId} is on a trip or has already claimed for these dates: ${x.requestId} covers ${span(x)}.`)).join(" ");
 }
 
 app.post("/api/requests/date-check", requireAuth, handler(async (req, res) => {
