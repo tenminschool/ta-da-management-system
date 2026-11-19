@@ -655,7 +655,7 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
   if (draft.scope === "inside" && draft.fromDate && draft.fromDate > todayISO()) {
     errors.push("An inside-city claim can be filed for today or a past date only — a future date is not allowed.");
   }
-  if (draft.scope === "inside" && draft.startFrom === "home" && !user.homeAddress) {
+  if (draft.startFrom === "home" && !user.homeAddress) {
     errors.push("Your home address is not in the system. Please update it in the system, then come back to claim a trip from home.");
   }
 
@@ -720,7 +720,9 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
     else if (taken.to && draft.city !== taken.to) errors.push(`${taken.label} must end in ${taken.to}.`);
     // Dhaka has several offices, so whichever end of the route is Dhaka needs
     // to say which one — Chattogram, so far, does not.
-    if (taken && (taken.from === "Dhaka" || taken.to === "Dhaka") && !draft.dhakaOffice) {
+    // Starting from home needs no office at that end.
+    const startsAtHome = draft.startFrom === "home" && taken?.from === "Dhaka";
+    if (taken && (taken.from === "Dhaka" || taken.to === "Dhaka") && !draft.dhakaOffice && !(startsAtHome && taken.to !== "Dhaka")) {
       errors.push("Select the Dhaka office for this trip.");
     }
     if (draft.arrangement === "company") {
@@ -1029,7 +1031,8 @@ export function impliedLegs(policy: Policy, draft: RequestDraft, workplace = "",
   // alone, two way adds the return, more ways starts the same and leaves the
   // rest to be chained on by hand.
   const route = policy.routes.find((r) => r.value === draft.route);
-  const from = route?.from || "";
+  // From home when they say so, otherwise the route's own starting point (a 10MS office).
+  const from = (draft.startFrom === "home" && homeAddress ? homeAddress : route?.from) || "";
   const to = draft.city || route?.to || "";
   const outward = leg(draft.fromDate, from, to);
   if (draft.tripDirection === "two_way") {
