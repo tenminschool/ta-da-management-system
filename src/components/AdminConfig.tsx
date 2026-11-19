@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Save, Trash2 } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { api, type EmployeeLite } from "../api.js";
 import type { InsideCityBlockEntry, UnlockRequest } from "../../shared/types.js";
 import { sendMails } from "../lib/mail.js";
@@ -17,6 +17,21 @@ function BranchManager({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const branches = rows.filter((r) => r.list_name === "OtherOffice");
+  // The branch being renamed, and the name typed so far.
+  const [editing, setEditing] = useState<Record<string, string> | null>(null);
+  const [editName, setEditName] = useState("");
+
+  async function rename() {
+    if (!editing) return;
+    const value = editName.trim().replace(/\s+/g, " ");
+    if (!value) { setError("The branch needs a name."); return; }
+    if (branches.some((b) => b !== editing && b.value.trim().toLowerCase() === value.toLowerCase())) {
+      setError("Another branch already has that name.");
+      return;
+    }
+    // Both value and label follow the new name, the same as when a branch is added.
+    if (await persist(rows.map((r) => (r === editing ? { ...r, value, label: value } : r)))) setEditing(null);
+  }
 
   async function persist(next: Record<string, string>[]) {
     setBusy(true);
@@ -63,15 +78,57 @@ function BranchManager({
         {branches.length === 0 && <li className="px-3 py-3 text-sm text-slate-400">No branches yet.</li>}
         {branches.map((b) => (
           <li key={b.value} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
-            <span className={`min-w-0 ${b.active === "No" ? "text-slate-400 line-through" : "text-slate-800"}`}>{b.label || b.value}</span>
-            <button
-              className="flex size-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
-              aria-label={`Remove ${b.value}`}
-              disabled={busy}
-              onClick={() => void persist(rows.filter((r) => r !== b))}
-            >
-              <Trash2 size={15} />
-            </button>
+            {editing === b ? (
+              <>
+                <input
+                  className="field min-w-0 flex-1"
+                  value={editName}
+                  autoFocus
+                  onChange={(e) => setEditName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") void rename(); if (e.key === "Escape") setEditing(null); }}
+                />
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    className="flex size-9 items-center justify-center rounded-lg text-emerald-600 hover:bg-emerald-50"
+                    aria-label="Save name"
+                    disabled={busy}
+                    onClick={() => void rename()}
+                  >
+                    {busy ? <Loader2 size={15} className="animate-spin" /> : <Check size={16} />}
+                  </button>
+                  <button
+                    className="flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"
+                    aria-label="Cancel"
+                    disabled={busy}
+                    onClick={() => setEditing(null)}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <span className={`min-w-0 ${b.active === "No" ? "text-slate-400 line-through" : "text-slate-800"}`}>{b.label || b.value}</span>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    className="flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    aria-label={`Rename ${b.value}`}
+                    disabled={busy}
+                    onClick={() => { setError(""); setEditing(b); setEditName(b.label || b.value); }}
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <button
+                    className="flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                    aria-label={`Remove ${b.value}`}
+                    disabled={busy}
+                    onClick={() => void persist(rows.filter((r) => r !== b))}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
+              </>
+            )}
           </li>
         ))}
       </ul>
