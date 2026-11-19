@@ -304,6 +304,17 @@ function Stepper({ step, onStep }: { step: number; onStep: (n: number) => void }
 
 // ── Step 1 ──────────────────────────────────────────────────────────────────
 
+/** Under a "Travelling from: Home" choice: the address being used, or what to do when there is none. */
+function HomeStart({ user }: { user: SessionUser }) {
+  return user.homeAddress ? (
+    <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
+      <span className="font-semibold text-slate-700">Home address:</span> {user.homeAddress}
+    </p>
+  ) : (
+    <Notice tone="warn" items={["Your home address is not in the system. Please update it in the system first, then come back to claim a trip from home."]} />
+  );
+}
+
 function StepTravelType({
   draft, set, insideCities, user, policy, computation,
 }: {
@@ -438,7 +449,25 @@ function StepTravelType({
               {/* Dhaka has several offices to choose between; Chattogram, so
                   far, does not. The question reads differently depending on
                   which end of the route Dhaka is. */}
-              {route && (route.from === "Dhaka" || route.to === "Dhaka") && (
+              {/* Where the trip starts: the route's own 10MS office, or home. */}
+              {route && route.from && (
+                <Field label="Travelling from" required>
+                  <select
+                    className="field"
+                    value={draft.startFrom || "office"}
+                    onChange={(e) => {
+                      const startFrom = e.target.value === "home" ? "home" : "office";
+                      set({ startFrom, dhakaOffice: startFrom === "home" && route.from === "Dhaka" && route.to !== "Dhaka" ? "" : draft.dhakaOffice });
+                    }}
+                  >
+                    <option value="office">10MS office — {route.from}</option>
+                    <option value="home">Home</option>
+                  </select>
+                </Field>
+              )}
+              {route && route.from && draft.startFrom === "home" && <div className="sm:col-span-2"><HomeStart user={user} /></div>}
+
+              {route && (route.to === "Dhaka" || (route.from === "Dhaka" && draft.startFrom !== "home")) && (
                 <Field label={route.from === "Dhaka" ? "From which Dhaka office are you travelling?" : "Which Dhaka office are you going to?"} required>
                   <select className="field" value={draft.dhakaOffice} onChange={(e) => set({ dhakaOffice: e.target.value })}>
                     <option value="">Select an office</option>
@@ -485,17 +514,7 @@ function StepTravelType({
                   <option value="home">Home</option>
                 </select>
               </Field>
-              {draft.startFrom === "home" && (
-                <div className="sm:col-span-2">
-                  {user.homeAddress ? (
-                    <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
-                      <span className="font-semibold text-slate-700">Home address:</span> {user.homeAddress}
-                    </p>
-                  ) : (
-                    <Notice tone="warn" items={["Your home address is not in the system. Please update it in the system first, then come back to claim a trip from home."]} />
-                  )}
-                </div>
-              )}
+              {draft.startFrom === "home" && <div className="sm:col-span-2"><HomeStart user={user} /></div>}
             </>
           )}
 
