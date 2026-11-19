@@ -125,7 +125,7 @@ export default function NewRequest({
 
   // One claim per person per date: asked as the dates or teammates change, so the person is told
   // straight away, with a link to the claim already covering that date. The server enforces it too.
-  const [dupes, setDupes] = useState<{ requestId: string; employeeId: string; employeeName: string; date: string; you: boolean }[]>([]);
+  const [dupes, setDupes] = useState<{ requestId: string; employeeId: string; employeeName: string; date: string; fromDate: string; toDate: string; you: boolean }[]>([]);
   const teamKey = draft.travelType === "team" ? draft.teamMembers.map((m) => m.employeeId).join(",") : "";
   useEffect(() => {
     if (!draft.fromDate) { setDupes([]); return; }
@@ -175,11 +175,11 @@ export default function NewRequest({
 
       {dupes.length > 0 && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
-          <p className="font-semibold">This date is already claimed — you can't claim it again.</p>
+          <p className="font-semibold">These dates are already taken — you can't claim them again.</p>
           <ul className="mt-1.5 space-y-1">
             {dupes.map((d) => (
               <li key={`${d.employeeId}-${d.requestId}`}>
-                {d.you ? "You already claimed" : `${d.employeeName || d.employeeId} is already on a claim`} for {fmtDate(d.date)} in{" "}
+                {d.you ? "You are on a trip or have already claimed" : `${d.employeeName || d.employeeId} is on a trip or has already claimed`} for these dates:{" "}
                 <a
                   href={`/?request=${encodeURIComponent(d.requestId)}`}
                   target="_blank"
@@ -188,7 +188,7 @@ export default function NewRequest({
                 >
                   {d.requestId}
                 </a>
-                .
+                {" "}covers {fmtDate(d.fromDate)}{d.toDate && d.toDate !== d.fromDate ? ` to ${fmtDate(d.toDate)}` : ""}.
               </li>
             ))}
           </ul>
