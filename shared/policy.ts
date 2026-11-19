@@ -694,7 +694,8 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
   const windowDays = cfgNum(policy, "CLAIM_WINDOW_DAYS", 7);
   const endedOn = draft.scope === "outside" ? draft.toDate || draft.fromDate : draft.fromDate;
   const daysSince = endedOn ? daysBetween(endedOn, todayISO()) : 0;
-  if (windowDays > 0 && daysSince > windowDays) {
+  // The filing window is an inside-city rule; an outside-city claim is only blocked for future dates.
+  if (draft.scope === "inside" && windowDays > 0 && daysSince > windowDays) {
     const unlockedFrom = user.claimUnlockFrom || "";
     const unlockedExact = user.claimUnlockExact || "";
     // Two ways in: an administrator can open the window back to a specific
