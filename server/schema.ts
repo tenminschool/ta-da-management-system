@@ -181,12 +181,12 @@ export const TABS: TabSpec[] = [
       "flight_eligible", "car_pool_eligible", "effective_from",
     ],
     seed: [
-      ["A", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1200, 5000, "Yes", "No", "2026-01-01"],
-      ["B", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1200, 5000, "Yes", "No", "2026-01-01"],
+      ["A", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1200, 5000, "Yes", "Yes", "2026-01-01"],
+      ["B", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 1000, 1200, 5000, "Yes", "Yes", "2026-01-01"],
       ["C1", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
       ["C2", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
-      ["D", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
-      ["E", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1080, 4000, "No", "Yes", "2026-01-01"],
+      ["D", "Rickshaw,CNG,Car", "Rickshaw,CNG,Car", 900, 1080, 4000, "No", "No", "2026-01-01"],
+      ["E", "Rickshaw,Bike,CNG", "Rickshaw,Bike,CNG,Car", 900, 1080, 4000, "No", "No", "2026-01-01"],
     ],
   },
 
