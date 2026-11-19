@@ -514,7 +514,8 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
     ? Math.max(1, Math.round((new Date(`${draft.checkOut}T00:00:00`).getTime() - new Date(`${draft.checkIn}T00:00:00`).getTime()) / 86_400_000))
     : 0;
   const perNightLimit = tripBand?.accommodationLimit ?? 0;
-  const accommodationLimit = money(perNightLimit * (nights || 1));
+  // The limit is per traveller per night, so a team's hotel bill is judged against everyone's share.
+  const accommodationLimit = money(perNightLimit * (nights || 1) * teamSize);
   // Company Arrangement is paid by the company directly — the employee has
   // nothing to claim, so no hotel details are asked for or required.
   let accommodationAmount = draft.accommodationType === "personal" || companyArranged
@@ -539,11 +540,11 @@ export function computeRequest(policy: Policy, draft: RequestDraft, user: Sessio
       if (accommodationAmount > accommodationLimit && accommodationLimit > 0) {
         // Not an error: the claim is simply held at the limit, the way a rent-a-car fare is.
         warnings.push(
-          `Accommodation ${accommodationAmount} is over the Band ${tripBandName} limit of ${perNightLimit}/night × ${nights || 1} night(s) = ${accommodationLimit}, so ${accommodationLimit} is claimed.`,
+          `Accommodation ${accommodationAmount} is over the Band ${tripBandName} limit of ${perNightLimit}/night × ${nights || 1} night(s)${teamSize > 1 ? ` × ${teamSize} travellers` : ""} = ${accommodationLimit}, so ${accommodationLimit} is claimed.`,
         );
         accommodationAmount = accommodationLimit;
       } else if (accommodationLimit > 0) {
-        notes.push(`Accommodation within the Band ${tripBandName} limit (${perNightLimit}/night × ${nights || 1} = ${accommodationLimit}).`);
+        notes.push(`Accommodation within the Band ${tripBandName} limit (${perNightLimit}/night × ${nights || 1}${teamSize > 1 ? ` × ${teamSize} travellers` : ""} = ${accommodationLimit}).`);
       }
     }
   }

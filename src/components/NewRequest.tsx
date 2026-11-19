@@ -1369,7 +1369,8 @@ function LegsEditor({
           policy={policy}
           currency={currency}
           initial={legs[rentACarModalFor]}
-          headcount={draft.rentACarHeadcount}
+          // Everyone on the trip shares the car, so this follows the team selected, not a typed number.
+          headcount={draft.travelType === "team" ? draft.teamMembers.length + 1 : 1}
           onClose={() => setRentACarModalFor(null)}
           onSave={(patch, headcount) => {
             update(rentACarModalFor, patch);
@@ -1490,7 +1491,7 @@ function RentACarLegModal({
   onSave: (patch: Partial<Leg>, headcount: number) => void;
 }) {
   const [amount, setAmount] = useState(initial.amount || 0);
-  const [head, setHead] = useState(headcount || 0);
+  const head = headcount;
   const limit = cfgNum(policy, "RENT_A_CAR_LIMIT", 6000);
   const minHead = cfgNum(policy, "RENT_A_CAR_MIN_HEADCOUNT", 3);
 
@@ -1511,8 +1512,8 @@ function RentACarLegModal({
             onChange={(e) => setAmount(Math.min(Number(e.target.value), limit))}
           />
         </Field>
-        <Field label="Employees sharing the car" required>
-          <input type="number" min={0} className="field" value={head || ""} onChange={(e) => setHead(Number(e.target.value))} />
+        <Field label="Employees sharing the car" hint="Filled in from the team members you selected.">
+          <input type="number" className="field bg-slate-50" value={head} readOnly />
         </Field>
         <div className="flex justify-end gap-2">
           <button className="btn-ghost" onClick={onClose}>Cancel</button>
@@ -1604,7 +1605,7 @@ function StepAllowances({
         </p>
       </Card>
 
-      <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${tripBand?.accommodationLimit ?? 0} per night for Band ${tripBandName}${tripBandName !== user.band ? " (the most senior traveller)" : ""}. A bill above the limit is claimed at the limit.`}>
+      <Card title="Accommodation" subtitle={`Actual hotel bill, up to ${currency} ${tripBand?.accommodationLimit ?? 0} per night${draft.travelType === "team" ? " per traveller" : ""} for Band ${tripBandName}${tripBandName !== user.band ? " (the most senior traveller)" : ""}. A bill above the limit is claimed at the limit.`}>
         {draft.arrangement === "company" ? (
           <Notice
             tone="info"
