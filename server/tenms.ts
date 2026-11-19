@@ -379,6 +379,62 @@ export async function listDirectoryMembers(accessToken: string): Promise<Directo
   return members;
 }
 
+export interface DirectoryPerson {
+  employeeId: string;
+  email: string;
+  name: string;
+  department: string;
+  /** `travel_requirement` on the 10MS record, as written; blank when the record has none. */
+  travelRequirement: string;
+}
+
+/**
+ * Everyone in the 10MS admin directory with their department and `travel_requirement`, read a page
+ * at a time with the signed-in person's own token. Used by the dashboard's travel-requirement
+ * filter, so claims can be grouped by how much travel each person's job calls for.
+ */
+export async function listDirectoryPeople(accessToken: string): Promise<DirectoryPerson[]> {
+  const PAGE = 50;
+  const people: DirectoryPerson[] = [];
+  const seen = new Set<string>();
+  const str = (v: unknown): string => {
+    if (typeof v === "string") return v.trim();
+    if (v && typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      for (const k of ["label", "name", "title", "value"]) if (typeof o[k] === "string") return (o[k] as string).trim();
+    }
+    return "";
+  };
+  for (let page = 0; page < 40; page++) {
+    const res = await ask(`/v1/admin/all?skip=${page * PAGE}&limit=${PAGE}&search=`, accessToken);
+    if (!res.ok) throw new TenMSVerifyError(`The directory could not be read (${res.status}).`, res.status === 401 ? 401 : 502);
+    const body = (await res.json()) as { data?: unknown };
+    const data = body?.data as unknown;
+    const list: unknown[] = Array.isArray(data)
+      ? data
+      : (Object.values((data as object) || {}).find((v) => Array.isArray(v)) as unknown[] | undefined) ?? [];
+    let fresh = 0;
+    for (const u of list) {
+      if (!u || typeof u !== "object") continue;
+      const o = u as Record<string, unknown>;
+      const employeeId = str(o.employee_id) || str(o.id);
+      const email = (str(o.username) || str(o.email)).toLowerCase();
+      if (!(employeeId || email) || seen.has(employeeId || email)) continue;
+      seen.add(employeeId || email);
+      fresh += 1;
+      people.push({
+        employeeId,
+        email,
+        name: str(o.name),
+        department: str(o.current_department) || str(o.department),
+        travelRequirement: str(o.travel_requirement),
+      });
+    }
+    if (list.length < PAGE || fresh === 0) break;
+  }
+  return people;
+}
+
 /**
  * Roles come from one place only: the 10MS groups a person belongs to. The group names are
  * ta_da_admin, ta_da_hr and ta_da_finance, and can be changed with GROUP_ADMIN / GROUP_HR /

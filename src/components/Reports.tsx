@@ -22,6 +22,25 @@ const BASIS = {
 
 type Basis = keyof typeof BASIS;
 
+/** `travel_requirement` on the 10MS record, grouped into the three options HR uses (plus "not set"). */
+const TRAVEL = {
+  frequent: "Frequent Branch/Field Visits required based on job role",
+  occasional: "Occasional Branch/Field Visits",
+  none: "No Travel Required",
+  unset: "Not set on the 10MS record",
+} as const;
+type Travel = keyof typeof TRAVEL;
+
+function travelBucket(raw: string | undefined): Travel {
+  const t = String(raw || "").toLowerCase();
+  if (t.includes("frequent")) return "frequent";
+  if (t.includes("occasional")) return "occasional";
+  if (t.includes("no travel")) return "none";
+  return "unset";
+}
+
+interface DirectoryRow { employeeId: string; email: string; name: string; department: string; travelRequirement: string }
+
 const PAID_STATUSES = ["paid", "completed"];
 
 export default function Reports({
@@ -40,6 +59,9 @@ export default function Reports({
   const [department, setDepartment] = useState("");
   const [member, setMember] = useState(""); // employeeId
   const [memberQuery, setMemberQuery] = useState("");
+  const [travel, setTravel] = useState<"" | Travel>("");
+  const [directory, setDirectory] = useState<DirectoryRow[] | null>(null);
+  const [directoryError, setDirectoryError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
   const currency = cfgStr(policy, "CURRENCY", "BDT");
@@ -49,7 +71,26 @@ export default function Reports({
   useEffect(() => {
     setMember("");
     setMemberQuery("");
-  }, [department]);
+  }, [department, travel]);
+
+  // Everyone's travel requirement, from the 10MS directory. Read once; the claims already on the
+  // page do not carry it, so this is what lets the filter group people by it.
+  useEffect(() => {
+    api.travelRequirements()
+      .then((r) => setDirectory(r.people))
+      .catch((err) => setDirectoryError((err as Error).message));
+  }, []);
+  const travelOf = useMemo(() => {
+    const byId = new Map<string, Travel>();
+    const byEmail = new Map<string, Travel>();
+    (directory || []).forEach((p) => {
+      const b = travelBucket(p.travelRequirement);
+      if (p.employeeId) byId.set(p.employeeId, b);
+      if (p.email) byEmail.set(p.email, b);
+    });
+    return (r: RequestListItem): Travel => byId.get(r.employeeId) ?? byEmail.get((r.email || "").toLowerCase()) ?? "unset";
+  }, [directory]);
+  const directoryHasTravel = (directory || []).some((p) => travelBucket(p.travelRequirement) !== "unset");
 
   useEffect(() => {
     api.requests("everything")
@@ -70,6 +111,7 @@ export default function Reports({
     const on = BASIS[basis].of;
     return rows.filter((r) => {
       if (department && r.department !== department) return false;
+      if (travel && travelOf(r) !== travel) return false;
       const date = on(r);
       // A claim with no date on the chosen basis has not reached that stage —
       // an unpaid claim has no payment date — so a date filter excludes it.
@@ -78,7 +120,7 @@ export default function Reports({
       if (to && date > to) return false;
       return true;
     });
-  }, [rows, basis, from, to, department]);
+  }, [rows, basis, from, to, department, travel, travelOf]);
 
   const claims = useMemo(
     () => (member ? departmentClaims.filter((r) => r.employeeId === member) : departmentClaims),
@@ -146,6 +188,26 @@ export default function Reports({
       .slice(0, 5);
   }, [departmentClaims]);
 
+  // With a travel requirement chosen: every person who has it (not only the five biggest claimers),
+  // with how many claims they have made, so the ones who never claim are visible too.
+  const travelPeople = (() => {
+    if (!travel) return [];
+    const byId = new Map<string, { employeeId: string; name: string; department: string; count: number; claimed: number }>();
+    (directory || []).forEach((p) => {
+      if (travelBucket(p.travelRequirement) !== travel) return;
+      if (department && p.department !== department) return;
+      if (p.employeeId) byId.set(p.employeeId, { employeeId: p.employeeId, name: p.name || p.employeeId, department: p.department, count: 0, claimed: 0 });
+    });
+    for (const r of departmentClaims) {
+      const e = byId.get(r.employeeId) ?? { employeeId: r.employeeId, name: r.employeeName, department: r.department, count: 0, claimed: 0 };
+      e.count += 1;
+      e.claimed += r.totalClaim;
+      byId.set(r.employeeId, e);
+    }
+    return [...byId.values()].sort((a, b) => b.claimed - a.claimed || a.name.localeCompare(b.name));
+  })();
+  const travelBiggest = travelPeople[0]?.claimed || 0;
+
   if (loading) return <Spinner />;
   if (error) return <Notice tone="error" items={[error]} />;
 
@@ -161,6 +223,7 @@ export default function Reports({
       ["Claims counted by", BASIS[basis].label],
       ["Period", period],
       ["Department", department || "All departments"],
+      ["Travel requirement", travel ? TRAVEL[travel] : "All"],
       ...(selectedMember ? [["Member", selectedMember.name] as [string, string]] : []),
     ],
     dateLabel: BASIS[basis].label,
@@ -201,6 +264,7 @@ export default function Reports({
           <p className="mt-0.5 text-xs text-slate-500">
             {BASIS[basis].label.toLowerCase()} · {period}
             {department ? ` · ${department}` : " · all departments"}
+            {travel ? ` · ${TRAVEL[travel]}` : ""}
           </p>
         </div>
         {/* A real report file, built from the filtered claims — not a print of this page. */}
@@ -216,7 +280,7 @@ export default function Reports({
 
       {/* One slim row: the filters sit above the figures on every scroll, so they stay small. */}
       <div className="card p-3 print:hidden [&_.field]:!h-8 [&_.field]:!py-0 [&_.field]:!text-xs [&_.label]:!mb-0.5 [&_.label]:!text-[11px]">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <label className="block">
             <span className="label">Count claims by</span>
             <select className="field" value={basis} onChange={(e) => setBasis(e.target.value as Basis)}>
@@ -232,6 +296,15 @@ export default function Reports({
           <label className="block">
             <span className="label">To</span>
             <input type="date" className="field" value={to} onChange={(e) => setTo(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="label">Travel requirement</span>
+            <select className="field" value={travel} onChange={(e) => setTravel(e.target.value as "" | Travel)}>
+              <option value="">Everyone</option>
+              {(Object.keys(TRAVEL) as Travel[]).map((k) => (
+                <option key={k} value={k}>{TRAVEL[k]}</option>
+              ))}
+            </select>
           </label>
           <label className="block">
             <span className="label">Department</span>
@@ -287,10 +360,16 @@ export default function Reports({
             </label>
           )}
         </div>
-        {(from || to || department || basis !== "submitted") && (
+        {directoryError && (
+          <p className="mt-2 text-xs text-rose-600">The travel requirement could not be read from 10MS: {directoryError}</p>
+        )}
+        {directory && !directoryHasTravel && (
+          <p className="mt-2 text-xs text-amber-700">The 10MS directory did not return a travel requirement for anyone, so this filter has nothing to group by yet.</p>
+        )}
+        {(from || to || department || travel || basis !== "submitted") && (
           <button
             className="mt-2 text-xs font-semibold text-brand-600 hover:underline"
-            onClick={() => { setFrom(""); setTo(""); setDepartment(""); setBasis("submitted"); }}
+            onClick={() => { setFrom(""); setTo(""); setDepartment(""); setTravel(""); setBasis("submitted"); }}
           >
             Clear filters
           </button>
@@ -317,7 +396,48 @@ export default function Reports({
       {/* Once someone has drilled down to one member, the claims table below
           already is their claims — a ranking with them as the only row on
           it would say nothing new. */}
-      {!member && (
+      {travel && (
+        <Card
+          title={`People — ${TRAVEL[travel]}`}
+          subtitle={`${travelPeople.length} ${travelPeople.length === 1 ? "person" : "people"}, ${travelPeople.filter((p) => p.count > 0).length} with claims in this period. Pick a name to see that person's claims below.`}
+          actions={member ? (
+            <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => setMember("")}>Show everyone</button>
+          ) : undefined}
+        >
+          {!travelPeople.length ? (
+            <Empty title="Nobody here" hint="No one with this travel requirement matches the department or dates chosen." />
+          ) : (
+            <ol className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
+              {travelPeople.map((p, i) => (
+                <li key={p.employeeId}>
+                  <button
+                    type="button"
+                    onClick={() => setMember(member === p.employeeId ? "" : p.employeeId)}
+                    className={`block w-full rounded-lg px-2 py-1 text-left hover:bg-slate-50 ${member === p.employeeId ? "bg-brand-50 ring-1 ring-brand-200" : ""}`}
+                  >
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 truncate text-sm font-medium text-slate-800">
+                        <span className="mr-2 inline-block w-5 text-xs font-bold tabular-nums text-slate-400">{i + 1}</span>
+                        {p.name}
+                        {p.department && <span className="ml-2 text-xs font-normal text-slate-400">{p.department}</span>}
+                      </span>
+                      <span className="shrink-0 text-sm font-semibold text-slate-900">
+                        <Money value={p.claimed} currency={currency} />
+                        <span className={`ml-2 text-xs font-normal ${p.count ? "text-slate-500" : "text-slate-300"}`}>{p.count} claim(s)</span>
+                      </span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full bg-chart-1" style={{ width: `${travelBiggest && p.claimed ? Math.max(2, (p.claimed / travelBiggest) * 100) : 0}%` }} />
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Card>
+      )}
+
+      {!member && !travel && (
         <Card
           title={department ? "Top 5 members by claim value" : "Top 5 teams by claim value"}
           subtitle={department ? `Who in ${department} is claiming the most over this period.` : "Who is claiming the most over this period."}
