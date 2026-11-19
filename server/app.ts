@@ -14,7 +14,7 @@ import {
   withLock, type Row,
 } from "./db.js";
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
-import { addressOf, bandForPosition, fetchOwnGroups, fetchPermissions, GROUP_FOR_ROLE, PERMISSION_FOR_ROLE, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
+import { addressOf, bandForPosition, fetchOwnGroups, listDirectoryPeople, type DirectoryPerson, fetchPermissions, GROUP_FOR_ROLE, PERMISSION_FOR_ROLE, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
 import { planClaimMail, planUnlockMail } from "./mail.js";
 import {
@@ -246,6 +246,33 @@ app.get("/api/employees", requireAuth, handler(async (req, res) => {
     // The 10MS core-team directory search, 50 at a time, so teammates are found by name, email or ID.
     const people = await searchAdmins(token, q, 50, { coreTeamOnly: true });
     res.json({ employees: people.filter((p) => p.employeeId !== req.session.employeeId) });
+  } catch (err) {
+    const e = err as TenMSVerifyError;
+    res.status(e.status || 502).json({ error: e.message });
+  }
+}));
+
+/**
+ * Everyone's `travel_requirement` from the 10MS directory, for the Approvals Dashboard's filter.
+ * Read with the caller's own 10MS token and kept for a few minutes, since the directory is read a
+ * page at a time. Only the roles that can open that dashboard may ask.
+ */
+let travelCache: { at: number; people: DirectoryPerson[] } | null = null;
+app.get("/api/reports/travel-requirements", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin", "hr", "finance")) {
+    res.status(403).json({ error: "Only Administration, HR and Finance can use this filter." });
+    return;
+  }
+  const token = String(req.headers["x-tenms-token"] || "");
+  if (!token) {
+    res.status(401).json({ error: "Your 10 Minute School session is needed to read the directory. Please sign in again." });
+    return;
+  }
+  try {
+    if (!travelCache || Date.now() - travelCache.at > 10 * 60_000) {
+      travelCache = { at: Date.now(), people: await listDirectoryPeople(token) };
+    }
+    res.json({ people: travelCache.people });
   } catch (err) {
     const e = err as TenMSVerifyError;
     res.status(e.status || 502).json({ error: e.message });

@@ -342,6 +342,12 @@ export const api = {
     }),
   removeInsideCityBlock: (email: string) =>
     call<{ ok: boolean }>(`/admin/inside-city-block/${encodeURIComponent(email)}`, { method: "DELETE" }),
+  /** Every person's travel requirement from the 10MS directory (Approvals Dashboard filter). */
+  travelRequirements: async () =>
+    call<{ people: { employeeId: string; email: string; name: string; department: string; travelRequirement: string }[] }>(
+      "/reports/travel-requirements",
+      { headers: { "X-TenMS-Token": (await auth.getAccessToken().catch(() => "")) || "" } },
+    ),
   employees: async (q: string) =>
     call<{ employees: EmployeeLite[] }>(`/employees?q=${encodeURIComponent(q)}`, {
       // The directory is searched with the person's own 10MS token.
