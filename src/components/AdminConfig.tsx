@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, GripVertical, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { api, type EmployeeLite } from "../api.js";
 import type { InsideCityBlockEntry, UnlockRequest } from "../../shared/types.js";
 import { sendMails } from "../lib/mail.js";
@@ -20,6 +20,17 @@ function BranchManager({
   // The branch being renamed, and the name typed so far.
   const [editing, setEditing] = useState<Record<string, string> | null>(null);
   const [editName, setEditName] = useState("");
+
+  // The claim form lists branches in this order, so moving one here moves it there. Branches are
+  // rows of the Lists tab among other lists, so the new order is written back into the same slots.
+  const [dragging, setDragging] = useState<Record<string, string> | null>(null);
+  async function move(from: Record<string, string>, to: Record<string, string>) {
+    if (from === to) return;
+    const order = branches.filter((b) => b !== from);
+    order.splice(order.indexOf(to) + (branches.indexOf(from) < branches.indexOf(to) ? 1 : 0), 0, from);
+    let i = 0;
+    await persist(rows.map((r) => (r.list_name === "OtherOffice" ? order[i++] : r)));
+  }
 
   async function rename() {
     if (!editing) return;
@@ -77,7 +88,16 @@ function BranchManager({
       <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
         {branches.length === 0 && <li className="px-3 py-3 text-sm text-slate-400">No branches yet.</li>}
         {branches.map((b) => (
-          <li key={b.value} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+          <li
+            key={b.value}
+            draggable={editing !== b && !busy}
+            onDragStart={() => setDragging(b)}
+            onDragEnd={() => setDragging(null)}
+            onDragOver={(e) => { if (dragging) e.preventDefault(); }}
+            onDrop={(e) => { e.preventDefault(); if (dragging) void move(dragging, b); setDragging(null); }}
+            className={`flex items-center justify-between gap-3 px-3 py-2 text-sm ${dragging === b ? "opacity-40" : ""}`}
+          >
+            <GripVertical size={16} className="-ml-1 shrink-0 cursor-grab text-slate-300" aria-hidden />
             {editing === b ? (
               <>
                 <input
@@ -108,8 +128,24 @@ function BranchManager({
               </>
             ) : (
               <>
-                <span className={`min-w-0 ${b.active === "No" ? "text-slate-400 line-through" : "text-slate-800"}`}>{b.label || b.value}</span>
+                <span className={`min-w-0 flex-1 ${b.active === "No" ? "text-slate-400 line-through" : "text-slate-800"}`}>{b.label || b.value}</span>
                 <div className="flex shrink-0 gap-1">
+                  <button
+                    className="flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"
+                    aria-label={`Move ${b.value} up`}
+                    disabled={busy || branches.indexOf(b) === 0}
+                    onClick={() => void move(b, branches[branches.indexOf(b) - 1])}
+                  >
+                    <ChevronUp size={16} />
+                  </button>
+                  <button
+                    className="flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30"
+                    aria-label={`Move ${b.value} down`}
+                    disabled={busy || branches.indexOf(b) === branches.length - 1}
+                    onClick={() => void move(b, branches[branches.indexOf(b) + 1])}
+                  >
+                    <ChevronDown size={16} />
+                  </button>
                   <button
                     className="flex size-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                     aria-label={`Rename ${b.value}`}
