@@ -31,6 +31,19 @@ export function money(n: number): number {
   return Math.round((Number(n) || 0) * 100) / 100;
 }
 
+/**
+ * A place name reduced to what identifies it, so "10MS HQ", "HQ" and "10 Minute School Head Office"
+ * count as the same place, and "Mirpur LC" as "Mirpur Learning Center".
+ */
+export function canonicalPlace(value: string): string {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/10\s*minutes?\s*school|10\s*ms/g, " ")
+    .replace(/head\s*quarters?|head\s*office/g, "hq")
+    .replace(/learning\s*(center|centre)/g, "lc")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 /** Seniority, most senior first. */
 const BAND_SENIORITY = ["A", "B", "C1", "C2", "D", "E"];
 
@@ -658,16 +671,18 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
   }
   // Getting between home and your own fixed workplace is a commute, not a claim: neither the trip
   // from home to it nor the trip from it back home is paid. Home to any other office is fine.
-  if (user.workplace) {
-    const norm = (v: string) => String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-    const wp = norm(user.workplace);
+  {
+    // A blank workplace on the 10MS record is treated as HQ, the same default the trip's starting
+    // point uses everywhere else in this form.
+    const norm = canonicalPlace;
+    const wp = norm(user.workplace || "HQ");
     const isHome = (v: string) => norm(v) === "home";
     const kind = policy.destinationTypes.find((d) => d.value === draft.destinationType);
     const toOwnWorkplace = draft.scope === "inside" && kind?.needs === "office" && norm(draft.purpose) === wp;
     const commute = (draft.startFrom === "home" && toOwnWorkplace)
       || draft.legs.some((l) => (isHome(l.travelFrom) && norm(l.travelTo) === wp) || (norm(l.travelFrom) === wp && isHome(l.travelTo)));
     if (commute) {
-      errors.push(`Travel between your home and your own workplace (${user.workplace}) can't be claimed. Home to a different office, or any other trip, can.`);
+      errors.push(`Travel between your home and your own workplace (${user.workplace || "HQ"}) can't be claimed. Home to a different office, or any other trip, can.`);
     }
   }
   if (draft.startFrom === "home" && !user.homeAddress) {

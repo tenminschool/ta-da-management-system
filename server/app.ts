@@ -102,7 +102,9 @@ function workplaceOf(value: unknown): string {
   if (typeof value === "string") return value.trim();
   if (value && typeof value === "object") {
     const o = value as Record<string, unknown>;
-    for (const k of ["name", "title", "label"]) if (typeof o[k] === "string") return (o[k] as string).trim();
+    for (const k of ["name", "title", "label", "office_name", "office", "branch", "location", "value"]) if (typeof o[k] === "string") return (o[k] as string).trim();
+    const first = Object.values(o).find((v) => typeof v === "string" && v.trim());
+    if (typeof first === "string") return first.trim();
   }
   return "";
 }
