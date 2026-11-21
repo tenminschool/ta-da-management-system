@@ -303,7 +303,7 @@ export default function RequestDetail({
               className="field min-h-24"
               value={disputeNote}
               onChange={(e) => setDisputeNote(e.target.value)}
-              placeholder="Nothing reached 01712345678 on 12 September. My bKash statement shows no credit that day."
+              placeholder="Nothing reached my bKash on 12 September. My bKash statement shows no credit that day."
             />
           </Field>
           {ackError && <Notice tone="error" items={[ackError]} />}
@@ -409,7 +409,7 @@ export default function RequestDetail({
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-slate-800">{l.travelFrom} → {l.travelTo}</p>
-                        <p className="mt-0.5 text-xs text-slate-500">{l.travelDate} · {l.mode}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{l.travelDate} · {l.mode}{l.rideType ? ` (${l.rideType})` : ""}</p>
                       </div>
                       <span className="shrink-0 text-sm font-bold text-slate-800">
                         <Money value={l.amount} currency={currency} />
@@ -433,7 +433,7 @@ export default function RequestDetail({
                     {r.legs.map((l, i) => (
                       <tr key={i}>
                         <td className="py-2 pr-3 text-slate-600">{l.travelDate}</td>
-                        <td className="py-2 pr-3 text-slate-600">{l.mode}</td>
+                        <td className="py-2 pr-3 text-slate-600">{l.mode}{l.rideType ? ` (${l.rideType})` : ""}</td>
                         <td className="py-2 pr-3 text-slate-600">{l.travelFrom} → {l.travelTo}</td>
                         <td className="py-2 text-right font-medium text-slate-800">
                           <Money value={l.amount} currency={currency} />

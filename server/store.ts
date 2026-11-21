@@ -193,15 +193,15 @@ function unpackTeam(cell: string | undefined): TeamMember[] {
 
 function packTrips(legs: Leg[]): string {
   return legs
-    .map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo, l.amount, l.note].join(" | "))
+    .map((l) => [l.travelDate, l.mode, l.travelFrom, l.travelTo, l.amount, l.note, l.rideType || ""].join(" | "))
     .join("\n");
 }
 
 function unpackTrips(cell: string | undefined): Leg[] {
   return lines(cell).map((line) => {
-    const [travelDate = "", mode = "", travelFrom = "", travelTo = "", amount = "", note = ""] =
+    const [travelDate = "", mode = "", travelFrom = "", travelTo = "", amount = "", note = "", rideType = ""] =
       line.split("|").map((s) => s.trim());
-    return { travelDate, mode, travelFrom, travelTo, amount: num(amount), note };
+    return { travelDate, mode, travelFrom, travelTo, amount: num(amount), note, rideType };
   });
 }
 

@@ -113,6 +113,7 @@ export default function NewRequest({
       const kept = d.legs.slice(keepFrom);
       const merged = implied.map((l, i) => ({
         ...l, mode: d.legs[i]?.mode || l.mode, amount: d.legs[i]?.amount ?? 0, note: d.legs[i]?.note ?? "",
+        rideType: d.legs[i]?.rideType ?? "",
       }));
       return { ...d, legs: [...merged, ...kept] };
     });
@@ -1181,10 +1182,36 @@ function LegsEditor({
       setRentACarModalFor(i);
     } else if (mode === "CompanyVehicle") {
       update(i, { mode, amount: 0, note: "Company vehicle — no reimbursement." });
+    } else if (mode === "RideSharing") {
+      // A bike is the usual ride, and the only one allowed on your own.
+      update(i, { mode, rideType: leg(i).rideType || "Bike" });
     } else {
-      update(i, { mode });
+      update(i, { mode, rideType: "" });
     }
   }
+  const leg = (i: number) => legs[i];
+
+  // Pathao / Uber: alone it is a bike; a team may also take a CNG or a car.
+  const rideTypes = draft.travelType === "team" ? ["Bike", "CNG", "Car"] : ["Bike"];
+  // Moving from a team trip to a solo one leaves a CNG or car choice that is no longer allowed.
+  useEffect(() => {
+    if (draft.travelType === "team") return;
+    if (legs.some((l) => l.mode === "RideSharing" && l.rideType !== "Bike")) {
+      set({ legs: legs.map((l) => (l.mode === "RideSharing" ? { ...l, rideType: "Bike" } : l)) });
+    }
+  }, [draft.travelType]); // eslint-disable-line react-hooks/exhaustive-deps
+  const rideSelect = (l: Leg, i: number) => l.mode !== "RideSharing" ? null : (
+    <div className="mt-2 flex items-center gap-2 text-sm">
+      <span className="text-xs font-semibold text-slate-500">Vehicle</span>
+      <select className="field !w-auto" value={l.rideType || ""} onChange={(e) => update(i, { rideType: e.target.value })}>
+        <option value="">Choose…</option>
+        {rideTypes.map((t) => <option key={t} value={t}>{t}</option>)}
+      </select>
+      <span className="text-xs text-slate-400">
+        {draft.travelType === "team" ? "Pathao / Uber bike, CNG or car" : "Pathao / Uber bike only"}
+      </span>
+    </div>
+  );
 
   const modeSelect = (leg: Leg, i: number) => (
     <select className="field" value={leg.mode} onChange={(e) => changeMode(i, e.target.value)}>
@@ -1297,6 +1324,7 @@ function LegsEditor({
                     <div className="w-36">{modeSelect(leg, i)}</div>
                     <div className="w-40">{amountCell(leg, i)}</div>
                   </div>
+                  {leg.mode === "RideSharing" && <div className="basis-full">{rideSelect(leg, i)}</div>}
                 </div>
               ) : (
                 /* A More Ways stop: same day, continuing from wherever the
@@ -1330,6 +1358,7 @@ function LegsEditor({
                       <Trash2 size={16} />
                     </button>
                   </div>
+                  {rideSelect(leg, i)}
                 </>
               )}
             </div>
@@ -1716,7 +1745,7 @@ function StepDocuments({
             inputMode="numeric"
             autoComplete="tel"
             maxLength={14}
-            placeholder="01712345678"
+            placeholder="01XXXXXXXXX"
             value={draft.bkashNumber}
             onChange={(e) => set({ bkashNumber: e.target.value })}
           />
@@ -1928,7 +1957,7 @@ function StepDocuments({
                     inputMode="numeric"
                     autoComplete="off"
                     maxLength={14}
-                    placeholder="01712345678"
+                    placeholder="01XXXXXXXXX"
                     value={m.bkashNumber}
                     onChange={(e) => {
                       const teamMembers = draft.teamMembers.map((x, idx) => (idx === i ? { ...x, bkashNumber: e.target.value } : x));
