@@ -309,6 +309,9 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
     push("CompanyVehicle", true);
     push("PersonalVehicle", true);
     push("RideSharing", true);
+    // One person rides a bike; a team can book a bike, CNG or car. Say so in the option.
+    const rs = out.find((o) => o.mode === "RideSharing");
+    if (rs) rs.label = ctx.travelType === "team" ? "Ride Sharing — Bike / CNG / Car (Pathao / Uber)" : "Ride Sharing — Bike (Pathao / Uber)";
     return out;
   }
 
