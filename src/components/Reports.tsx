@@ -4,7 +4,7 @@ import { api, type RequestListItem } from "../api.js";
 import type { Policy, SessionUser } from "../../shared/types.js";
 import { cfgStr } from "../../shared/policy.js";
 import { Card, Empty, Money, Notice, SearchInput, Spinner } from "./ui.js";
-import { downloadCsv, downloadPdf, type ReportInput } from "../lib/reportExport.js";
+import { downloadExcel, downloadPdf, type ReportInput } from "../lib/reportExport.js";
 
 /**
  * What the money did, for Administration, HR and Finance.
@@ -229,11 +229,11 @@ export default function Reports({
     dateLabel: BASIS[basis].label,
     dateOf: BASIS[basis].of,
   };
-  async function exportAs(kind: "pdf" | "csv") {
+  async function exportAs(kind: "pdf" | "excel") {
     setExporting(true);
     setExportError("");
     try {
-      if (kind === "csv") downloadCsv(reportInput);
+      if (kind === "excel") await downloadExcel(reportInput);
       else await downloadPdf(reportInput);
     } catch (err) {
       setExportError((err as Error).message || "The report could not be created.");
@@ -269,8 +269,8 @@ export default function Reports({
         </div>
         {/* A real report file, built from the filtered claims — not a print of this page. */}
         <div className="flex gap-2 print:hidden">
-          <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void exportAs("csv")} disabled={exporting}>
-            <FileSpreadsheet size={14} /> Download CSV
+          <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void exportAs("excel")} disabled={exporting}>
+            <FileSpreadsheet size={14} /> Download Excel
           </button>
           <button className="btn-ghost !px-3 !py-1.5 text-xs" onClick={() => void exportAs("pdf")} disabled={exporting}>
             {exporting ? <Loader2 size={14} className="animate-spin" /> : <FileDown size={14} />} Download PDF
