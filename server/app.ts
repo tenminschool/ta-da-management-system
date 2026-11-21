@@ -813,6 +813,7 @@ function normaliseDraft(raw: unknown): RequestDraft {
       travelTo: l.travelTo || "",
       amount: n(l.amount),
       note: l.note || "",
+      rideType: ["Bike", "CNG", "Car"].includes(String(l.rideType)) ? String(l.rideType) : "",
     })),
     officeMealTaken: !!d.officeMealTaken,
     dualWorkstation: !!d.dualWorkstation,

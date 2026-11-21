@@ -235,6 +235,8 @@ export interface Leg {
   travelTo: string;
   amount: number;
   note: string;
+  /** Ride sharing (Pathao / Uber) only: which vehicle was taken — Bike, CNG or Car. */
+  rideType?: string;
 }
 
 export interface RequestDraft {

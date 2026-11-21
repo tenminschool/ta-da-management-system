@@ -830,7 +830,7 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
         const bkash = String(v || "").replace(/[\s-]/g, "");
         if (!bkash) errors.push(`Enter the bKash number ${label} should be paid to.`);
         else if (!/^01[3-9]\d{8}$/.test(bkash)) {
-          errors.push(`${label}'s bKash number does not look right — it should be 11 digits starting 01, e.g. 01712345678.`);
+          errors.push(`${label}'s bKash number does not look right — it should be 11 digits starting with 01.`);
         }
       };
       // Team travel is paid out separately, one number per traveller — the
@@ -908,6 +908,18 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
       exceptionClaimed: draft.exceptionClaimed,
       carSpecialApproval: draft.carSpecialApproval,
     });
+    // Ride sharing (Pathao / Uber): alone it is a bike; a team may also take a CNG or a car.
+    if (draft.legs.some((l) => l.mode === "RideSharing")) {
+      const allowed = draft.travelType === "team" ? ["Bike", "CNG", "Car"] : ["Bike"];
+      for (const l of draft.legs.filter((x) => x.mode === "RideSharing")) {
+        if (!l.rideType) errors.push("Choose the vehicle for every ride-sharing trip.");
+        else if (!allowed.includes(l.rideType)) {
+          errors.push(draft.travelType === "team"
+            ? "Ride sharing can be a Pathao / Uber bike, CNG or car."
+            : "Ride sharing on your own is a Pathao / Uber bike only. CNG and car are for team travel.");
+        }
+      }
+    }
     for (const m of usedModes) {
       const chosen = opts.find((o) => o.mode === m);
       if (!chosen) errors.push(`${m} is not available for Band ${tripBandName}.`);
