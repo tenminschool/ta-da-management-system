@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { FileUp, Loader2, Trash2 } from "lucide-react";
 import { api } from "../api.js";
+import { sendMails } from "../lib/mail.js";
 import type { Policy, VehicleRegistration } from "../../shared/types.js";
 import { Card, Field, Notice, Spinner } from "./ui.js";
 
@@ -59,9 +60,10 @@ export function VehicleRegisterForm({
     setBusy(true);
     setError("");
     try {
-      const { vehicle } = await api.registerVehicle({
+      const { vehicle, mail } = await api.registerVehicle({
         vehicleType, model: model.trim(), fuelType, mileageKmPerLitre: mileage, imageLink,
       });
+      void sendMails(mail);
       onSubmitted(vehicle);
     } catch (err) {
       setError((err as Error).message);

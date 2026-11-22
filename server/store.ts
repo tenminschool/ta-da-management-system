@@ -435,6 +435,7 @@ export function toVehicle(r: Row & { _row: string }): VehicleRegistration & { _r
     reviewedBy: r.reviewed_by,
     reviewedAt: r.reviewed_at,
     reviewNote: r.review_note,
+    email: r.employee_email || "",
   };
 }
 
@@ -452,6 +453,7 @@ export function fromVehicle(v: VehicleRegistration): Row {
     reviewed_by: v.reviewedBy,
     reviewed_at: v.reviewedAt,
     review_note: v.reviewNote,
+    employee_email: v.email || "",
   };
 }
 

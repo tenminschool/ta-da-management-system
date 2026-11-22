@@ -16,7 +16,7 @@
  *
  * Mail never blocks a claim: a failure is logged and the request goes on.
  */
-import type { MailBatch, RequestRecord, UnlockRequest } from "../shared/types.js";
+import type { MailBatch, RequestRecord, UnlockRequest, VehicleRegistration } from "../shared/types.js";
 import { GROUP_FOR_ROLE, listDirectoryMembers, type DirectoryMember } from "./tenms.js";
 import { loadPolicy } from "./store.js";
 import { cfgStr } from "../shared/policy.js";
@@ -364,6 +364,71 @@ export async function planUnlockMail(
     return { url: MAIL_URL, from: MAIL_FROM, jobs: [{ to, subject: `[TA/DA] Your unlock request was ${approved ? "approved" : "rejected"}`, body }] };
   } catch (err) {
     console.warn(`[mail] unlock request ${request.requestId} could not be prepared:`, (err as Error).message);
+    return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
+  }
+}
+
+/**
+ * Mails about a personal-vehicle registration. A new one goes to everyone at the HR and admin
+ * desks, with a link to where they decide it; the decision goes back to the employee.
+ */
+export async function planVehicleMail(
+  vehicle: VehicleRegistration,
+  kind: "submitted" | "approved" | "rejected",
+  link: string,
+  token = "",
+): Promise<MailBatch> {
+  const row = (k: string, v: string) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#64748b">${esc(k)}</td><td style="padding:4px 0">${esc(v)}</td></tr>`;
+  const button = (path: string, label: string) => {
+    if (!link) return "";
+    const target = `${link.replace(/\/$/, "")}/${path}`;
+    return (
+      `<p style="margin:20px 0 6px"><a href="${esc(target)}" style="display:inline-block;background:#171717;color:#ffffff;` +
+      `text-decoration:none;font-weight:600;font-size:14px;padding:11px 20px;border-radius:8px">${esc(label)}</a></p>` +
+      `<p style="color:#64748b;font-size:12px;margin:0">Button not working? Open ${esc(target)}</p>`
+    );
+  };
+  const frame = (inner: string) =>
+    `<div style="font-family:Arial,sans-serif;color:#0f172a">${inner}` +
+    `<p style="color:#94a3b8;font-size:12px">This is an automatic message from the TA/DA system.</p></div>`;
+  const details =
+    `<table style="border-collapse:collapse;font-size:14px">` +
+      row("Employee", `${vehicle.employeeName} (${vehicle.employeeId})`) +
+      row("Vehicle", `${vehicle.vehicleType} — ${vehicle.model}`) +
+      row("Fuel", vehicle.fuelType) +
+      row("Mileage", `${vehicle.mileageKmPerLitre} km per litre`) +
+      (vehicle.imageLink ? row("Photo", vehicle.imageLink) : "") +
+    `</table>`;
+
+  try {
+    if (kind === "submitted") {
+      const to = [...new Set([...(await roleEmails("hr", token)), ...(await roleEmails("admin", token))])];
+      const body = frame(
+        `<p>Hello,</p><p><b>${esc(vehicle.employeeName)} has registered a personal vehicle and is waiting for approval.</b></p>` +
+        details + `<p>Approve or reject it under Vehicle Registrations.</p>` +
+        button("?view=desk-vehicles", "Review the vehicle"),
+      );
+      return { url: MAIL_URL, from: MAIL_FROM, jobs: to.map((email) => ({ to: email, subject: `[TA/DA] Vehicle registration from ${vehicle.employeeName}`, body })) };
+    }
+    const to = clean(vehicle.email);
+    if (!to) return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
+    const approved = kind === "approved";
+    const body = frame(
+      `<p>Hello ${esc(vehicle.employeeName)},</p>` +
+      `<p><b>Your vehicle registration was ${approved ? "approved" : "rejected"}.</b></p>` + details +
+      `<table style="border-collapse:collapse;font-size:14px">` +
+        row("Decided by", vehicle.reviewedBy.replace(/<.*>/, "").trim()) +
+        (vehicle.reviewNote ? row("Remark", vehicle.reviewNote) : "") +
+      `</table>` +
+      (approved
+        ? `<p>You can now claim trips with this vehicle.</p>`
+        : `<p>Please correct it and register again under Register your Vehicle.</p>`) +
+      button("", approved ? "File a claim" : "Open the TA/DA system"),
+    );
+    return { url: MAIL_URL, from: MAIL_FROM, jobs: [{ to, subject: `[TA/DA] Your vehicle registration was ${approved ? "approved" : "rejected"}`, body }] };
+  } catch (err) {
+    console.warn(`[mail] vehicle mail for ${vehicle.employeeId} could not be prepared:`, (err as Error).message);
     return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
   }
 }

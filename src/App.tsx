@@ -440,7 +440,7 @@ export default function App() {
             <Advances scope="desk" policy={policy} onOpen={openDetail} />
           )}
 
-          {view.name === "desk-vehicles" && <VehicleRegistrations policy={policy} />}
+          {view.name === "desk-vehicles" && <VehicleRegistrations policy={policy} canDelete={user.roles.includes("admin")} />}
 
           {view.name === "desk-payments" && (
             <RequestList

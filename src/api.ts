@@ -425,11 +425,13 @@ export const api = {
 
   myVehicle: () => call<{ vehicle: VehicleRegistration | null }>("/vehicles/mine"),
   registerVehicle: (payload: { vehicleType: string; model: string; fuelType: string; mileageKmPerLitre: number; imageLink?: string }) =>
-    post<{ vehicle: VehicleRegistration }>("/vehicles", payload),
+    post<{ vehicle: VehicleRegistration; mail?: MailBatch }>("/vehicles", payload),
   vehicles: (scope: "pending" | "all" = "pending") =>
     call<{ vehicles: VehicleRegistration[] }>(`/vehicles?scope=${scope}`),
   decideVehicle: (employeeId: string, action: "approve" | "reject", remarks: string) =>
-    post<{ vehicle: VehicleRegistration }>(`/vehicles/${encodeURIComponent(employeeId)}/decide`, { action, remarks }),
+    post<{ vehicle: VehicleRegistration; mail?: MailBatch }>(`/vehicles/${encodeURIComponent(employeeId)}/decide`, { action, remarks }),
+  deleteVehicle: (employeeId: string) =>
+    call<{ ok: true }>(`/vehicles/${encodeURIComponent(employeeId)}`, { method: "DELETE" }),
 
   advances: (scope: "mine" | "desk") =>
     call<{ requests: (RequestRecord & { myStep: AdvanceStep | null })[] }>(`/advances?scope=${scope}`),

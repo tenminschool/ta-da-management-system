@@ -95,7 +95,7 @@ export const TABS: TabSpec[] = [
     headers: [
       "employee_id", "employee_name", "vehicle_type", "model", "fuel_type",
       "mileage_km_per_litre", "image_link", "status", "submitted_at",
-      "reviewed_by", "reviewed_at", "review_note",
+      "reviewed_by", "reviewed_at", "review_note", "employee_email",
     ],
   },
 
