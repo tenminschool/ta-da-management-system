@@ -27,7 +27,9 @@
   // Plain (non-secret) settings. Secrets go in with `wrangler secret put`, see README.
   "vars": {
     // The address emails link to, e.g. https://ta-da.your-domain.com (no trailing slash).
-    "APP_URL": ""
+    "APP_URL": "",
+    // Mails are posted to Postal from the Worker; any Postal refuses are still posted by the browser.
+    "SERVER_MAIL": "1"
   }
 
   // Recommended: Hyperdrive keeps database connections warm and close to the database.
