@@ -83,6 +83,16 @@ export default function App() {
       url.searchParams.delete("view");
       window.history.replaceState(null, "", url.pathname + url.search + url.hash);
     }
+    if (user && policy && pendingView.current === "desk-vehicles") {
+      pendingView.current = "";
+      if (user.roles.some((r) => ["admin", "hr"].includes(r))) {
+        setWorkspace("desk");
+        setView({ name: "desk-vehicles" });
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete("view");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    }
     if (!user || !policy || !pendingRequest.current) return;
     const requestId = pendingRequest.current;
     pendingRequest.current = "";
