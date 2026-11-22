@@ -150,6 +150,8 @@ export interface VehicleRegistration {
   reviewedBy: string;
   reviewedAt: string;
   reviewNote: string;
+  /** The employee's email, kept so the decision can be mailed back to them. */
+  email?: string;
 }
 
 /**

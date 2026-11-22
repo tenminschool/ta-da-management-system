@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Trash2 } from "lucide-react";
 import { api } from "../api.js";
+import { sendMails } from "../lib/mail.js";
 import type { Policy, VehicleRegistration } from "../../shared/types.js";
 import { cfgStr } from "../../shared/policy.js";
 import { Card, Empty, Field, Modal, Money, Notice, Spinner } from "./ui.js";
@@ -12,7 +13,7 @@ import { Card, Empty, Field, Modal, Money, Notice, Spinner } from "./ui.js";
  * rather than adding another, so there is never more than one open decision
  * per person.
  */
-export default function VehicleRegistrations({ policy }: { policy: Policy }) {
+export default function VehicleRegistrations({ policy, canDelete = false }: { policy: Policy; canDelete?: boolean }) {
   const [tab, setTab] = useState<"pending" | "all">("pending");
   const [rows, setRows] = useState<VehicleRegistration[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,6 +33,16 @@ export default function VehicleRegistrations({ policy }: { policy: Policy }) {
     }
   }
   useEffect(() => { load(); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function remove(v: VehicleRegistration) {
+    if (!window.confirm(`Delete ${v.employeeName}'s registered vehicle (${v.model})? They will have to register again.`)) return;
+    try {
+      await api.deleteVehicle(v.employeeId);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
 
   const rateFor = (v: VehicleRegistration) => {
     const fuel = policy.fuelTypes.find((f) => f.value === v.fuelType);
@@ -104,13 +115,18 @@ export default function VehicleRegistrations({ policy }: { policy: Policy }) {
                     <span className="text-xs text-slate-400">
                       <Money value={rateFor(v)} currency={currency} />/km
                     </span>
-                    {v.status === "pending" && (
-                      <div className="flex gap-2">
+                    <div className="flex gap-2">
+                      {v.status === "pending" && (
                         <button className="btn-success !py-1.5 text-xs" onClick={() => setDeciding(v)}>
                           <Check size={13} /> Decide
                         </button>
-                      </div>
-                    )}
+                      )}
+                      {canDelete && (
+                        <button className="btn-danger !py-1.5 text-xs" onClick={() => void remove(v)}>
+                          <Trash2 size={13} /> Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </li>
               ))}
@@ -164,11 +180,18 @@ export default function VehicleRegistrations({ policy }: { policy: Policy }) {
                         {v.submittedAt ? new Date(v.submittedAt).toLocaleDateString() : "—"}
                       </td>
                       <td className="px-3 py-3 text-right">
-                        {v.status === "pending" && (
-                          <button className="btn-success !px-2.5 !py-1 text-xs" onClick={() => setDeciding(v)}>
-                            <Check size={13} /> Decide
-                          </button>
-                        )}
+                        <div className="flex justify-end gap-2">
+                          {v.status === "pending" && (
+                            <button className="btn-success !px-2.5 !py-1 text-xs" onClick={() => setDeciding(v)}>
+                              <Check size={13} /> Decide
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button className="btn-danger !px-2.5 !py-1 text-xs" onClick={() => void remove(v)}>
+                              <Trash2 size={13} /> Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -205,7 +228,8 @@ function DecideVehicleModal({
     setBusy(true);
     setError("");
     try {
-      await api.decideVehicle(vehicle.employeeId, action, remarks.trim());
+      const { mail } = await api.decideVehicle(vehicle.employeeId, action, remarks.trim());
+      void sendMails(mail);
       onDone();
     } catch (err) {
       setError((err as Error).message);

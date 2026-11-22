@@ -16,7 +16,7 @@ import {
 import { hasRole, signToken, verifyToken, type Session } from "./auth.js";
 import { addressOf, bandForPosition, fetchOwnGroups, listDirectoryPeople, type DirectoryPerson, fetchPermissions, GROUP_FOR_ROLE, PERMISSION_FOR_ROLE, resolveSupervisor, searchAdmins, TenMSVerifyError, verifyAccessToken } from "./tenms.js";
 import { documentFileName, MAX_UPLOAD_BYTES, planUpload, UploadError } from "./uploads.js";
-import { planClaimMail, planUnlockMail } from "./mail.js";
+import { planClaimMail, planUnlockMail, planVehicleMail } from "./mail.js";
 import {
   deptHeadIdFor, getClaimUnlock, fromInsideCityBlockEntry, fromRequest, fromUnlockRequest, fromVehicle, insideCityBlockedEmails,
   invalidateInsideCityBlock, invalidatePolicy, loadPolicy, managesOthers, setClaimUnlock, nextRequestId, nextUnlockRequestId,
@@ -2309,6 +2309,7 @@ app.post("/api/vehicles", requireAuth, handler(async (req, res) => {
     reviewedBy: "",
     reviewedAt: "",
     reviewNote: "",
+    email: req.session.email,
   };
 
   const rows = await readTab("Vehicles");
@@ -2316,7 +2317,7 @@ app.post("/api/vehicles", requireAuth, handler(async (req, res) => {
   if (existing) await updateRow("Vehicles", existing._row, fromVehicle(record));
   else await appendRow("Vehicles", fromVehicle(record));
 
-  res.json({ vehicle: record });
+  res.json({ vehicle: record, mail: await planVehicleMail(record, "submitted", appLink(req), String(req.headers["x-tenms-token"] || "")) });
 }));
 
 /** The vehicles HR/Admin have to decide on — or everyone's, for a full register. */
@@ -2360,7 +2361,20 @@ app.post("/api/vehicles/:employeeId/decide", requireAuth, handler(async (req, re
     reviewNote: remarks,
   };
   await updateRow("Vehicles", _row, fromVehicle(updated));
-  res.json({ vehicle: updated });
+  res.json({ vehicle: updated, mail: await planVehicleMail(updated, action === "approved" ? "approved" : "rejected", appLink(req), String(req.headers["x-tenms-token"] || "")) });
+}));
+
+/** Admin only: removes a registered vehicle outright, whatever its status. */
+app.delete("/api/vehicles/:employeeId", requireAuth, handler(async (req, res) => {
+  if (!hasRole(req.session, "admin")) {
+    res.status(403).json({ error: "Only an admin can delete a registered vehicle." });
+    return;
+  }
+  const rows = await readTab("Vehicles");
+  const row = rows.find((r) => r.employee_id === req.params.employeeId);
+  if (!row) { res.status(404).json({ error: "No vehicle registration for that employee." }); return; }
+  await clearRow("Vehicles", row._row);
+  res.json({ ok: true });
 }));
 
 app.post("/api/admin/tabs/:tab", requireAuth, handler(async (req, res) => {
