@@ -168,6 +168,7 @@ export const TABS: TabSpec[] = [
       ["HR_MAIL_TO", "", "Email addresses (comma-separated) that get the mail when a claim reaches HR. Blank = everyone in the 10MS HR/admin groups. Mail only: roles still come from 10MS.", "2026-01-01"],
       ["FINANCE_MAIL_TO", "", "Email addresses (comma-separated) that get the mail when a claim reaches Finance. Blank = everyone in the 10MS finance group. Mail only: roles still come from 10MS.", "2026-01-01"],
       ["SETTLE_BEFORE_NEW_CLAIM", "Yes", "Yes: a new claim can't be submitted until the last paid one is confirmed received. No: claims can be submitted any time.", "2026-01-01"],
+      ["POLICY_BOOK_URL", "", "Google Drive link of the Policy Book PDF (shared as Anyone with the link can view). Shown to every user under Policy Book.", "2026-01-01"],
       ["REQUEST_ID_PREFIX", "TA", "Prefix used when generating request numbers", "2026-01-01"],
     ],
   },

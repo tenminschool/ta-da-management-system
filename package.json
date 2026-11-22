@@ -19,6 +19,7 @@
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.9",
     "lucide-react": "^0.546.0",
+    "pdfjs-dist": "^6.5.438",
     "pg": "^8.23.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Banknote, Car, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
+  Banknote, BookOpen, Car, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
   Menu, Plus, Settings, ShieldCheck, User, Wallet,
 } from "lucide-react";
 import { useTenMSAuth } from "@tenminuteschool/auth-admin-react";
@@ -17,6 +17,7 @@ import AdminConfig from "./components/AdminConfig.js";
 import Reports from "./components/Reports.js";
 import VehicleRegistrations from "./components/VehicleRegistrations.js";
 import VehicleRegisterPage from "./components/VehicleRegister.js";
+import PolicyBook from "./components/PolicyBook.js";
 import { Spinner, UserMenu } from "./components/ui.js";
 
 /**
@@ -194,6 +195,7 @@ export default function App() {
     { key: "my-requests", label: "My Requests", short: "Claims", icon: FileText },
     { key: "my-payments", label: "My Payments", short: "Paid", icon: Wallet },
     { key: "my-vehicle", label: "Register your Vehicle", short: "Vehicle", icon: Car },
+    { key: "policy-book", label: "Policy Book", short: "Policy", icon: BookOpen },
   ];
 
   const deskNav: NavItem[] = ([
@@ -420,6 +422,7 @@ export default function App() {
           )}
 
           {view.name === "my-vehicle" && <VehicleRegisterPage policy={policy} />}
+          {view.name === "policy-book" && <PolicyBook />}
 
           {/* ── Approval Desk workspace ── */}
           {view.name === "desk-pending" && (

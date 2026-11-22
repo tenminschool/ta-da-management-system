@@ -312,6 +312,63 @@ function SettleRule({
   );
 }
 
+/** POLICY_BOOK_URL in the Config tab: the Google Drive link of the Policy Book PDF everyone can read. */
+function PolicyBookLink({
+  rows, cols, onSaved,
+}: { rows: Record<string, string>[]; cols: string[]; onSaved: (rows: Record<string, string>[]) => void }) {
+  const KEY = "POLICY_BOOK_URL";
+  const current = rows.find((r) => r.key === KEY)?.value ?? "";
+  const [value, setValue] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    const link = value.trim();
+    if (link && !/^https:\/\/(drive|docs)\.google\.com\//.test(link)) {
+      setError("Paste a Google Drive link (https://drive.google.com/file/d/…).");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setSaved(false);
+    const row = rows.find((r) => r.key === KEY);
+    const updated = row
+      ? rows.map((r) => (r === row ? { ...r, value: link } : r))
+      : [...rows, { key: KEY, value: link, description: "Google Drive link of the Policy Book PDF.", effective_from: new Date().toISOString().slice(0, 10) }];
+    try {
+      await api.saveTab("Config", updated.map((r) => Object.fromEntries(cols.map((c) => [c, r[c] ?? ""]))));
+      onSaved(updated);
+      setSaved(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Policy Book"
+      subtitle="Paste the Google Drive link of the PDF. Share it as “Anyone with the link can view”. Everyone sees it under Policy Book in the sidebar, as pages they can turn — no download."
+    >
+      {error && <div className="mb-3"><Notice tone="error" items={[error]} /></div>}
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className="field min-w-0 flex-1"
+          placeholder="https://drive.google.com/file/d/…/view"
+          value={value}
+          onChange={(e) => { setValue(e.target.value); setSaved(false); }}
+        />
+        <button className="btn-primary" disabled={busy || value.trim() === current} onClick={() => void save()}>
+          {busy ? <Loader2 size={16} className="animate-spin" /> : "Save"}
+        </button>
+        {saved && <span className="text-sm text-emerald-600">Saved</span>}
+      </div>
+    </Card>
+  );
+}
+
 const DESCRIPTIONS: Record<string, string> = {
   Config: "Rates, limits and thresholds. Change a value here and every calculation follows it immediately.",
   BandPolicy: "Per-band transport lists (male / female), outside-city weekday & weekend rates, accommodation limit, flight and car-pool eligibility.",
@@ -392,6 +449,13 @@ export default function AdminConfig({ canEditPolicy = true }: { canEditPolicy?: 
       <InsideCityBlockManager />
       {canEditPolicy && headers.Config && (
         <SettleRule
+          rows={data.Config || []}
+          cols={headers.Config}
+          onSaved={(next) => setData((d) => ({ ...d, Config: next }))}
+        />
+      )}
+      {canEditPolicy && headers.Config && (
+        <PolicyBookLink
           rows={data.Config || []}
           cols={headers.Config}
           onSaved={(next) => setData((d) => ({ ...d, Config: next }))}

@@ -214,6 +214,52 @@ app.get("/api/policy", requireAuth, handler(async (_req, res) => {
 }));
 
 /**
+ * The Policy Book: a PDF whose Google Drive link the admin pastes into POLICY_BOOK_URL (Config).
+ * The server fetches it and hands the bytes to the signed-in user's browser, which draws the pages
+ * itself — there is no Drive page, toolbar or download button in between.
+ */
+let policyBookCache: { url: string; at: number; bytes: Buffer } | null = null;
+
+function driveFileId(link: string): string {
+  return link.match(/\/d\/([\w-]{10,})/)?.[1] || link.match(/[?&]id=([\w-]{10,})/)?.[1] || "";
+}
+
+async function fetchPolicyBook(link: string): Promise<Buffer> {
+  const id = driveFileId(link);
+  const candidates = id
+    ? [
+        `https://drive.google.com/uc?export=download&id=${id}`,
+        `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t`,
+      ]
+    : [link];
+  for (const url of candidates) {
+    const r = await fetch(url, { redirect: "follow" }).catch(() => null);
+    if (!r || !r.ok) continue;
+    const bytes = Buffer.from(await r.arrayBuffer());
+    if (bytes.subarray(0, 5).toString() === "%PDF-") return bytes;
+  }
+  throw new Error("The Policy Book could not be read. The Drive link must be a PDF shared as 'Anyone with the link can view'.");
+}
+
+app.get("/api/policy-book", requireAuth, handler(async (_req, res) => {
+  const link = String((await loadPolicy()).config.POLICY_BOOK_URL || "").trim();
+  if (!link) {
+    res.status(404).json({ error: "The Policy Book has not been added yet." });
+    return;
+  }
+  if (!policyBookCache || policyBookCache.url !== link || Date.now() - policyBookCache.at > 10 * 60_000) {
+    policyBookCache = { url: link, at: Date.now(), bytes: await fetchPolicyBook(link) };
+  }
+  res.set({
+    "Content-Type": "application/pdf",
+    "Content-Disposition": "inline",
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  res.send(policyBookCache.bytes);
+}));
+
+/**
  * Employee lookup for the team-member picker: searches the 10MS directory with
  * the caller's own 10MS token, which the browser sends alongside the app token.
  */
