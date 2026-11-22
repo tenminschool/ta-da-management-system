@@ -28,7 +28,7 @@
   "vars": {
     // The address emails link to, e.g. https://ta-da.your-domain.com (no trailing slash).
     "APP_URL": "",
-    // Mails are posted to Postal from the Worker; any Postal refuses are still posted by the browser.
+    // Mails are posted to Postal from the Worker; the browser sends none.
     "SERVER_MAIL": "1"
   }
 
