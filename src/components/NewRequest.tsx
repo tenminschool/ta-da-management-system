@@ -475,11 +475,9 @@ function StepTravelType({
                 <Field label={route.from === "Dhaka" ? "From which Dhaka office are you travelling?" : "Which Dhaka office are you going to?"} required>
                   <select className="field" value={draft.dhakaOffice} onChange={(e) => set({ dhakaOffice: e.target.value })}>
                     <option value="">Select an office</option>
-                    {policy.otherOffices.map((o) => {
-                      // Home to your own workplace is a commute, so that office can't be picked from home.
-                      const own = draft.startFrom === "home" && canonicalPlace(o) === canonicalPlace(user.workplace || "HQ");
-                      return <option key={o} value={o} disabled={own}>{own ? `${o} — your own workplace` : o}</option>;
-                    })}
+                    {policy.otherOffices.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
                   </select>
                 </Field>
               )}
@@ -568,9 +566,11 @@ function StepTravelType({
                 <Field label="Office name" required>
                   <select className="field" value={draft.purpose} onChange={(e) => set({ purpose: e.target.value })}>
                     <option value="">Select an office</option>
-                    {policy.otherOffices.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
+                    {policy.otherOffices.map((o) => {
+                      // Home to your own workplace is a commute, so that office can't be picked from home.
+                      const own = draft.startFrom === "home" && canonicalPlace(o) === canonicalPlace(user.workplace || "HQ");
+                      return <option key={o} value={o} disabled={own}>{own ? `${o} — your own workplace` : o}</option>;
+                    })}
                   </select>
                 </Field>
               )}
