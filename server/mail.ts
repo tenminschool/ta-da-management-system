@@ -279,7 +279,7 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
  * Never throws; a failure here just means no mails for the event.
  * `link` is where the app is reachable, for the "open" link in the mail.
  */
-export async function planClaimMail(record: RequestRecord, event: ClaimEvent, link: string, token = ""): Promise<MailBatch> {
+async function planClaimMailPlan(record: RequestRecord, event: ClaimEvent, link: string, token = ""): Promise<MailBatch> {
   try {
     const recipients = await recipientsFor(record, event, token);
     if (!recipients.size) console.warn(`[mail] ${record.requestId}: nobody to notify — no email addresses on the claim.`);
@@ -305,7 +305,7 @@ export async function planClaimMail(record: RequestRecord, event: ClaimEvent, li
  * desks (ADMIN_EMAILS / HR_EMAILS) with a link to where they decide it; the decision goes back to
  * the person who asked, with the HR remark and how long the unlock stays open.
  */
-export async function planUnlockMail(
+async function planUnlockMailPlan(
   request: UnlockRequest,
   kind: "requested" | "approved" | "rejected",
   link: string,
@@ -372,7 +372,7 @@ export async function planUnlockMail(
  * Mails about a personal-vehicle registration. A new one goes to everyone at the HR and admin
  * desks, with a link to where they decide it; the decision goes back to the employee.
  */
-export async function planVehicleMail(
+async function planVehicleMailPlan(
   vehicle: VehicleRegistration,
   kind: "submitted" | "approved" | "rejected",
   link: string,
@@ -431,4 +431,57 @@ export async function planVehicleMail(
     console.warn(`[mail] vehicle mail for ${vehicle.employeeId} could not be prepared:`, (err as Error).message);
     return { url: MAIL_URL, from: MAIL_FROM, jobs: [] };
   }
+}
+
+/**
+ * Server-side sending (SERVER_MAIL=1, set for the Cloudflare deployment). Each mail is posted to
+ * Postal from here with the acting person's own 10MS token. Anything Postal turns away is left in
+ * the batch, so the browser still posts it as before — a mail is never lost to the switch.
+ */
+const SEND_TIMEOUT_MS = 8000;
+async function deliver(batch: MailBatch, token: string): Promise<MailBatch> {
+  if (process.env.SERVER_MAIL !== "1" || !token || !batch.jobs.length) return batch;
+  const left: MailBatch["jobs"] = [];
+  await Promise.all(batch.jobs.map(async (job) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
+    try {
+      const res = await fetch(batch.url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "mail", from: batch.from, to: [job.to], cc: [], bcc: [], subject: job.subject, body: job.body, html: true }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) throw new Error(`${res.status} ${(await res.text().catch(() => "")).slice(0, 120)}`);
+    } catch (err) {
+      console.warn(`[mail] server could not send to ${job.to}, leaving it for the browser:`, (err as Error).message);
+      left.push(job);
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+  return { ...batch, jobs: left };
+}
+
+export async function planClaimMail(record: RequestRecord, event: ClaimEvent, link: string, token = ""): Promise<MailBatch> {
+  return deliver(await planClaimMailPlan(record, event, link, token), token);
+}
+
+export async function planUnlockMail(
+  request: UnlockRequest,
+  kind: "requested" | "approved" | "rejected",
+  link: string,
+  token = "",
+  unlockDays = 2,
+): Promise<MailBatch> {
+  return deliver(await planUnlockMailPlan(request, kind, link, token, unlockDays), token);
+}
+
+export async function planVehicleMail(
+  vehicle: VehicleRegistration,
+  kind: "submitted" | "approved" | "rejected",
+  link: string,
+  token = "",
+): Promise<MailBatch> {
+  return deliver(await planVehicleMailPlan(vehicle, kind, link, token), token);
 }
