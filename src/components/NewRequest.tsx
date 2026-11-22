@@ -307,8 +307,9 @@ function Stepper({ step, onStep }: { step: number; onStep: (n: number) => void }
 
 /** Under a "Travelling from: Home" choice: the address being used, or what to do when there is none. */
 function HomeStart({ user }: { user: SessionUser }) {
-  // The address itself is never shown: the trip just reads "Home".
-  return user.homeAddress ? null : (
+  return user.homeAddress ? (
+    <p className="text-xs text-slate-500">Home address: {user.homeAddress}</p>
+  ) : (
     <Notice tone="warn" items={["Your home address is not in the system. Please update it in the system first, then come back to claim a trip from home."]} />
   );
 }
@@ -1088,6 +1089,7 @@ function StepTransport({
         legModes={modes}
         policy={policy}
         myVehicle={myVehicle}
+        homeAddress={draft.startFrom === "home" ? user.homeAddress : undefined}
         onVehicleChange={onVehicleChange}
         title={inside ? "Trips taken" : "Travel tickets"}
         subtitle={
@@ -1148,7 +1150,7 @@ function StepTransport({
 const PER_TRAVELLER_MODES = new Set(["Bus", "Train", "Flight"]);
 
 function LegsEditor({
-  draft, set, currency, title, subtitle, autoCount, chained = false, legModes, policy, myVehicle, onVehicleChange,
+  draft, set, currency, title, subtitle, autoCount, chained = false, legModes, policy, myVehicle, onVehicleChange, homeAddress,
 }: {
   draft: RequestDraft;
   set: (p: Partial<RequestDraft>) => void;
@@ -1163,6 +1165,8 @@ function LegsEditor({
   policy: Policy;
   myVehicle: VehicleRegistration | null | undefined;
   onVehicleChange: (v: VehicleRegistration) => void;
+  /** Shown in small print under a trip that starts or ends at Home. */
+  homeAddress?: string;
 }) {
   const legs = draft.legs;
   const teamSize = draft.travelType === "team" ? draft.teamMembers.length + 1 : 1;
@@ -1319,6 +1323,9 @@ function LegsEditor({
                       {leg.travelFrom || "—"} → {leg.travelTo || "—"}
                     </p>
                     <p className="text-xs text-slate-500">{leg.travelDate || "—"}</p>
+                    {homeAddress && (leg.travelFrom === "Home" || leg.travelTo === "Home") && (
+                      <p className="truncate text-xs text-slate-400">Home: {homeAddress}</p>
+                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <div className="w-36">{modeSelect(leg, i)}</div>
