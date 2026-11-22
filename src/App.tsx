@@ -192,7 +192,6 @@ export default function App() {
     { key: "new", label: "New Request", short: "New", icon: Plus },
     { key: "dashboard", label: "Dashboard", short: "Home", icon: LayoutDashboard },
     { key: "my-requests", label: "My Requests", short: "Claims", icon: FileText },
-    { key: "my-advance", label: "My Advance", short: "Advance", icon: HandCoins },
     { key: "my-payments", label: "My Payments", short: "Paid", icon: Wallet },
     { key: "my-vehicle", label: "Register your Vehicle", short: "Vehicle", icon: Car },
   ];
@@ -407,10 +406,6 @@ export default function App() {
               onOpen={openDetail}
               onClearGroup={() => setView({ name: "my-requests" })}
             />
-          )}
-
-          {view.name === "my-advance" && (
-            <Advances scope="mine" policy={policy} onOpen={openDetail} />
           )}
 
           {view.name === "my-payments" && (
