@@ -435,13 +435,16 @@ async function planVehicleMailPlan(
 
 /**
  * Server-side sending (SERVER_MAIL=1, set for the Cloudflare deployment). Each mail is posted to
- * Postal from here with the acting person's own 10MS token. Anything Postal turns away is left in
- * the batch, so the browser still posts it as before — a mail is never lost to the switch.
+ * Postal from here with the acting person's own 10MS token, and the browser is sent nothing — an
+ * empty batch. A mail Postal refuses is logged (Worker logs, "[mail] server could not send").
  */
 const SEND_TIMEOUT_MS = 8000;
 async function deliver(batch: MailBatch, token: string): Promise<MailBatch> {
-  if (process.env.SERVER_MAIL !== "1" || !token || !batch.jobs.length) return batch;
-  const left: MailBatch["jobs"] = [];
+  if (process.env.SERVER_MAIL !== "1" || !batch.jobs.length) return batch;
+  if (!token) {
+    console.warn("[mail] server mail is on but no 10MS token came with the request; mails not sent.");
+    return { ...batch, jobs: [] };
+  }
   await Promise.all(batch.jobs.map(async (job) => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), SEND_TIMEOUT_MS);
@@ -454,13 +457,12 @@ async function deliver(batch: MailBatch, token: string): Promise<MailBatch> {
       });
       if (!res.ok) throw new Error(`${res.status} ${(await res.text().catch(() => "")).slice(0, 120)}`);
     } catch (err) {
-      console.warn(`[mail] server could not send to ${job.to}, leaving it for the browser:`, (err as Error).message);
-      left.push(job);
+      console.warn(`[mail] server could not send to ${job.to}:`, (err as Error).message);
     } finally {
       clearTimeout(timer);
     }
   }));
-  return { ...batch, jobs: left };
+  return { ...batch, jobs: [] };
 }
 
 export async function planClaimMail(record: RequestRecord, event: ClaimEvent, link: string, token = ""): Promise<MailBatch> {
