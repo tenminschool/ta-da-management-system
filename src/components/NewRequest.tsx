@@ -4,7 +4,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import {
-  addDays, bankPayoutAllowed, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, isWeekend, partyBand,
+  addDays, bankPayoutAllowed, canonicalPlace, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, isWeekend, partyBand,
   impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, teamPayoutSplit, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, RequestRecord, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
@@ -339,6 +339,11 @@ function StepTravelType({
   const [contactHrOpen, setContactHrOpen] = useState(false);
   const refreshMyUnlocks = () => api.unlockRequests("mine").then((r) => setMyUnlocks(r.requests)).catch(() => {});
   useEffect(() => { refreshMyUnlocks(); }, []);
+  // Switching to Home after picking your own workplace as the office: that pair is a commute, so clear it.
+  useEffect(() => {
+    if (draft.startFrom === "home" && draft.purpose && canonicalPlace(draft.purpose) === canonicalPlace(user.workplace || "HQ")
+      && policy.otherOffices.includes(draft.purpose)) set({ purpose: "" });
+  }, [draft.startFrom]); // eslint-disable-line react-hooks/exhaustive-deps
   const latestUnlock = myUnlocks[0];
   // A declined unlock can be closed. Remembered per request in this browser, so it stays gone after a
   // refresh, while a newer decision (a different request) still shows.
@@ -470,9 +475,11 @@ function StepTravelType({
                 <Field label={route.from === "Dhaka" ? "From which Dhaka office are you travelling?" : "Which Dhaka office are you going to?"} required>
                   <select className="field" value={draft.dhakaOffice} onChange={(e) => set({ dhakaOffice: e.target.value })}>
                     <option value="">Select an office</option>
-                    {policy.otherOffices.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
+                    {policy.otherOffices.map((o) => {
+                      // Home to your own workplace is a commute, so that office can't be picked from home.
+                      const own = draft.startFrom === "home" && canonicalPlace(o) === canonicalPlace(user.workplace || "HQ");
+                      return <option key={o} value={o} disabled={own}>{own ? `${o} — your own workplace` : o}</option>;
+                    })}
                   </select>
                 </Field>
               )}
