@@ -686,6 +686,9 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
       || draft.legs.some((l) => (isHome(l.travelFrom) && norm(l.travelTo) === wp) || (norm(l.travelFrom) === wp && isHome(l.travelTo)));
     if (commute) {
       errors.push(`Travel between your home and your own workplace (${user.workplace || "HQ"}) can't be claimed. Home to a different office, or any other trip, can.`);
+    } else if (draft.startFrom !== "home" && toOwnWorkplace) {
+      // Starting from your own office, that same office can't be where you went.
+      errors.push(`You are travelling from your own workplace (${user.workplace || "HQ"}), so it can't also be the office you went to. Pick a different office.`);
     }
   }
   if (draft.startFrom === "home" && !user.homeAddress) {
