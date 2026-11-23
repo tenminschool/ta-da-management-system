@@ -2,17 +2,15 @@
  * Claim notifications, sent through the 10MS Postal service.
  *
  * Who hears about what:
- *   submitted          → every traveller's supervisor (the submitter's own one is asked to act),
- *                        and the travellers themselves
- *   supervisor approved → HR (to act) and the travellers
- *   HR approved        → Finance (to act), the travellers and their supervisors
- *   Finance approved   → HR, the travellers and their supervisors
- *   rejected / returned → the travellers
- *   paid               → the travellers (asked to confirm the money arrived) and their supervisors
+ *   submitted           → the supervisor (to act) and the submitter
+ *   supervisor approved → HR and admin desks only (to act)
+ *   HR/admin approved   → Finance desk only (to act)
+ *   Finance approved    → the submitter only
+ *   paid                → the submitter only (asked to confirm the money arrived)
+ *   rejected / returned → the submitter only, at any stage
  *
- * "Travellers" are the submitter plus every team member on the claim. Each
- * address gets exactly one mail per event: a supervisor with two people on the
- * same trip gets one mail naming both, not two.
+ * Desk addresses are the ones typed in Config (HR_MAIL_TO, FINANCE_MAIL_TO), else the 10MS
+ * group members. Each address gets exactly one mail per event.
  *
  * Mail never blocks a claim: a failure is logged and the request goes on.
  */
@@ -145,30 +143,26 @@ async function recipientsFor(record: RequestRecord, event: ClaimEvent, token: st
     }
   };
 
+  // Each desk hears only about its own step: the mail goes to whoever has to act next, and the
+  // submitter hears only at the start (submitted) and at the end (Finance approved, paid, sent
+  // back, rejected).
   if (event.kind === "submitted") {
     addTravellers();
     addSupervisors();
     const approver = clean(record.managerEmail);
     if (approver) get(approver).act = true;
   } else if (event.kind === "approved") {
-    addTravellers();
     if (event.stage === "manager_review") {
       // After the line manager, both HR-role and admin-role holders can decide it.
       await addDesk(["admin", "hr"], "HR", ["admin", "hr"]);
     } else if (event.stage === "admin_review") {
-      addSupervisors();
       await addDesk(["finance"], "Finance", ["finance"]);
     } else if (event.stage === "finance_review") {
-      addSupervisors();
-      await addDesk(["admin", "hr"], "HR", []);
+      addTravellers();
     }
-  } else if (event.kind === "paid") {
-    addTravellers();
-    addSupervisors();
   } else {
+    // Paid, returned for correction, or rejected: only the submitter.
     addTravellers();
-    // A rejection also tells the supervisors, whoever rejected it.
-    if (event.kind === "rejected") addSupervisors();
   }
   return out;
 }
