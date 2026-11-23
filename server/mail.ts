@@ -250,7 +250,7 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
         `Yes, I received it</a></p>` +
         `<p style="color:#64748b;font-size:12px;margin:0">Didn't get it? <a href="${esc(base)}">Open the claim</a> and choose ` +
         `"No, it never arrived" so Finance can look into it.</p>` +
-        `<p style="color:#64748b;font-size:12px;margin:4px 0 0">Button not working? Open ${esc(yes)}</p>`,
+        `<p style="color:#64748b;font-size:12px;margin:4px 0 0">Button not working? <a href="${esc(yes)}" style="color:#2563eb">Yes, I received it</a></p>`,
     );
   } else if (link) {
     // Straight to this claim; the app asks the person to sign in first if they have to.
@@ -259,7 +259,7 @@ function bodyFor(record: RequestRecord, event: ClaimEvent, r: Recipient, link: s
       `<p style="margin:20px 0 6px"><a href="${esc(target)}" style="display:inline-block;background:#171717;color:#ffffff;` +
         `text-decoration:none;font-weight:600;font-size:14px;padding:11px 20px;border-radius:8px">` +
         `View claim</a></p>` +
-        `<p style="color:#64748b;font-size:12px;margin:0">Button not working? Open ${esc(target)}</p>`,
+        `<p style="color:#64748b;font-size:12px;margin:0">Button not working? <a href="${esc(target)}" style="color:#2563eb">Open the claim</a></p>`,
     );
   }
   lines.push(`<p style="color:#94a3b8;font-size:12px">This is an automatic message from the TA/DA system.</p>`);
@@ -314,7 +314,7 @@ export async function planUnlockMail(
     return (
       `<p style="margin:20px 0 6px"><a href="${esc(target)}" style="display:inline-block;background:#171717;color:#ffffff;` +
       `text-decoration:none;font-weight:600;font-size:14px;padding:11px 20px;border-radius:8px">${esc(label)}</a></p>` +
-      `<p style="color:#64748b;font-size:12px;margin:0">Button not working? Open ${esc(target)}</p>`
+      `<p style="color:#64748b;font-size:12px;margin:0">Button not working? <a href="${esc(target)}" style="color:#2563eb">Open it here</a></p>`
     );
   };
   const frame = (inner: string) =>
@@ -380,7 +380,7 @@ export async function planVehicleMail(
     return (
       `<p style="margin:20px 0 6px"><a href="${esc(target)}" style="display:inline-block;background:#171717;color:#ffffff;` +
       `text-decoration:none;font-weight:600;font-size:14px;padding:11px 20px;border-radius:8px">${esc(label)}</a></p>` +
-      `<p style="color:#64748b;font-size:12px;margin:0">Button not working? Open ${esc(target)}</p>`
+      `<p style="color:#64748b;font-size:12px;margin:0">Button not working? <a href="${esc(target)}" style="color:#2563eb">Open it here</a></p>`
     );
   };
   const frame = (inner: string) =>
