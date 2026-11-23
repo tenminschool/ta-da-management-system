@@ -467,9 +467,9 @@ function StepTravelType({
                     <option value="office">10MS office — {route.from}</option>
                     <option value="home">Home</option>
                   </select>
+                  {draft.startFrom === "home" && <div className="mt-1.5"><HomeStart user={user} /></div>}
                 </Field>
               )}
-              {route && route.from && draft.startFrom === "home" && <div className="sm:col-span-2"><HomeStart user={user} /></div>}
 
               {route && (route.to === "Dhaka" || (route.from === "Dhaka" && draft.startFrom !== "home")) && (
                 <Field label={route.from === "Dhaka" ? "From which Dhaka office are you travelling?" : "Which Dhaka office are you going to?"} required>
@@ -517,8 +517,8 @@ function StepTravelType({
                   <option value="office">Office{user.workplace ? ` — ${user.workplace}` : ""}</option>
                   <option value="home">Home</option>
                 </select>
+                {draft.startFrom === "home" && <div className="mt-1.5"><HomeStart user={user} /></div>}
               </Field>
-              {draft.startFrom === "home" && <div className="sm:col-span-2"><HomeStart user={user} /></div>}
             </>
           )}
 
