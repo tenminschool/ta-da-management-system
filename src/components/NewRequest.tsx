@@ -339,11 +339,12 @@ function StepTravelType({
   const [contactHrOpen, setContactHrOpen] = useState(false);
   const refreshMyUnlocks = () => api.unlockRequests("mine").then((r) => setMyUnlocks(r.requests)).catch(() => {});
   useEffect(() => { refreshMyUnlocks(); }, []);
-  // Switching to Home after picking your own workplace as the office: that pair is a commute, so clear it.
+  // Your own workplace can never be the office you went to (from home or from the office), so a
+  // saved draft that still has it picked is cleared.
   useEffect(() => {
-    if (draft.startFrom === "home" && draft.purpose && canonicalPlace(draft.purpose) === canonicalPlace(user.workplace || "HQ")
+    if (draft.purpose && canonicalPlace(draft.purpose) === canonicalPlace(user.workplace || "HQ")
       && policy.otherOffices.includes(draft.purpose)) set({ purpose: "" });
-  }, [draft.startFrom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [draft.startFrom, draft.purpose]); // eslint-disable-line react-hooks/exhaustive-deps
   const latestUnlock = myUnlocks[0];
   // A declined unlock can be closed. Remembered per request in this browser, so it stays gone after a
   // refresh, while a newer decision (a different request) still shows.
@@ -567,8 +568,9 @@ function StepTravelType({
                   <select className="field" value={draft.purpose} onChange={(e) => set({ purpose: e.target.value })}>
                     <option value="">Select an office</option>
                     {policy.otherOffices.map((o) => {
-                      // Home to your own workplace is a commute, so that office can't be picked from home.
-                      const own = draft.startFrom === "home" && canonicalPlace(o) === canonicalPlace(user.workplace || "HQ");
+                      // Your own workplace can't be the office you went to: from home it is a commute,
+                      // and from the office it is where you started.
+                      const own = canonicalPlace(o) === canonicalPlace(user.workplace || "HQ");
                       return <option key={o} value={o} disabled={own}>{own ? `${o} — your own workplace` : o}</option>;
                     })}
                   </select>
