@@ -345,6 +345,16 @@ function StepTravelType({
     if (draft.purpose && canonicalPlace(draft.purpose) === canonicalPlace(user.workplace || "HQ")
       && policy.otherOffices.includes(draft.purpose)) set({ purpose: "" });
   }, [draft.startFrom, draft.purpose]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Moving the departure or return date can leave the hotel dates outside the trip; clear those.
+  useEffect(() => {
+    if (draft.scope !== "outside" || !draft.fromDate) return;
+    const ret = draft.toDate || draft.fromDate;
+    const out = (d: string) => !!d && (d < draft.fromDate || d > ret);
+    const patch: Partial<RequestDraft> = {};
+    if (out(draft.checkIn)) patch.checkIn = "";
+    if (out(draft.checkOut)) patch.checkOut = "";
+    if (Object.keys(patch).length) set(patch);
+  }, [draft.fromDate, draft.toDate]); // eslint-disable-line react-hooks/exhaustive-deps
   const latestUnlock = myUnlocks[0];
   // A declined unlock can be closed. Remembered per request in this browser, so it stays gone after a
   // refresh, while a newer decision (a different request) still shows.
@@ -1683,11 +1693,29 @@ function StepAllowances({
                     }}
                   />
                 </Field>
-                <Field label="Check-in" required>
-                  <input type="date" className="field" value={draft.checkIn} onChange={(e) => set({ checkIn: e.target.value })} />
+                {/* The hotel stay has to fall inside the trip: only days from departure to return can be
+                    picked, and check-out can't be before check-in. */}
+                <Field label="Check-in" required hint={draft.fromDate ? `Between ${draft.fromDate} and ${draft.toDate || draft.fromDate}.` : "Pick your departure and return dates first."}>
+                  <input
+                    type="date"
+                    className="field"
+                    value={draft.checkIn}
+                    min={draft.fromDate || undefined}
+                    max={draft.checkOut || draft.toDate || draft.fromDate || undefined}
+                    disabled={!draft.fromDate}
+                    onChange={(e) => set({ checkIn: e.target.value })}
+                  />
                 </Field>
                 <Field label="Check-out" required>
-                  <input type="date" className="field" value={draft.checkOut} onChange={(e) => set({ checkOut: e.target.value })} />
+                  <input
+                    type="date"
+                    className="field"
+                    value={draft.checkOut}
+                    min={draft.checkIn || draft.fromDate || undefined}
+                    max={draft.toDate || draft.fromDate || undefined}
+                    disabled={!draft.fromDate}
+                    onChange={(e) => set({ checkOut: e.target.value })}
+                  />
                 </Field>
               </div>
             )}
