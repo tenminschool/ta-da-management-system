@@ -1615,12 +1615,24 @@ function StepAllowances({
   return (
     <>
       <Card title="Per-Diem" subtitle="Loaded automatically from your band — no manual calculation.">
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           <Stat label="Trip length" value={`${computation.tripDays} day(s)`} />
+          <Stat label="Per-Diem days" value={`${computation.perDiemDays} day(s)`} />
           <Stat label="Weekday rate" value={`${currency} ${band?.outsideTAWeekday ?? 0}`} />
           <Stat label="Weekend rate" value={`${currency} ${band?.outsideTAWeekend ?? 0}`} />
         </div>
-        <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {computation.tripDays > 1 ? (
+            <>
+              <b>Per-Diem days = trip length − 1</b> ({computation.tripDays} − 1 = {computation.perDiemDays}). The departure
+              day is not counted: leaving at night, you arrive the next day. So Per-Diem runs from the day after departure up to
+              the return day. This applies to a hotel stay and a personal stay alike.
+            </>
+          ) : (
+            <>A trip that leaves and returns on the same day is paid <b>1 day</b> of Per-Diem.</>
+          )}
+        </p>
+        <p className="mt-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
           {computation.weekdayDays} weekday + {computation.weekendDays} weekend ={" "}
           <span className="font-semibold text-slate-900">
             <Money value={computation.perDiemAmount} currency={currency} />
