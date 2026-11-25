@@ -125,6 +125,18 @@ export function daySpan(fromDate: string, toDate: string): { total: number; week
   return { total: weekday + weekend, weekday, weekend };
 }
 
+/**
+ * The days an outside-city Per-Diem is paid for: trip length − 1. The departure day is not
+ * counted (leaving at night, you arrive the next day), so the paid days run from the day after
+ * departure up to the return day — the same as the number of nights away. A trip that comes
+ * back the same day still earns one day.
+ */
+export function outsidePerDiemSpan(fromDate: string, toDate: string): { total: number; weekday: number; weekend: number } {
+  const to = toDate || fromDate;
+  if (!fromDate || daysBetween(fromDate, to) < 0) return { total: 0, weekday: 0, weekend: 0 };
+  return daysBetween(fromDate, to) >= 1 ? daySpan(addDays(fromDate, 1), to) : daySpan(fromDate, fromDate);
+}
+
 /** Business days (Sun–Thu) strictly between today and a future date. */
 export function businessDaysUntil(target: string, from: Date = new Date()): number {
   const end = new Date(`${target}T00:00:00`);
@@ -186,7 +198,7 @@ export function personalVehicleRateFor(policy: Policy, user: SessionUser): numbe
  */
 export function outsidePerDiemFor(policy: Policy, bandName: string, fromDate: string, toDate: string): number {
   const b = bandPolicy(policy, bandName);
-  const span = daySpan(fromDate, toDate);
+  const span = outsidePerDiemSpan(fromDate, toDate);
   return money(span.weekday * (b?.outsideTAWeekday ?? 0) + span.weekend * (b?.outsideTAWeekend ?? 0));
 }
 
@@ -459,6 +471,8 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
   // ── Per-Diem and lunch ────────────────────────────────────────────────────
   let perDiemEligible = false;
   let perDiemDays = 0;
+  // The weekday/weekend split the Per-Diem is paid on (outside city: trip length − 1).
+  let perDiemSpan = span;
   let perDiemAmount = 0;
   let lunchEligible = false;
   let lunchAllowance = 0;
@@ -473,15 +487,23 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
         `Outside-city travel ${taken.from} to ${draft.city || taken.to} — per-diem, accommodation and intercity fare rules apply instead of the inside-city ones.`,
       );
     }
-    perDiemEligible = tripDays > 0;
-    perDiemDays = tripDays;
+    // Paid for trip length − 1 days: the departure day is not counted (see outsidePerDiemSpan).
+    const pd = outsidePerDiemSpan(draft.fromDate, draft.toDate);
+    perDiemEligible = pd.total > 0;
+    perDiemDays = pd.total;
+    perDiemSpan = pd;
     // Each traveller is paid at their own band's rate.
-    const perHead = money(span.weekday * (band?.outsideTAWeekday ?? 0) + span.weekend * (band?.outsideTAWeekend ?? 0));
+    const perHead = money(pd.weekday * (band?.outsideTAWeekday ?? 0) + pd.weekend * (band?.outsideTAWeekend ?? 0));
     const travellerBands = [user.band, ...draft.teamMembers.map((m) => m.band)];
     perDiemAmount = money(
       travellerBands.reduce((sum, b) => sum + outsidePerDiemFor(policy, b, draft.fromDate, draft.toDate), 0),
     );
     if (perDiemEligible) {
+      notes.push(
+        tripDays > 1
+          ? `Per-Diem is paid for ${pd.total} day(s): the ${tripDays}-day trip minus 1, because the departure day is not counted.`
+          : "Per-Diem is paid for 1 day: a same-day trip still earns one day.",
+      );
       if (teamSize > 1) {
         const parts = travellerBands.map((b) => `Band ${b} ${outsidePerDiemFor(policy, b, draft.fromDate, draft.toDate)}`);
         notes.push(
@@ -490,7 +512,7 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
         );
       } else {
         notes.push(
-          `Outside-city Per-Diem for Band ${user.band}: ${span.weekday} weekday × ${band?.outsideTAWeekday ?? 0} + ${span.weekend} weekend × ${band?.outsideTAWeekend ?? 0} = ${perHead} each` +
+          `Outside-city Per-Diem for Band ${user.band}: ${pd.weekday} weekday × ${band?.outsideTAWeekday ?? 0} + ${pd.weekend} weekend × ${band?.outsideTAWeekend ?? 0} = ${perHead} each` +
           ". This already covers local transport and 3 meals.",
         );
       }
@@ -948,8 +970,9 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
   return {
     workingHours: hours,
     tripDays,
-    weekdayDays: span.weekday,
-    weekendDays: span.weekend,
+    // The Per-Diem days, split by weekday/weekend — outside city that is trip length − 1.
+    weekdayDays: perDiemSpan.weekday,
+    weekendDays: perDiemSpan.weekend,
     claimType,
     taAmount: money(taAmount),
     perDiemEligible,
