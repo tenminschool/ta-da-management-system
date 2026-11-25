@@ -567,6 +567,10 @@ export default function AdminConfig({ canEditPolicy = true }: { canEditPolicy?: 
                     <td key={c} className="px-1 py-1">
                       <input
                         className="field !px-2 !py-1.5 !text-xs"
+                        // Wide enough for the column's longest value (capped), so a list like
+                        // "Rickshaw,CNG,Car,Metro Rail" is not cut off; hover shows it in full.
+                        style={{ minWidth: `${Math.min(36, Math.max(6, ...rows.map((r) => (r[c] ?? "").length)) + 3)}ch` }}
+                        title={row[c] ?? ""}
                         value={row[c] ?? ""}
                         onChange={(e) => edit(i, c, e.target.value)}
                       />
