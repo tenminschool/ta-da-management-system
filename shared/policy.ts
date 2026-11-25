@@ -596,6 +596,17 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
     if (!(Number(draft.accommodationAmount) > 0)) errors.push("Enter the hotel amount.");
     if (!draft.checkIn || !draft.checkOut) errors.push("Check-in and check-out dates are required.");
   }
+  // A hotel stay has to fall inside the trip, from the departure date to the return date.
+  if (draft.scope === "outside" && draft.accommodationType === "hotel" && draft.fromDate) {
+    const ret = draft.toDate || draft.fromDate;
+    const outsideTrip = (d: string) => !!d && (d < draft.fromDate || d > ret);
+    if (outsideTrip(draft.checkIn) || outsideTrip(draft.checkOut)) {
+      errors.push(`Hotel check-in and check-out must be between your departure (${draft.fromDate}) and return (${ret}) dates.`);
+    }
+    if (draft.checkIn && draft.checkOut && draft.checkOut < draft.checkIn) {
+      errors.push("Hotel check-out can't be before check-in.");
+    }
+  }
   if (accommodationAmount > 0) {
     if (draft.scope !== "outside") {
       errors.push("Accommodation can only be claimed for outside-city travel.");
