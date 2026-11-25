@@ -306,6 +306,18 @@ export function eligibleModes(policy: Policy, ctx: EligibilityContext): ModeOpti
       if (inBand) push(mode, true);
     }
 
+    // Any other inside-city mode an administrator added under Lists → TransportMode (Metro Rail,
+    // say) is offered when the band's list names it, by its value or its label. Spaces and case
+    // don't matter, so "Metro Rail" in BandPolicy matches a "MetroRail" row.
+    const key = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const handled = new Set(["Rickshaw", "Bike", "CNG", "Car", "CompanyVehicle", "PersonalVehicle", "RideSharing"]);
+    // A woman travelling, or a claimed exception, gets the female list for these too.
+    const extraAllowed = new Set([...allowed, ...(female ? band?.modesFemale ?? [] : [])].map(key));
+    for (const s of policy.modes) {
+      if (s.scope === "Outside" || handled.has(s.mode)) continue;
+      if (extraAllowed.has(key(s.mode)) || extraAllowed.has(key(s.label))) push(s.mode, true);
+    }
+
     push("CompanyVehicle", true);
     push("PersonalVehicle", true);
     push("RideSharing", true);
