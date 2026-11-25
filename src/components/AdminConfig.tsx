@@ -172,6 +172,198 @@ function BranchManager({
   );
 }
 
+/** Modes with their own rules in the claim form: they can be switched off, never removed. */
+const BUILT_IN_MODES = new Set([
+  "Rickshaw", "Bike", "CNG", "Car", "CompanyVehicle", "PersonalVehicle", "RideSharing", "Bus", "Train", "Launch", "Flight", "RentACar",
+]);
+const modeKey = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+const splitModes = (v: string | undefined) => String(v || "").split(",").map((s) => s.trim()).filter(Boolean);
+
+/**
+ * Transport modes — the `TransportMode` rows of the Lists tab, plus which bands may use an
+ * inside-city one (the BandPolicy modes lists). Adding a mode here writes both, so a new mode
+ * such as Metro Rail shows up in the claim form without editing the raw tables.
+ */
+function TransportModeManager({
+  lists, listCols, bands, bandCols, onSaved,
+}: {
+  lists: Record<string, string>[];
+  listCols: string[];
+  bands: Record<string, string>[];
+  bandCols: string[];
+  onSaved: (lists: Record<string, string>[], bands: Record<string, string>[]) => void;
+}) {
+  const modes = lists.filter((r) => r.list_name === "TransportMode");
+  const bandNames = bands.map((b) => b.band).filter(Boolean);
+  const [name, setName] = useState("");
+  const [scope, setScope] = useState("Inside");
+  const [receipt, setReceipt] = useState(false);
+  const [picked, setPicked] = useState<string[]>(bandNames);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+
+  /** Bands whose male or female list names this mode, by value or label. */
+  const bandsWith = (m: Record<string, string>) => {
+    const keys = new Set([modeKey(m.value), modeKey(m.label || m.value)]);
+    return bands.filter((b) => [...splitModes(b.modes_male), ...splitModes(b.modes_female)].some((x) => keys.has(modeKey(x)))).map((b) => b.band);
+  };
+
+  async function persist(nextLists: Record<string, string>[] | null, nextBands: Record<string, string>[] | null, note: string) {
+    setBusy(true);
+    setError("");
+    setSaved("");
+    try {
+      if (nextBands) await api.saveTab("BandPolicy", nextBands.map((r) => Object.fromEntries(bandCols.map((c) => [c, r[c] ?? ""]))));
+      if (nextLists) await api.saveTab("Lists", nextLists.map((r) => Object.fromEntries(listCols.map((c) => [c, r[c] ?? ""]))));
+      onSaved(nextLists ?? lists, nextBands ?? bands);
+      setSaved(note);
+      return true;
+    } catch (err) {
+      setError((err as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Puts the mode on (or takes it off) the male and female lists of the given bands. */
+  function withBands(m: { value: string; label: string }, on: string[], off: string[]) {
+    const keys = new Set([modeKey(m.value), modeKey(m.label)]);
+    const fix = (list: string | undefined, band: string) => {
+      const kept = splitModes(list).filter((x) => !keys.has(modeKey(x)));
+      return (on.includes(band) ? [...kept, m.label] : off.includes(band) ? kept : splitModes(list)).join(",");
+    };
+    return bands.map((b) => ({ ...b, modes_male: fix(b.modes_male, b.band), modes_female: fix(b.modes_female, b.band) }));
+  }
+
+  async function add() {
+    const label = name.trim().replace(/\s+/g, " ");
+    const value = label.replace(/[^A-Za-z0-9]/g, "");
+    if (!value) return;
+    if (modes.some((m) => modeKey(m.value) === modeKey(value) || modeKey(m.label || "") === modeKey(label))) {
+      setError("That transport mode is already in the list.");
+      return;
+    }
+    const row = { list_name: "TransportMode", value, label, extra_1: scope, extra_2: receipt ? "Yes" : "No", active: "Yes" };
+    // Bands only narrow inside-city modes; an outside-only mode is offered to everyone.
+    const nextBands = scope === "Outside" ? null : withBands({ value, label }, picked, []);
+    if (await persist([...lists, row], nextBands, `${label} added.`)) {
+      setName("");
+      setReceipt(false);
+    }
+  }
+
+  const update = (m: Record<string, string>, patch: Record<string, string>, note: string) =>
+    persist(lists.map((r) => (r === m ? { ...r, ...patch } : r)), null, note);
+
+  function toggleBand(m: Record<string, string>, band: string) {
+    const has = bandsWith(m).includes(band);
+    void persist(null, withBands({ value: m.value, label: m.label || m.value }, has ? [] : [band], has ? [band] : []),
+      `${m.label || m.value} ${has ? "removed from" : "added to"} Band ${band}.`);
+  }
+
+  return (
+    <Card title="Transport modes" subtitle="The ways people can travel. Inside-city modes show only for the bands ticked here; outside-city modes show for everyone.">
+      {error && <div className="mb-3"><Notice tone="error" items={[error]} /></div>}
+      {saved && <div className="mb-3"><Notice tone="info" items={[saved]} /></div>}
+
+      <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            className="field"
+            placeholder="New mode, e.g. Metro Rail"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void add(); }}
+          />
+          <select className="field sm:max-w-44" value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Where it is offered">
+            <option value="Inside">Inside city</option>
+            <option value="Outside">Outside city</option>
+            <option value="Both">Both</option>
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={receipt} onChange={(e) => setReceipt(e.target.checked)} />
+          Needs a receipt
+        </label>
+        {scope !== "Outside" && (
+          <div>
+            <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Bands that can use it</p>
+            <div className="flex flex-wrap gap-2">
+              {bandNames.map((b) => (
+                <label key={b} className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={picked.includes(b)}
+                    onChange={(e) => setPicked((p) => (e.target.checked ? [...p, b] : p.filter((x) => x !== b)))}
+                  />
+                  {b}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+        <button className="btn-primary" onClick={() => void add()} disabled={busy || !name.trim()}>
+          {busy ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />} Add mode
+        </button>
+      </div>
+
+      <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
+        {modes.length === 0 && <li className="px-3 py-3 text-sm text-slate-400">No transport modes yet.</li>}
+        {modes.map((m) => {
+          const on = m.active !== "No";
+          const inside = m.extra_1 !== "Outside";
+          const has = bandsWith(m);
+          return (
+            <li key={m.value} className="space-y-2 px-3 py-2.5 text-sm">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className={`min-w-0 flex-1 font-medium ${on ? "text-slate-800" : "text-slate-400 line-through"}`}>{m.label || m.value}</span>
+                <span className="text-xs text-slate-500">{m.extra_1 === "Both" ? "Inside & outside" : `${m.extra_1 || "Both"} city`}</span>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <input type="checkbox" disabled={busy} checked={m.extra_2 === "Yes"}
+                    onChange={(e) => void update(m, { extra_2: e.target.checked ? "Yes" : "No" }, `${m.label || m.value} saved.`)} />
+                  Receipt
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                  <input type="checkbox" disabled={busy} checked={on}
+                    onChange={(e) => void update(m, { active: e.target.checked ? "Yes" : "No" }, `${m.label || m.value} turned ${e.target.checked ? "on" : "off"}.`)} />
+                  On
+                </label>
+                {!BUILT_IN_MODES.has(m.value) && (
+                  <button
+                    className="flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                    aria-label={`Remove ${m.value}`}
+                    disabled={busy}
+                    onClick={() => void persist(lists.filter((r) => r !== m), withBands({ value: m.value, label: m.label || m.value }, [], bandNames), `${m.label || m.value} removed.`)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+              {inside && !BUILT_IN_MODES.has(m.value) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-slate-400">Bands:</span>
+                  {bandNames.map((b) => (
+                    <button
+                      key={b}
+                      disabled={busy}
+                      onClick={() => toggleBand(m, b)}
+                      className={`rounded-md px-2 py-0.5 text-xs font-semibold ${has.includes(b) ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-400"}`}
+                    >
+                      {b}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
 /**
  * Who gets the mail when a claim reaches HR or Finance: addresses typed here (HR_MAIL_TO,
  * FINANCE_MAIL_TO in the Config tab). Blank falls back to the 10MS groups. Mail only: roles and
@@ -473,6 +665,15 @@ export default function AdminConfig({ canEditPolicy = true }: { canEditPolicy?: 
           rows={data.Lists || []}
           cols={headers.Lists}
           onSaved={(next) => setData((d) => ({ ...d, Lists: next }))}
+        />
+      )}
+      {canEditPolicy && headers.Lists && headers.BandPolicy && (
+        <TransportModeManager
+          lists={data.Lists || []}
+          listCols={headers.Lists}
+          bands={data.BandPolicy || []}
+          bandCols={headers.BandPolicy}
+          onSaved={(lists, bands) => setData((d) => ({ ...d, Lists: lists, BandPolicy: bands }))}
         />
       )}
 
