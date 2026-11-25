@@ -5,7 +5,7 @@ import {
 import { api } from "../api.js";
 import {
   addDays, bankPayoutAllowed, canonicalPlace, cfgNum, cfgStr, computeRequest, eligibleModes, emptyDraft, isWeekend, partyBand,
-  impliedLegs, insidePerTravellerAmount, money, personalVehicleRateFor, teamPayoutSplit, todayISO, type ModeOption,
+  impliedLegs, insidePerTravellerAmount, money, perDiemEndDate, personalVehicleRateFor, teamPayoutSplit, todayISO, type ModeOption,
 } from "../../shared/policy.js";
 import type { Leg, Policy, RequestDraft, RequestRecord, SessionUser, TeamMember, UnlockRequest, VehicleRegistration } from "../../shared/types.js";
 import { Card, ChoiceGrid, Field, Modal, Money, MultiSelect, Notice, SearchInput, Spinner, Toggle } from "./ui.js";
@@ -1622,11 +1622,17 @@ function StepAllowances({
           <Stat label="Weekend rate" value={`${currency} ${band?.outsideTAWeekend ?? 0}`} />
         </div>
         <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {computation.tripDays > 1 ? (
+          {draft.accommodationType === "hotel" && draft.checkOut ? (
+            <>
+              <b>Per-Diem runs from the day after departure to the hotel check-out date</b> ({perDiemEndDate(draft)}) ={" "}
+              {computation.perDiemDays} day(s). The departure day is not counted (leaving at night, you arrive the next day),
+              and with a hotel the return date is not used: coming back the morning after check-out adds no day.
+            </>
+          ) : computation.tripDays > 1 ? (
             <>
               <b>Per-Diem days = trip length − 1</b> ({computation.tripDays} − 1 = {computation.perDiemDays}). The departure
               day is not counted: leaving at night, you arrive the next day. So Per-Diem runs from the day after departure up to
-              the return day. This applies to a hotel stay and a personal stay alike.
+              the return day.{draft.accommodationType === "hotel" ? " Once you enter the hotel check-out date, Per-Diem counts to that date instead." : ""}
             </>
           ) : (
             <>A trip that leaves and returns on the same day is paid <b>1 day</b> of Per-Diem.</>

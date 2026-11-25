@@ -137,6 +137,17 @@ export function outsidePerDiemSpan(fromDate: string, toDate: string): { total: n
   return daysBetween(fromDate, to) >= 1 ? daySpan(addDays(fromDate, 1), to) : daySpan(fromDate, fromDate);
 }
 
+/**
+ * The last day an outside-city Per-Diem runs to. With a hotel it is the hotel's check-out date:
+ * coming back the morning after check-out does not add a day. With a personal stay (no bill to
+ * date it) it is the return date. Never later than the return date.
+ */
+export function perDiemEndDate(t: { accommodationType: string; checkOut: string; toDate: string; fromDate: string }): string {
+  const ret = t.toDate || t.fromDate;
+  if (t.accommodationType !== "hotel" || !t.checkOut) return ret;
+  return t.checkOut < ret ? t.checkOut : ret;
+}
+
 /** Business days (Sun–Thu) strictly between today and a future date. */
 export function businessDaysUntil(target: string, from: Date = new Date()): number {
   const end = new Date(`${target}T00:00:00`);
@@ -487,8 +498,11 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
         `Outside-city travel ${taken.from} to ${draft.city || taken.to} — per-diem, accommodation and intercity fare rules apply instead of the inside-city ones.`,
       );
     }
-    // Paid for trip length − 1 days: the departure day is not counted (see outsidePerDiemSpan).
-    const pd = outsidePerDiemSpan(draft.fromDate, draft.toDate);
+    // Paid from the day after departure (the departure day is not counted, see outsidePerDiemSpan)
+    // to the hotel check-out date, or to the return date for a personal stay.
+    const perDiemEnd = perDiemEndDate(draft);
+    const byCheckOut = perDiemEnd !== (draft.toDate || draft.fromDate);
+    const pd = outsidePerDiemSpan(draft.fromDate, perDiemEnd);
     perDiemEligible = pd.total > 0;
     perDiemDays = pd.total;
     perDiemSpan = pd;
@@ -496,16 +510,18 @@ export function computeRequest(policy: Policy, rawDraft: RequestDraft, user: Ses
     const perHead = money(pd.weekday * (band?.outsideTAWeekday ?? 0) + pd.weekend * (band?.outsideTAWeekend ?? 0));
     const travellerBands = [user.band, ...draft.teamMembers.map((m) => m.band)];
     perDiemAmount = money(
-      travellerBands.reduce((sum, b) => sum + outsidePerDiemFor(policy, b, draft.fromDate, draft.toDate), 0),
+      travellerBands.reduce((sum, b) => sum + outsidePerDiemFor(policy, b, draft.fromDate, perDiemEnd), 0),
     );
     if (perDiemEligible) {
       notes.push(
-        tripDays > 1
-          ? `Per-Diem is paid for ${pd.total} day(s): the ${tripDays}-day trip minus 1, because the departure day is not counted.`
-          : "Per-Diem is paid for 1 day: a same-day trip still earns one day.",
+        byCheckOut
+          ? `Per-Diem is paid for ${pd.total} day(s): from the day after departure to the hotel check-out date (${perDiemEnd}), not the return date.`
+          : tripDays > 1
+            ? `Per-Diem is paid for ${pd.total} day(s): the ${tripDays}-day trip minus 1, because the departure day is not counted.`
+            : "Per-Diem is paid for 1 day: a same-day trip still earns one day.",
       );
       if (teamSize > 1) {
-        const parts = travellerBands.map((b) => `Band ${b} ${outsidePerDiemFor(policy, b, draft.fromDate, draft.toDate)}`);
+        const parts = travellerBands.map((b) => `Band ${b} ${outsidePerDiemFor(policy, b, draft.fromDate, perDiemEnd)}`);
         notes.push(
           `Outside-city Per-Diem, each traveller at their own band's rate: ${parts.join(" + ")} = ${perDiemAmount}. ` +
           "This already covers local transport and 3 meals.",
@@ -1052,7 +1068,7 @@ export function teamPayoutSplit(record: RequestRecord, policy: Policy): TeamPayo
   const shortHourAllowance = cfgNum(policy, "SHORT_HOUR_MEAL_ALLOWANCE", 150);
   const insidePerDiemEligible = record.scope === "inside" && record.perDiemDays > 0;
   const ownPerDiemAndLunch = (mealTaken: boolean, bandName: string) => record.scope !== "inside"
-    ? money(outsidePerDiemFor(policy, bandName, record.fromDate, record.toDate) + record.lunchAllowance / teamSize)
+    ? money(outsidePerDiemFor(policy, bandName, record.fromDate, perDiemEndDate(record)) + record.lunchAllowance / teamSize)
     : insidePerDiemEligible
       ? Math.max(0, money(perDiemRate - (mealTaken ? mealDeduction : 0)))
       : (mealTaken ? 0 : shortHourAllowance);
