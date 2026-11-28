@@ -2354,10 +2354,10 @@ app.post("/api/vehicles/:employeeId/decide", requireAuth, handler(async (req, re
   res.json({ vehicle: updated, mail: await planVehicleMail(updated, action === "approved" ? "approved" : "rejected", appLink(req), String(req.headers["x-tenms-token"] || "")) });
 }));
 
-/** Admin only: removes a registered vehicle outright, whatever its status. */
+/** HR or admin: removes a registered vehicle outright, whatever its status. */
 app.delete("/api/vehicles/:employeeId", requireAuth, handler(async (req, res) => {
-  if (!hasRole(req.session, "admin")) {
-    res.status(403).json({ error: "Only an admin can delete a registered vehicle." });
+  if (!hasRole(req.session, "admin", "hr")) {
+    res.status(403).json({ error: "Only HR or an admin can delete a registered vehicle." });
     return;
   }
   const rows = await readTab("Vehicles");
