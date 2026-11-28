@@ -4,7 +4,7 @@ import { api } from "../api.js";
 import { sendMails } from "../lib/mail.js";
 import type { Policy, VehicleRegistration } from "../../shared/types.js";
 import { cfgStr } from "../../shared/policy.js";
-import { Card, Empty, Field, Modal, Money, Notice, Spinner } from "./ui.js";
+import { Card, Empty, Field, Modal, Money, Notice, SearchInput, Spinner } from "./ui.js";
 
 /**
  * HR/Admin's queue of personal vehicles waiting for a rate to be approved.
@@ -15,7 +15,10 @@ import { Card, Empty, Field, Modal, Money, Notice, Spinner } from "./ui.js";
  */
 export default function VehicleRegistrations({ policy, canDelete = false }: { policy: Policy; canDelete?: boolean }) {
   const [tab, setTab] = useState<"pending" | "all">("pending");
-  const [rows, setRows] = useState<VehicleRegistration[]>([]);
+  // Every registration is loaded once; the tab and the search narrow it here, so searching a
+  // name finds the person whatever their vehicle's status.
+  const [all, setAll] = useState<VehicleRegistration[]>([]);
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deciding, setDeciding] = useState<VehicleRegistration | null>(null);
@@ -24,7 +27,7 @@ export default function VehicleRegistrations({ policy, canDelete = false }: { po
   async function load() {
     setLoading(true);
     try {
-      setRows((await api.vehicles(tab)).vehicles);
+      setAll((await api.vehicles("all")).vehicles);
       setError("");
     } catch (err) {
       setError((err as Error).message);
@@ -32,7 +35,10 @@ export default function VehicleRegistrations({ policy, canDelete = false }: { po
       setLoading(false);
     }
   }
-  useEffect(() => { load(); }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const q = query.trim().toLowerCase();
+  const rows = all.filter((v) =>
+    (q ? [v.employeeName, v.employeeId, v.model].some((x) => String(x || "").toLowerCase().includes(q)) : tab === "all" || v.status === "pending"));
 
   async function remove(v: VehicleRegistration) {
     if (!window.confirm(`Delete ${v.employeeName}'s registered vehicle (${v.model})? They will have to register again.`)) return;
@@ -55,7 +61,7 @@ export default function VehicleRegistrations({ policy, canDelete = false }: { po
     rejected: "bg-rose-50 text-rose-700",
   };
 
-  if (loading && !rows.length) return <Spinner />;
+  if (loading && !all.length) return <Spinner />;
 
   return (
     <div className="space-y-5">
@@ -67,7 +73,8 @@ export default function VehicleRegistrations({ policy, canDelete = false }: { po
         </p>
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex gap-2">
         {(["pending", "all"] as const).map((t) => (
           <button
             key={t}
@@ -79,16 +86,27 @@ export default function VehicleRegistrations({ policy, canDelete = false }: { po
             {t}
           </button>
         ))}
+        </div>
+        <SearchInput
+          className="sm:ml-auto sm:w-72"
+          value={query}
+          onChange={setQuery}
+          placeholder="Search by name or employee ID"
+        />
       </div>
 
       {error && <Notice tone="error" items={[error]} />}
 
       <Card>
         {!rows.length ? (
+          q ? (
+            <Empty title="No registration matches" hint={`Nobody named or numbered “${query.trim()}” has a registered vehicle.`} />
+          ) : (
           <Empty
             title={tab === "pending" ? "Nothing waiting on you" : "No vehicles registered yet"}
             hint={tab === "pending" ? "New registrations appear here." : "They will appear here once someone registers a personal vehicle."}
           />
+          )
         ) : (
           <>
             {/* Phones: a card per registration */}

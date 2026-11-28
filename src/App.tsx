@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Banknote, BookOpen, Car, FileText, HandCoins, Inbox, LayoutDashboard, ListChecks,
+  Banknote, BookOpen, Car, FileText, Inbox, LayoutDashboard, ListChecks,
   Menu, Plus, Settings, ShieldCheck, User, Wallet,
 } from "lucide-react";
 import { useTenMSAuth } from "@tenminuteschool/auth-admin-react";
@@ -12,7 +12,6 @@ import Dashboard from "./components/Dashboard.js";
 import NewRequest from "./components/NewRequest.js";
 import RequestList from "./components/RequestList.js";
 import RequestDetail from "./components/RequestDetail.js";
-import Advances from "./components/Advances.js";
 import AdminConfig from "./components/AdminConfig.js";
 import Reports from "./components/Reports.js";
 import VehicleRegistrations from "./components/VehicleRegistrations.js";
@@ -197,7 +196,6 @@ export default function App() {
   const isFinance = user.roles.includes("finance");
   const isAdmin = user.roles.some((r) => ["admin", "hr"].includes(r));
   const isApprover = isAdmin || isFinance || !!user.managesOthers;
-  const reviewsAdvances = isAdmin || isFinance || !!user.managesOthers;
 
   const selfNav: NavItem[] = [
     { key: "new", label: "New Request", short: "New", icon: Plus },
@@ -212,7 +210,6 @@ export default function App() {
     { key: "desk-reports", label: "Dashboard", short: "Home", icon: LayoutDashboard, show: isAdmin || isFinance },
     { key: "desk-all", label: "All Claims", short: "All", icon: ListChecks, show: true },
     { key: "desk-pending", label: "Pending Approvals", short: "Pending", icon: Inbox, show: true, badge: inbox },
-    { key: "desk-advances", label: "Advance Approvals", short: "Advance", icon: HandCoins, show: reviewsAdvances },
     { key: "desk-vehicles", label: "Vehicle Registrations", short: "Vehicles", icon: Car, show: isAdmin },
     { key: "desk-payments", label: "Payments", short: "Pay", icon: Banknote, show: isFinance || isAdmin },
     // Policy configuration is admin-only; HR keeps the unlock and block tools that live on the same page.
@@ -446,11 +443,7 @@ export default function App() {
             />
           )}
 
-          {view.name === "desk-advances" && (
-            <Advances scope="desk" policy={policy} onOpen={openDetail} />
-          )}
-
-          {view.name === "desk-vehicles" && <VehicleRegistrations policy={policy} canDelete={user.roles.includes("admin")} />}
+          {view.name === "desk-vehicles" && <VehicleRegistrations policy={policy} canDelete={isAdmin} />}
 
           {view.name === "desk-payments" && (
             <RequestList
