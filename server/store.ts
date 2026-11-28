@@ -540,15 +540,22 @@ export async function nextUnlockRequestId(): Promise<string> {
   return `UR-${year}-${String((used.length ? Math.max(...used) : 0) + 1).padStart(6, "0")}`;
 }
 
-/** Human-readable, sortable request number: TA-2026-000147. */
+/**
+ * Request number: TA-PER-DIEM-<day>-<month>-<year of submission>-<claim count>, e.g.
+ * TA-PER-DIEM-16-11-2026-45. The date is the day it is submitted (Bangladesh time). The last part
+ * counts every claim ever made and never restarts: the 100th claim is 100. It carries on from the
+ * older TA-2026-000044 numbers, which are kept as they are.
+ */
 export async function nextRequestId(prefix: string): Promise<string> {
   const rows = await readTab("Requests");
-  const year = new Date().getFullYear();
   const used = rows
     .map((r) => r.request_id)
-    .filter((rid) => rid?.startsWith(`${prefix}-${year}-`))
-    .map((rid) => Number(rid.split("-")[2]) || 0);
-  return `${prefix}-${year}-${String((used.length ? Math.max(...used) : 0) + 1).padStart(6, "0")}`;
+    .filter((rid) => rid?.startsWith(`${prefix}-`))
+    // The count is the last part, in both the old and the new format.
+    .map((rid) => Number(rid.split("-").pop()) || 0);
+  const [y, m, d] = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Dhaka" }).split("-");
+  const count = String((used.length ? Math.max(...used) : 0) + 1).padStart(2, "0");
+  return `${prefix}-PER-DIEM-${d}-${m}-${y}-${count}`;
 }
 
 // ── Approvals: one row per request, one column group per desk ───────────────

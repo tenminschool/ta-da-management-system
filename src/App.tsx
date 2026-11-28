@@ -56,7 +56,7 @@ export default function App() {
   const [inbox, setInbox] = useState(0);
   const [signInError, setSignInError] = useState("");
 
-  // A link from a notification email arrives as /?request=TA-2026-000033. It is read once,
+  // A link from a notification email arrives as /?request=TA-PER-DIEM-16-11-2026-45. It is read once,
   // here, before sign-in, so it survives the sign-in step and still opens that claim after.
   const pendingRequest = useRef(new URLSearchParams(window.location.search).get("request") || "");
   const pendingView = useRef(new URLSearchParams(window.location.search).get("view") || "");
